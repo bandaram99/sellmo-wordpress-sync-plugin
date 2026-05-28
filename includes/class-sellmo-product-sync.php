@@ -469,6 +469,8 @@ class Sellmo_Product_Sync {
 			$product->set_name( (string) $sellmo_product['product_name'] );
 		}
 
+		$this->apply_product_category( $product, $sellmo_product );
+
 		if ( isset( $sellmo_product['product_description'] ) ) {
 			$product->set_description( (string) $sellmo_product['product_description'] );
 		}
@@ -499,6 +501,91 @@ class Sellmo_Product_Sync {
 		}
 
 		$product->set_status( $this->is_available_for_sale( $sellmo_product ) ? 'publish' : 'private' );
+	}
+
+	/**
+	 * Apply Sellmo category to the WooCommerce product.
+	 *
+	 * If category is missing or explicitly "No category", the product is assigned
+	 * to WooCommerce's "Uncategorized" term.
+	 *
+	 * @since  1.0.0
+	 * @param  WC_Product           $product        Product being synced.
+	 * @param  array<string, mixed> $sellmo_product Sellmo product payload.
+	 * @return void
+	 */
+	private function apply_product_category( WC_Product $product, array $sellmo_product ): void {
+		$category_name = $this->resolve_sellmo_category_name( $sellmo_product );
+		$term_id       = $this->ensure_product_category_term( $category_name );
+
+		if ( $term_id > 0 ) {
+			$product->set_category_ids( [ $term_id ] );
+		}
+	}
+
+	/**
+	 * Resolve the category name from Sellmo payload.
+	 *
+	 * @since  1.0.0
+	 * @param  array<string, mixed> $sellmo_product Sellmo product payload.
+	 * @return string
+	 */
+	private function resolve_sellmo_category_name( array $sellmo_product ): string {
+		$raw_category = $sellmo_product['category'] ?? '';
+
+		if ( is_array( $raw_category ) ) {
+			$raw_category = (string) ( $raw_category['name'] ?? $raw_category['title'] ?? $raw_category['label'] ?? '' );
+		}
+
+		$category_name = sanitize_text_field( (string) $raw_category );
+
+		if ( '' === $category_name || 0 === strcasecmp( $category_name, 'no category' ) ) {
+			return 'Uncategorized';
+		}
+
+		return $category_name;
+	}
+
+	/**
+	 * Ensure the WooCommerce product category term exists and return its ID.
+	 *
+	 * @since  1.0.0
+	 * @param  string $category_name Category name.
+	 * @return int
+	 */
+	private function ensure_product_category_term( string $category_name ): int {
+		$category_name = sanitize_text_field( $category_name );
+
+		if ( '' === $category_name ) {
+			$category_name = 'Uncategorized';
+		}
+
+		if ( 0 === strcasecmp( $category_name, 'Uncategorized' ) ) {
+			$default_uncategorized = (int) get_option( 'default_product_cat' );
+			if ( $default_uncategorized > 0 ) {
+				$term = get_term( $default_uncategorized, 'product_cat' );
+				if ( $term && ! is_wp_error( $term ) ) {
+					return (int) $term->term_id;
+				}
+			}
+		}
+
+		$existing = term_exists( $category_name, 'product_cat' );
+
+		if ( false === $existing || null === $existing ) {
+			$inserted = wp_insert_term( $category_name, 'product_cat' );
+			if ( is_wp_error( $inserted ) ) {
+				return 0;
+			}
+
+			return (int) ( $inserted['term_id'] ?? 0 );
+		}
+
+		if ( is_array( $existing ) ) {
+			return (int) ( $existing['term_id'] ?? 0 );
+		}
+
+		return (int) $existing;
 	}
 
 	// =========================================================================
