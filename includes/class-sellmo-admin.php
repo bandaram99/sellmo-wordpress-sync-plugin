@@ -1,0 +1,1258 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * Admin menus, pages, notices, and AJAX handlers for Sellmo POS Integration.
+ *
+ * @package Sellmo_WooCommerce
+ * @since   1.0.0
+ */
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * Class Sellmo_Admin
+ *
+ * Registers the top-level "Sellmo POS" admin menu with Dashboard, Settings,
+ * Products, and Sync Log sub-pages. Handles settings form submission and
+ * AJAX calls for connection testing, shop population, and category loading.
+ *
+ * @since 1.0.0
+ */
+class Sellmo_Admin {
+
+	/**
+	 * Constructor.
+	 *
+	 * Registers all hooks: menus, admin_post handler, admin notices,
+	 * script localisation, and wp_ajax_* AJAX actions.
+	 *
+	 * @since 1.0.0
+	 */
+	public function __construct() {
+		add_action( 'admin_menu', [ $this, 'register_menus' ] );
+		add_action( 'admin_post_sellmo_wc_save_settings', [ $this, 'handle_save_settings' ] );
+		add_action( 'admin_post_sellmo_wc_clear_logs',    [ $this, 'handle_clear_logs' ] );
+		add_action( 'admin_post_sellmo_wc_export_logs',   [ $this, 'handle_export_logs' ] );
+		add_action( 'admin_notices', [ $this, 'admin_notices' ] );
+		add_action( 'admin_enqueue_scripts', [ $this, 'localize_scripts' ], 20 );
+
+		add_action( 'wp_ajax_sellmo_wc_test_connection',  [ $this, 'ajax_test_connection' ] );
+		add_action( 'wp_ajax_sellmo_wc_get_shops',        [ $this, 'ajax_get_shops' ] );
+		add_action( 'wp_ajax_sellmo_wc_get_categories',   [ $this, 'ajax_get_categories' ] );
+		add_action( 'wp_ajax_run_salesplay_sync',         [ $this, 'ajax_sync_products_now' ] );
+		add_action( 'wp_ajax_sellmo_wc_sync_products_now', [ $this, 'ajax_sync_products_now' ] );
+		add_action( 'wp_ajax_sellmo_wc_sync_stock_now',    [ $this, 'ajax_sync_stock_now' ] );
+
+		add_action( 'wp_ajax_sellmo_wc_get_products_list', [ $this, 'ajax_get_products_list' ] );
+		add_action( 'wp_ajax_sellmo_wc_refresh_products',  [ $this, 'ajax_refresh_products' ] );
+		add_action( 'wp_ajax_sellmo_wc_import_product',    [ $this, 'ajax_import_product' ] );
+		add_action( 'wp_ajax_sellmo_wc_toggle_sync',       [ $this, 'ajax_toggle_sync' ] );
+		add_action( 'wp_ajax_sellmo_wc_bulk_products',     [ $this, 'ajax_bulk_products' ] );
+	}
+
+	// -------------------------------------------------------------------------
+	// Menu registration
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Register the top-level admin menu and all sub-pages.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function register_menus(): void {
+		add_menu_page(
+			__( 'Sellmo POS', 'sellmo-woocommerce' ),
+			__( 'Sellmo POS', 'sellmo-woocommerce' ),
+			'manage_woocommerce',
+			'sellmo-pos',
+			[ $this, 'page_dashboard' ],
+			'dashicons-store',
+			56
+		);
+
+		// The first add_submenu_page renames the auto-created "Sellmo POS" entry.
+		add_submenu_page(
+			'sellmo-pos',
+			__( 'Dashboard — Sellmo POS', 'sellmo-woocommerce' ),
+			__( 'Dashboard', 'sellmo-woocommerce' ),
+			'manage_woocommerce',
+			'sellmo-pos',
+			[ $this, 'page_dashboard' ]
+		);
+
+		add_submenu_page(
+			'sellmo-pos',
+			__( 'Settings — Sellmo POS', 'sellmo-woocommerce' ),
+			__( 'Settings', 'sellmo-woocommerce' ),
+			'manage_woocommerce',
+			'sellmo-settings',
+			[ $this, 'page_settings' ]
+		);
+
+		add_submenu_page(
+			'sellmo-pos',
+			__( 'Products — Sellmo POS', 'sellmo-woocommerce' ),
+			__( 'Products', 'sellmo-woocommerce' ),
+			'manage_woocommerce',
+			'sellmo-products',
+			[ $this, 'page_products' ]
+		);
+
+		add_submenu_page(
+			'sellmo-pos',
+			__( 'Sync Log — Sellmo POS', 'sellmo-woocommerce' ),
+			__( 'Sync Log', 'sellmo-woocommerce' ),
+			'manage_woocommerce',
+			'sellmo-sync-log',
+			[ $this, 'page_sync_log' ]
+		);
+	}
+
+	// -------------------------------------------------------------------------
+	// Page callbacks
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Render the Dashboard page.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function page_dashboard(): void {
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'You do not have permission to access this page.', 'sellmo-woocommerce' ) );
+		}
+		require_once SELLMO_WC_PATH . 'admin/views/page-dashboard.php';
+	}
+
+	/**
+	 * Render the Settings page.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function page_settings(): void {
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'You do not have permission to access this page.', 'sellmo-woocommerce' ) );
+		}
+		require_once SELLMO_WC_PATH . 'admin/views/page-settings.php';
+	}
+
+	/**
+	 * Render the Products page.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function page_products(): void {
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'You do not have permission to access this page.', 'sellmo-woocommerce' ) );
+		}
+		require_once SELLMO_WC_PATH . 'admin/views/page-products.php';
+	}
+
+	/**
+	 * Render the Sync Log page.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function page_sync_log(): void {
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'You do not have permission to access this page.', 'sellmo-woocommerce' ) );
+		}
+		require_once SELLMO_WC_PATH . 'admin/views/page-sync-log.php';
+	}
+
+	// -------------------------------------------------------------------------
+	// Settings save handler
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Process the settings form submission.
+	 *
+	 * Verifies nonce and capability before sanitising and persisting each field.
+	 * The API token is never overwritten with an empty value — leave blank to keep
+	 * the existing token. Redirects back to the Settings page on completion.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function handle_save_settings(): void {
+		check_admin_referer( 'sellmo_wc_save_settings', 'sellmo_wc_settings_nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'You do not have permission to save these settings.', 'sellmo-woocommerce' ) );
+		}
+
+		// API token — only update if a value was submitted.
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitized below.
+		$api_token     = sanitize_text_field( wp_unslash( $_POST['sellmo_wc_api_token'] ?? '' ) );
+		$token_changed = false;
+		if ( '' !== $api_token ) {
+			Sellmo_Settings::set( 'api_token', $api_token );
+			$token_changed = true;
+		}
+
+		// Shop ID — clear product cache when the selected shop changes.
+		$old_shop_id = (string) ( Sellmo_Settings::get( 'shop_id' ) ?: '' );
+		$new_shop_id = sanitize_text_field( wp_unslash( $_POST['sellmo_wc_shop_id'] ?? '' ) );
+		Sellmo_Settings::set( 'shop_id', $new_shop_id );
+		if ( $new_shop_id !== $old_shop_id ) {
+			$this->clear_products_cache();
+		}
+
+		// Feature toggles — unchecked checkboxes are absent from POST, so default to 'no'.
+		Sellmo_Settings::set( 'product_sync_enabled', isset( $_POST['sellmo_wc_product_sync_enabled'] ) ? 'yes' : 'no' );
+		Sellmo_Settings::set( 'stock_sync_enabled',   isset( $_POST['sellmo_wc_stock_sync_enabled'] )   ? 'yes' : 'no' );
+		Sellmo_Settings::set( 'order_sync_enabled',   isset( $_POST['sellmo_wc_order_sync_enabled'] )   ? 'yes' : 'no' );
+
+		// Sync intervals — validate against allowed values.
+		$stock_interval = sanitize_key( wp_unslash( $_POST['sellmo_wc_stock_sync_interval'] ?? '' ) );
+		if ( in_array( $stock_interval, [ 'hourly', 'twicedaily', 'daily' ], true ) ) {
+			Sellmo_Settings::set( 'stock_sync_interval', $stock_interval );
+		}
+
+		$product_interval = sanitize_key( wp_unslash( $_POST['sellmo_wc_product_sync_interval'] ?? '' ) );
+		if ( in_array( $product_interval, [ 'twicedaily', 'daily' ], true ) ) {
+			Sellmo_Settings::set( 'product_sync_interval', $product_interval );
+		}
+
+		// Category filter — array of IDs (stored as strings to match API responses).
+		$raw_cats      = isset( $_POST['sellmo_wc_sync_categories'] ) ? (array) $_POST['sellmo_wc_sync_categories'] : [];
+		$sync_cats     = array_values( array_filter( array_map( 'sanitize_text_field', array_map( 'wp_unslash', $raw_cats ) ) ) );
+		Sellmo_Settings::set( 'sync_categories', $sync_cats );
+
+		// Terminal key — populated by JS from the selected shop's terminal list.
+		Sellmo_Settings::set( 'terminal_key', sanitize_text_field( wp_unslash( $_POST['sellmo_wc_terminal_key'] ?? '' ) ) );
+
+		// Webhook secret — only update if a value was submitted.
+		$webhook_secret = sanitize_text_field( wp_unslash( $_POST['sellmo_wc_webhook_secret'] ?? '' ) );
+		if ( '' !== $webhook_secret ) {
+			Sellmo_Settings::set( 'webhook_secret', $webhook_secret );
+		}
+
+		// Auto-test the connection whenever a new API token is provided.
+		$conn_status = '';
+		if ( $token_changed ) {
+			$api  = new Sellmo_API();
+			$test = $api->get_shops();
+			if ( is_wp_error( $test ) ) {
+				Sellmo_Settings::set( 'connection_status', [
+					'success' => false,
+					'time'    => time(),
+					'message' => $test->get_error_message(),
+				] );
+				$conn_status = 'fail';
+			} else {
+				Sellmo_Settings::set( 'connection_status', [
+					'success' => true,
+					'time'    => time(),
+					'message' => '',
+				] );
+				$conn_status = 'ok';
+			}
+		}
+
+		$redirect_args = [
+			'page'         => 'sellmo-settings',
+			'sellmo_saved' => '1',
+		];
+		if ( '' !== $conn_status ) {
+			$redirect_args['sellmo_conn'] = $conn_status;
+		}
+
+		wp_safe_redirect( add_query_arg( $redirect_args, admin_url( 'admin.php' ) ) );
+		exit;
+	}
+
+	/**
+	 * Handle the Clear All Logs form submission.
+	 *
+	 * Truncates the sync log table and redirects back to the Sync Log page
+	 * with a success notice query arg.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function handle_clear_logs(): void {
+		check_admin_referer( 'sellmo_wc_clear_logs', 'sellmo_wc_log_nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'You do not have permission to clear the sync log.', 'sellmo-woocommerce' ) );
+		}
+
+		Sellmo_Logger::clear_all();
+
+		wp_safe_redirect(
+			add_query_arg(
+				[
+					'page'               => 'sellmo-sync-log',
+					'sellmo_log_cleared' => '1',
+				],
+				admin_url( 'admin.php' )
+			)
+		);
+		exit;
+	}
+
+	/**
+	 * Handle the Export as CSV form submission.
+	 *
+	 * Fetches all log entries matching the submitted filters (no pagination),
+	 * outputs CSV headers and content, then exits — no redirect.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function handle_export_logs(): void {
+		check_admin_referer( 'sellmo_wc_export_logs', 'sellmo_wc_export_nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'You do not have permission to export the sync log.', 'sellmo-woocommerce' ) );
+		}
+
+		$filter_type   = sanitize_key(        wp_unslash( $_POST['filter_type']   ?? '' ) );
+		$filter_status = sanitize_key(        wp_unslash( $_POST['filter_status'] ?? '' ) );
+		$filter_from   = sanitize_text_field( wp_unslash( $_POST['filter_from']   ?? '' ) );
+		$filter_to     = sanitize_text_field( wp_unslash( $_POST['filter_to']     ?? '' ) );
+
+		$filter_from = preg_match( '/^\d{4}-\d{2}-\d{2}$/', $filter_from ) ? $filter_from : '';
+		$filter_to   = preg_match( '/^\d{4}-\d{2}-\d{2}$/', $filter_to )   ? $filter_to   : '';
+
+		$result = Sellmo_Logger::get_logs( [
+			'type'      => $filter_type,
+			'status'    => $filter_status,
+			'date_from' => $filter_from,
+			'date_to'   => $filter_to,
+			'per_page'  => 100000,
+			'paged'     => 1,
+		] );
+
+		$filename = 'sellmo-sync-log-' . gmdate( 'Y-m-d' ) . '.csv';
+
+		header( 'Content-Type: text/csv; charset=utf-8' );
+		header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
+		header( 'Pragma: no-cache' );
+		header( 'Expires: 0' );
+
+		$out = fopen( 'php://output', 'w' );
+
+		// BOM for Excel UTF-8 compatibility.
+		fputs( $out, "\xEF\xBB\xBF" ); // phpcs:ignore WordPress.WP.AlternativeFunctions
+
+		fputcsv( $out, [ 'ID', 'Date / Time (UTC)', 'Type', 'Direction', 'Status', 'Item', 'Message' ] );
+
+		foreach ( $result['items'] as $row ) {
+			fputcsv( $out, [
+				(string) ( $row['id']         ?? '' ),
+				(string) ( $row['created_at'] ?? '' ),
+				(string) ( $row['sync_type']  ?? '' ),
+				(string) ( $row['direction']  ?? '' ),
+				(string) ( $row['status']     ?? '' ),
+				(string) ( $row['item_id']    ?? '' ),
+				(string) ( $row['message']    ?? '' ),
+			] );
+		}
+
+		fclose( $out ); // phpcs:ignore WordPress.WP.AlternativeFunctions
+		exit;
+	}
+
+	// -------------------------------------------------------------------------
+	// Admin notices
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Display success or error admin notices on Sellmo pages.
+	 *
+	 * Reads ?sellmo_saved=1 for a success message. Only renders on pages
+	 * belonging to this plugin (hook ID contains 'sellmo').
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function admin_notices(): void {
+		$screen = get_current_screen();
+		if ( null === $screen || ! str_contains( $screen->id, 'sellmo' ) ) {
+			return;
+		}
+
+		// DB error (e.g. sync log table creation failed due to MySQL strict mode).
+		$db_error = get_option( 'sellmo_wc_db_error' );
+		if ( $db_error ) {
+			echo '<div class="notice notice-error"><p>' .
+				'<strong>' . esc_html__( 'Sellmo POS — Database error:', 'sellmo-woocommerce' ) . '</strong> ' .
+				esc_html( (string) $db_error ) .
+				'</p></div>';
+		}
+
+		// Persistent warning: no API token configured.
+		if ( '' === (string) Sellmo_Settings::get( 'api_token' ) ) {
+			$settings_url = admin_url( 'admin.php?page=sellmo-settings' );
+			echo '<div class="notice notice-warning"><p>';
+			printf(
+				/* translators: %s: link to the Settings page */
+				wp_kses(
+					__( 'Sellmo POS: No API token configured. <a href="%s">Go to Settings</a> to add your token.', 'sellmo-woocommerce' ),
+					[ 'a' => [ 'href' => [] ] ]
+				),
+				esc_url( $settings_url )
+			);
+			echo '</p></div>';
+		}
+
+		// Warning: webhook secret is shorter than 32 characters.
+		$wh_secret = (string) ( Sellmo_Settings::get( 'webhook_secret' ) ?: '' );
+		if ( '' !== $wh_secret && mb_strlen( $wh_secret ) < 32 ) {
+			echo '<div class="notice notice-warning is-dismissible"><p>' .
+				esc_html__( 'Sellmo POS: Your webhook secret is shorter than 32 characters. Use the Generate button on the Settings page to create a secure secret.', 'sellmo-woocommerce' ) .
+				'</p></div>';
+		}
+
+		if ( '1' === sanitize_key( $_GET['sellmo_saved'] ?? '' ) ) {
+			$conn = sanitize_key( $_GET['sellmo_conn'] ?? '' );
+
+			if ( 'ok' === $conn ) {
+				echo '<div class="notice notice-success is-dismissible"><p>' .
+					esc_html__( 'Settings saved. API connection verified successfully.', 'sellmo-woocommerce' ) .
+					'</p></div>';
+			} elseif ( 'fail' === $conn ) {
+				$conn_data = (array) ( Sellmo_Settings::get( 'connection_status' ) ?: [] );
+				$err_msg   = (string) ( $conn_data['message'] ?? '' );
+				echo '<div class="notice notice-warning is-dismissible"><p>' .
+					esc_html__( 'Settings saved, but the API connection test failed.', 'sellmo-woocommerce' );
+				if ( '' !== $err_msg ) {
+					echo ' ' . esc_html( $err_msg );
+				}
+				echo '</p></div>';
+			} else {
+				echo '<div class="notice notice-success is-dismissible"><p>' .
+					esc_html__( 'Settings saved.', 'sellmo-woocommerce' ) .
+					'</p></div>';
+			}
+		}
+
+		if ( '1' === sanitize_key( $_GET['sellmo_log_cleared'] ?? '' ) ) {
+			echo '<div class="notice notice-success is-dismissible"><p>' .
+				esc_html__( 'Sync log cleared.', 'sellmo-woocommerce' ) .
+				'</p></div>';
+		}
+	}
+
+	// -------------------------------------------------------------------------
+	// Script localisation
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Localise admin JS with AJAX URL, nonce, and saved state.
+	 *
+	 * Runs at priority 20 — after Sellmo_Plugin::admin_assets() enqueues the
+	 * script at the default priority 10.
+	 *
+	 * @since  1.0.0
+	 * @param  string $hook Current admin page hook suffix.
+	 * @return void
+	 */
+	public function localize_scripts( string $hook ): void {
+		if ( ! str_contains( $hook, 'sellmo' ) ) {
+			return;
+		}
+
+		$saved_cats = (array) ( Sellmo_Settings::get( 'sync_categories' ) ?: [] );
+
+		wp_localize_script(
+			'sellmo-admin',
+			'sellmoAdmin',
+			[
+				'ajaxUrl'         => admin_url( 'admin-ajax.php' ),
+				'nonce'           => wp_create_nonce( 'sellmo_wc_admin' ),
+				'hasToken'        => '' !== (string) Sellmo_Settings::get( 'api_token' ),
+				'savedShopId'     => (string) ( Sellmo_Settings::get( 'shop_id' ) ?: '' ),
+				'savedCategories' => array_map( 'strval', $saved_cats ),
+				'currencySymbol'  => function_exists( 'get_woocommerce_currency_symbol' )
+					? get_woocommerce_currency_symbol()
+					: '',
+				'i18n'            => [
+					'show'              => __( 'Show', 'sellmo-woocommerce' ),
+					'hide'              => __( 'Hide', 'sellmo-woocommerce' ),
+					'testBtn'           => __( 'Test Connection', 'sellmo-woocommerce' ),
+					'testing'           => __( 'Testing…', 'sellmo-woocommerce' ),
+					'connected'         => __( 'Connected', 'sellmo-woocommerce' ),
+					'disconnected'      => __( 'Not connected', 'sellmo-woocommerce' ),
+					'secretGenerated'   => __( 'New secret generated. Save settings to apply.', 'sellmo-woocommerce' ),
+					'loadingShops'      => __( 'Loading shops…', 'sellmo-woocommerce' ),
+					'loadingCats'       => __( 'Loading categories…', 'sellmo-woocommerce' ),
+					'syncing'           => __( 'Syncing…', 'sellmo-woocommerce' ),
+					'syncProducts'      => __( 'Sync Products Now', 'sellmo-woocommerce' ),
+					'syncStock'         => __( 'Sync Stock Now', 'sellmo-woocommerce' ),
+					'syncError'         => __( 'Sync failed. Please try again.', 'sellmo-woocommerce' ),
+					// Products page.
+					'variants'          => __( 'variants', 'sellmo-woocommerce' ),
+					'wcLinked'          => __( 'Linked', 'sellmo-woocommerce' ),
+					'wcSyncDisabled'    => __( 'Sync disabled', 'sellmo-woocommerce' ),
+					'wcNotImported'     => __( 'Not imported', 'sellmo-woocommerce' ),
+					'importProduct'     => __( 'Import to WooCommerce', 'sellmo-woocommerce' ),
+					'importing'         => __( 'Importing…', 'sellmo-woocommerce' ),
+					'importError'       => __( 'Import failed. Please try again.', 'sellmo-woocommerce' ),
+					'viewInWC'          => __( 'View in WC', 'sellmo-woocommerce' ),
+					'edit'              => __( 'Edit', 'sellmo-woocommerce' ),
+					'toggleSync'        => __( 'Toggle sync', 'sellmo-woocommerce' ),
+					'importFirst'       => __( 'Import this product first to enable sync', 'sellmo-woocommerce' ),
+					'loadError'         => __( 'Failed to load products. Please try again.', 'sellmo-woocommerce' ),
+					'noProducts'        => __( 'No products found.', 'sellmo-woocommerce' ),
+					'bulkError'         => __( 'Bulk action failed. Please try again.', 'sellmo-woocommerce' ),
+					'selectBulkAction'  => __( 'Please select a bulk action.', 'sellmo-woocommerce' ),
+					'selectProducts'    => __( 'Please select at least one product.', 'sellmo-woocommerce' ),
+					'of'                => __( 'of', 'sellmo-woocommerce' ),
+				],
+			]
+		);
+	}
+
+	// -------------------------------------------------------------------------
+	// AJAX handlers
+	// -------------------------------------------------------------------------
+
+	/**
+	 * AJAX: test the saved API token by calling GET /shops.
+	 *
+	 * Returns JSON success with a confirmation message, or JSON error with the
+	 * API error message. The token is never included in the response.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function ajax_test_connection(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$api    = new Sellmo_API();
+		$result = $api->get_shops();
+
+		if ( is_wp_error( $result ) ) {
+			Sellmo_Settings::set( 'connection_status', [
+				'success' => false,
+				'time'    => time(),
+				'message' => $result->get_error_message(),
+			] );
+			wp_send_json_error( [ 'message' => $result->get_error_message() ] );
+		}
+
+		Sellmo_Settings::set( 'connection_status', [
+			'success' => true,
+			'time'    => time(),
+			'message' => '',
+		] );
+		wp_send_json_success( [ 'message' => __( 'Connection successful.', 'sellmo-woocommerce' ) ] );
+	}
+
+	/**
+	 * AJAX: fetch shops from the Sellmo API for the shop dropdown.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function ajax_get_shops(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$api    = new Sellmo_API();
+		$result = $api->get_shops();
+
+		if ( is_wp_error( $result ) ) {
+			wp_send_json_error( [ 'message' => $result->get_error_message() ] );
+		}
+
+		// Normalise to a flat array; include the first terminal's pos_key so the
+		// JS can keep the hidden sellmo_wc_terminal_key input in sync.
+		$shops = [];
+		foreach ( (array) ( $result['shops'] ?? [] ) as $shop ) {
+			$terminal_list = isset( $shop['terminal_list'] ) && is_array( $shop['terminal_list'] )
+				? $shop['terminal_list']
+				: [];
+			$shops[] = [
+				'id'           => (string) ( $shop['id'] ?? '' ),
+				'name'         => (string) ( $shop['shop_name'] ?? $shop['id'] ?? '' ),
+				'terminal_key' => (string) ( $terminal_list[0]['pos_key'] ?? '' ),
+			];
+		}
+
+		wp_send_json_success( $shops );
+	}
+
+	/**
+	 * AJAX: fetch categories from the Sellmo API for the category multi-select.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function ajax_get_categories(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		// Derive unique category names from the cached products list.
+		// The Sellmo API returns category as a flat string on each product.
+		$all_products = $this->get_all_sellmo_products();
+
+		if ( is_wp_error( $all_products ) ) {
+			wp_send_json_error( [ 'message' => $all_products->get_error_message() ] );
+		}
+
+		$seen = [];
+
+		foreach ( $all_products as $product ) {
+			$cat = (string) ( $product['category'] ?? '' );
+
+			if ( '' !== $cat ) {
+				$seen[ $cat ] = true;
+			}
+		}
+
+		ksort( $seen );
+
+		$categories = array_map(
+			fn( string $name ): array => [ 'name' => $name ],
+			array_keys( $seen )
+		);
+
+		wp_send_json_success( $categories );
+	}
+
+	/**
+	 * AJAX: trigger a manual product sync.
+	 *
+	 * Delegates to Sellmo_Product_Sync::run_manual_sync(), persists the result
+	 * as sellmo_wc_last_product_sync, and returns JSON with a summary message.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function ajax_sync_products_now(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$sync   = new Sellmo_Product_Sync();
+		$result = $sync->run_ajax_trace_sync();
+
+		$meta = [
+			'time'   => time(),
+			'status' => $result['success'] ? 'success' : 'error',
+			'count'  => (int) ( $result['count'] ?? 0 ),
+		];
+		Sellmo_Settings::set( 'last_product_sync', $meta );
+
+		if ( $result['success'] ) {
+			wp_send_json_success( [
+				'message' => sprintf(
+					/* translators: %d: number of products synced */
+					__( 'Product sync complete. %d products synced.', 'sellmo-woocommerce' ),
+					$meta['count']
+				),
+				'trace'   => isset( $result['trace'] ) && is_array( $result['trace'] ) ? $result['trace'] : [],
+			] );
+		}
+
+		wp_send_json_error( [
+			'message' => (string) ( $result['message'] ?? __( 'Product sync failed.', 'sellmo-woocommerce' ) ),
+			'trace'   => isset( $result['trace'] ) && is_array( $result['trace'] ) ? $result['trace'] : [],
+			'error'   => isset( $result['error'] ) && is_array( $result['error'] ) ? $result['error'] : [],
+		] );
+	}
+
+	/**
+	 * AJAX: trigger a manual stock sync.
+	 *
+	 * Delegates to Sellmo_Stock_Sync::run_manual_sync(), persists the result
+	 * as sellmo_wc_last_stock_sync, and returns JSON with a summary message.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function ajax_sync_stock_now(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$sync   = new Sellmo_Stock_Sync();
+		$result = $sync->run_manual_sync();
+
+		$meta = [
+			'time'   => time(),
+			'status' => $result['success'] ? 'success' : 'error',
+			'count'  => (int) ( $result['count'] ?? 0 ),
+		];
+		Sellmo_Settings::set( 'last_stock_sync', $meta );
+
+		if ( $result['success'] ) {
+			wp_send_json_success( [
+				'message' => sprintf(
+					/* translators: %d: number of stock items synced */
+					__( 'Stock sync complete. %d items synced.', 'sellmo-woocommerce' ),
+					$meta['count']
+				),
+			] );
+		}
+
+		wp_send_json_error( [
+			'message' => (string) ( $result['message'] ?? __( 'Stock sync failed.', 'sellmo-woocommerce' ) ),
+		] );
+	}
+
+	/**
+	 * AJAX: return a paginated, WC-enriched slice of the Sellmo product catalogue.
+	 *
+	 * Fetches all products from the API (or from a 5-minute transient cache),
+	 * applies an optional category filter, then returns 25 products per page
+	 * with WC link status, sync toggle state, and edit URL for each product.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function ajax_get_products_list(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$page       = max( 1, absint( $_POST['page'] ?? 1 ) );
+		$per_page   = 25;
+		$cat_filter = sanitize_text_field( wp_unslash( $_POST['category'] ?? '' ) );
+
+		$all_products = $this->get_all_sellmo_products();
+
+		if ( is_wp_error( $all_products ) ) {
+			wp_send_json_error( [ 'message' => $all_products->get_error_message() ] );
+		}
+
+		// Apply category filter. The API returns category as a flat name string.
+		if ( '' !== $cat_filter ) {
+			$all_products = array_values(
+				array_filter(
+					$all_products,
+					function ( array $p ) use ( $cat_filter ): bool {
+						return (string) ( $p['category'] ?? '' ) === $cat_filter;
+					}
+				)
+			);
+		}
+
+		$total       = count( $all_products );
+		$total_pages = (int) ceil( $total / $per_page );
+		$offset      = ( $page - 1 ) * $per_page;
+		$page_slice  = array_slice( $all_products, $offset, $per_page );
+
+		$wc_map   = $this->get_wc_product_map();
+		$enriched = [];
+
+		foreach ( $page_slice as $product ) {
+			$code = (string) ( $product['product_code'] ?? '' );
+			$wc   = $wc_map[ $code ] ?? null;
+
+			// category is a flat string (e.g. "Rocket Fuel").
+			$category = (string) ( $product['category'] ?? '' );
+
+			// Price lives inside the shops array; use the first shop entry.
+			$shops = isset( $product['shops'] ) && is_array( $product['shops'] ) ? $product['shops'] : [];
+			$price = (float) ( $shops[0]['price'] ?? 0 );
+
+			// image_url is the actual API field (empty string when no image).
+			$image_url = (string) ( $product['image_url'] ?? '' );
+
+			$variant_count = isset( $product['variants'] ) && is_array( $product['variants'] )
+				? count( $product['variants'] )
+				: 0;
+
+			$wc_status = 'not_imported';
+			$wc_id     = 0;
+			$edit_url  = '';
+
+			if ( $wc ) {
+				$wc_id     = $wc['id'];
+				$edit_url  = (string) get_edit_post_link( $wc_id, 'raw' );
+				$wc_status = 'yes' === $wc['sync_enabled'] ? 'linked' : 'sync_disabled';
+			}
+
+			$enriched[] = [
+				'product_code'  => $code,
+				'product_name'  => (string) ( $product['product_name'] ?? '' ),
+				'category'      => $category,
+				'price'         => $price,
+				'image_url'     => $image_url,
+				'variant_count' => $variant_count,
+				'wc_id'         => $wc_id,
+				'wc_status'     => $wc_status,
+				'wc_edit_url'   => $edit_url,
+				'sync_enabled'  => $wc && 'yes' === $wc['sync_enabled'],
+			];
+		}
+
+		wp_send_json_success( [
+			'products'     => $enriched,
+			'total'        => $total,
+			'pages'        => max( 1, $total_pages ),
+			'current_page' => $page,
+			'per_page'     => $per_page,
+		] );
+	}
+
+	/**
+	 * AJAX: clear the products transient cache and return a success message.
+	 *
+	 * Deletes both the admin full-catalogue cache and all per-cursor page
+	 * caches stored by Sellmo_API::get_products() so the next products list
+	 * request fetches fresh data from the Sellmo API.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function ajax_refresh_products(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$this->clear_products_cache();
+
+		wp_send_json_success( [ 'message' => __( 'Cache cleared. Reloading products…', 'sellmo-woocommerce' ) ] );
+	}
+
+	/**
+	 * AJAX: import a single Sellmo product into WooCommerce.
+	 *
+	 * Finds the product in the cached catalogue by product_code, delegates to
+	 * Sellmo_Product_Sync::import_product(), and returns the new WC product ID
+	 * and edit URL so the JS can update the table row inline.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function ajax_import_product(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$product_code = sanitize_text_field( wp_unslash( $_POST['product_code'] ?? '' ) );
+
+		if ( '' === $product_code ) {
+			wp_send_json_error( [ 'message' => __( 'Invalid product code.', 'sellmo-woocommerce' ) ] );
+		}
+
+		if ( $this->find_wc_product_id_by_code( $product_code ) > 0 ) {
+			wp_send_json_error( [ 'message' => __( 'Product is already imported.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$all_products = $this->get_all_sellmo_products();
+
+		if ( is_wp_error( $all_products ) ) {
+			wp_send_json_error( [ 'message' => $all_products->get_error_message() ] );
+		}
+
+		$sellmo_product = null;
+		foreach ( $all_products as $p ) {
+			if ( (string) ( $p['product_code'] ?? '' ) === $product_code ) {
+				$sellmo_product = $p;
+				break;
+			}
+		}
+
+		if ( null === $sellmo_product ) {
+			wp_send_json_error( [ 'message' => __( 'Product not found in Sellmo catalogue.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$sync   = new Sellmo_Product_Sync();
+		$new_id = $sync->import_product( $sellmo_product );
+
+		if ( 0 === $new_id ) {
+			wp_send_json_error( [
+				'message' => __( 'Import failed. Check the Sync Log for details.', 'sellmo-woocommerce' ),
+			] );
+		}
+
+		wp_send_json_success( [
+			'wc_id'    => $new_id,
+			'edit_url' => (string) get_edit_post_link( $new_id, 'raw' ),
+			'message'  => __( 'Product imported successfully.', 'sellmo-woocommerce' ),
+		] );
+	}
+
+	/**
+	 * AJAX: set or clear the _sellmo_sync_enabled meta on a linked WC product.
+	 *
+	 * Only operates on products that already have a matching _sellmo_product_code
+	 * meta value. Toggling a product that has not been imported returns an error.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function ajax_toggle_sync(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$product_code = sanitize_text_field( wp_unslash( $_POST['product_code'] ?? '' ) );
+		$enabled      = filter_var( wp_unslash( $_POST['enabled'] ?? '' ), FILTER_VALIDATE_BOOLEAN );
+
+		if ( '' === $product_code ) {
+			wp_send_json_error( [ 'message' => __( 'Invalid product code.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$product_id = $this->find_wc_product_id_by_code( $product_code );
+
+		if ( 0 === $product_id ) {
+			wp_send_json_error( [
+				'message' => __( 'No linked WooCommerce product found for this code.', 'sellmo-woocommerce' ),
+			] );
+		}
+
+		update_post_meta( $product_id, '_sellmo_sync_enabled', $enabled ? 'yes' : 'no' );
+
+		wp_send_json_success( [ 'sync_enabled' => $enabled ] );
+	}
+
+	/**
+	 * AJAX: apply a bulk action to a set of Sellmo product codes.
+	 *
+	 * Accepted actions:
+	 *   enable_sync  — set _sellmo_sync_enabled = 'yes' on matched WC products.
+	 *   disable_sync — set _sellmo_sync_enabled = 'no' on matched WC products.
+	 *   import       — call Sellmo_Product_Sync::import_product() for each code
+	 *                  that does not yet have a matching WC product.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function ajax_bulk_products(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$action = sanitize_key( wp_unslash( $_POST['bulk_action'] ?? '' ) );
+		$raw    = isset( $_POST['codes'] ) ? (array) $_POST['codes'] : [];
+		$codes  = array_values(
+			array_filter( array_map( 'sanitize_text_field', array_map( 'wp_unslash', $raw ) ) )
+		);
+
+		if ( '' === $action || empty( $codes ) ) {
+			wp_send_json_error( [ 'message' => __( 'No action or products selected.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$processed = 0;
+		$errors    = 0;
+
+		if ( 'enable_sync' === $action || 'disable_sync' === $action ) {
+			$value = 'enable_sync' === $action ? 'yes' : 'no';
+
+			foreach ( $codes as $code ) {
+				$product_id = $this->find_wc_product_id_by_code( $code );
+				if ( $product_id > 0 ) {
+					update_post_meta( $product_id, '_sellmo_sync_enabled', $value );
+					$processed++;
+				}
+			}
+		} elseif ( 'import' === $action ) {
+			set_time_limit( 120 );
+
+			$all_products = $this->get_all_sellmo_products();
+
+			if ( is_wp_error( $all_products ) ) {
+				wp_send_json_error( [ 'message' => $all_products->get_error_message() ] );
+			}
+
+			// Index the full catalogue by product_code for O(1) lookup.
+			$indexed = [];
+			foreach ( $all_products as $p ) {
+				$c = (string) ( $p['product_code'] ?? '' );
+				if ( '' !== $c ) {
+					$indexed[ $c ] = $p;
+				}
+			}
+
+			$sync = new Sellmo_Product_Sync();
+
+			foreach ( $codes as $code ) {
+				if ( $this->find_wc_product_id_by_code( $code ) > 0 ) {
+					// Already imported — count as processed, not error.
+					$processed++;
+					continue;
+				}
+
+				if ( ! isset( $indexed[ $code ] ) ) {
+					$errors++;
+					continue;
+				}
+
+				$new_id = $sync->import_product( $indexed[ $code ] );
+				if ( $new_id > 0 ) {
+					$processed++;
+				} else {
+					$errors++;
+				}
+			}
+		}
+
+		wp_send_json_success( [
+			'processed' => $processed,
+			'errors'    => $errors,
+			'message'   => sprintf(
+				/* translators: %d: number of products processed */
+				_n(
+					'%d product processed.',
+					'%d products processed.',
+					$processed,
+					'sellmo-woocommerce'
+				),
+				$processed
+			),
+		] );
+	}
+
+	// -------------------------------------------------------------------------
+	// Private helpers (products page)
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Fetch and cache the complete Sellmo product catalogue.
+	 *
+	 * Pages through Sellmo_API::get_products() until all products are collected
+	 * (max 20 pages × 250 items = 5,000 products). The flat array is cached in
+	 * the 'sellmo_wc_products_cache' transient for 5 minutes.
+	 *
+	 * @since  1.0.0
+	 * @return array<int, array<string, mixed>>|WP_Error
+	 */
+	private function get_all_sellmo_products(): array|\WP_Error {
+		$cached = get_transient( 'sellmo_wc_products_cache' );
+
+		if ( false !== $cached && is_array( $cached ) ) {
+			return $cached;
+		}
+
+		$api       = new Sellmo_API();
+		$cursor    = '';
+		$page      = 0;
+		$max_pages = 20;
+		$products  = [];
+
+		do {
+			$page++;
+			$response = $api->get_products( $cursor );
+
+			if ( is_wp_error( $response ) ) {
+				return $response;
+			}
+
+			$items = $this->extract_items_from_response( $response );
+
+			if ( empty( $items ) ) {
+				break;
+			}
+
+			$products = array_merge( $products, $items );
+
+			$cursor = $this->extract_cursor_from_response( $response );
+
+			if ( '' === $cursor ) {
+				break;
+			}
+
+		} while ( $page < $max_pages );
+
+		set_transient( 'sellmo_wc_products_cache', $products, 5 * MINUTE_IN_SECONDS );
+
+		return $products;
+	}
+
+	/**
+	 * Build a map of Sellmo product_code → WC product data.
+	 *
+	 * Uses a single JOIN query to retrieve both the product code and sync status
+	 * for all WC products (not variations) linked to Sellmo. This avoids N+1
+	 * queries when enriching a page of products.
+	 *
+	 * @since  1.0.0
+	 * @return array<string, array{ id: int, sync_enabled: string }>
+	 */
+	private function get_wc_product_map(): array {
+		global $wpdb;
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT p.ID,
+						pm.meta_value AS sellmo_code,
+						sku.meta_value AS sku_code,
+						ps.meta_value AS sync_enabled
+				 FROM {$wpdb->posts} p
+				 LEFT JOIN {$wpdb->postmeta} pm
+				        ON pm.post_id = p.ID AND pm.meta_key = %s
+				 LEFT JOIN {$wpdb->postmeta} sku
+				        ON sku.post_id = p.ID AND sku.meta_key = %s
+				 LEFT JOIN {$wpdb->postmeta} ps
+				        ON ps.post_id = p.ID AND ps.meta_key = %s
+				 WHERE p.post_type = 'product'
+				   AND p.post_status IN ('publish', 'private')
+				   AND (pm.meta_value IS NOT NULL OR sku.meta_value IS NOT NULL)",
+				'_sellmo_product_code',
+				'_sku',
+				'_sellmo_sync_enabled'
+			),
+			ARRAY_A
+		);
+
+		$map = [];
+
+		foreach ( (array) $rows as $row ) {
+			$sellmo_code = (string) ( $row['sellmo_code'] ?? '' );
+			$sku_code    = (string) ( $row['sku_code'] ?? '' );
+			$code        = '' !== $sellmo_code ? $sellmo_code : $sku_code;
+
+			if ( '' !== $code ) {
+				if ( isset( $map[ $code ] ) && '' === $sellmo_code ) {
+					continue;
+				}
+
+				$map[ $code ] = [
+					'id'           => (int) $row['ID'],
+					'sync_enabled' => (string) ( $row['sync_enabled'] ?? '' ),
+				];
+			}
+		}
+
+		return $map;
+	}
+
+	/**
+	 * Find a WC product post ID by Sellmo product_code meta value.
+	 *
+	 * Searches both 'product' and 'product_variation' post types so that
+	 * variant codes can also be resolved (e.g. for the toggle_sync handler).
+	 *
+	 * @since  1.0.0
+	 * @param  string $code Sellmo product_code.
+	 * @return int          WC post ID, or 0 if not found.
+	 */
+	private function find_wc_product_id_by_code( string $code ): int {
+		if ( '' === $code ) {
+			return 0;
+		}
+
+		$query = new WP_Query( [
+			'post_type'      => [ 'product', 'product_variation' ],
+			'post_status'    => [ 'publish', 'private' ],
+			'posts_per_page' => 1,
+			'fields'         => 'ids',
+			'no_found_rows'  => true,
+			'meta_query'     => [ // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+				[
+					'key'   => '_sellmo_product_code',
+					'value' => $code,
+				],
+			],
+		] );
+
+		$id = ! empty( $query->posts ) ? (int) $query->posts[0] : 0;
+
+		if ( 0 === $id ) {
+			$sku_id = (int) wc_get_product_id_by_sku( $code );
+
+			if ( $sku_id > 0 ) {
+				$post_type = get_post_type( $sku_id );
+				if ( in_array( $post_type, [ 'product', 'product_variation' ], true ) ) {
+					$id = $sku_id;
+					update_post_meta( $id, '_sellmo_product_code', $code );
+				}
+			}
+		}
+
+		return $id;
+	}
+
+	/**
+	 * Delete the full products transient cache and all per-cursor page caches.
+	 *
+	 * Called when the selected shop changes (so stale shop-scoped prices are not
+	 * shown) and by the "Refresh" button on the Products page.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	private function clear_products_cache(): void {
+		global $wpdb;
+
+		delete_transient( 'sellmo_wc_products_cache' );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$wpdb->query(
+			$wpdb->prepare(
+				"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+				$wpdb->esc_like( '_transient_sellmo_wc_products_' ) . '%',
+				$wpdb->esc_like( '_transient_timeout_sellmo_wc_products_' ) . '%'
+			)
+		);
+	}
+
+	/**
+	 * Extract the products array from a Sellmo API response.
+	 *
+	 * Handles both `{ "data": [...] }` and `{ "products": [...] }` shapes.
+	 *
+	 * @since  1.0.0
+	 * @param  array<string, mixed> $response
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function extract_items_from_response( array $response ): array {
+		if ( isset( $response['products'] ) && is_array( $response['products'] ) ) {
+			return $response['products'];
+		}
+		if ( isset( $response['data'] ) && is_array( $response['data'] ) ) {
+			return $response['data'];
+		}
+		return [];
+	}
+
+	/**
+	 * Extract the pagination cursor from a Sellmo API response.
+	 *
+	 * @since  1.0.0
+	 * @param  array<string, mixed> $response
+	 * @return string Empty string when there are no further pages.
+	 */
+	private function extract_cursor_from_response( array $response ): string {
+		foreach ( [ 'cursor', 'next_cursor', 'next_page_cursor' ] as $key ) {
+			if ( ! empty( $response[ $key ] ) && is_string( $response[ $key ] ) ) {
+				return $response[ $key ];
+			}
+		}
+
+		if ( ! empty( $response['meta']['cursor'] ) && is_string( $response['meta']['cursor'] ) ) {
+			return $response['meta']['cursor'];
+		}
+
+		return '';
+	}
+}

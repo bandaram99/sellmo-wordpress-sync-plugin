@@ -1,0 +1,548 @@
+/*
+ * Sellmo POS Integration — Admin Styles
+ * Loaded only on Sellmo admin pages.
+ */
+
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+
+.sellmo-settings-wrap {
+	max-width: 900px;
+}
+
+/* Card container for each settings section */
+.sellmo-card {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 3px;
+	margin-bottom: 20px;
+	padding: 0;
+}
+
+.sellmo-card h2 {
+	font-size: 13px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	text-transform: uppercase;
+	color: #646970;
+	margin: 0;
+	padding: 14px 20px;
+	border-bottom: 1px solid #f0f0f1;
+}
+
+.sellmo-card .form-table {
+	margin: 0;
+}
+
+.sellmo-card .form-table th,
+.sellmo-card .form-table td {
+	padding: 16px 20px;
+}
+
+.sellmo-card .form-table th {
+	width: 220px;
+}
+
+/* ── Connection badge ────────────────────────────────────────────────────── */
+
+.sellmo-connection-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 3px 10px;
+	border-radius: 20px;
+	font-size: 12px;
+	font-weight: 500;
+	line-height: 1.6;
+	vertical-align: middle;
+	margin-left: 8px;
+}
+
+.sellmo-connection-badge::before {
+	content: '';
+	display: inline-block;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: currentColor;
+	flex-shrink: 0;
+}
+
+.sellmo-connection-badge.connected {
+	background: #d1fae5;
+	color: #065f46;
+}
+
+.sellmo-connection-badge.disconnected {
+	background: #fee2e2;
+	color: #991b1b;
+}
+
+/* ── Token field with show/hide toggle ──────────────────────────────────── */
+
+.sellmo-token-wrap {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.sellmo-token-wrap input.regular-text {
+	flex: 1 1 auto;
+	max-width: 380px;
+	min-width: 180px;
+}
+
+/* ── Read-only fields (webhook URL) ─────────────────────────────────────── */
+
+.sellmo-readonly {
+	background-color: #f6f7f7;
+	color: #646970;
+	cursor: default;
+}
+
+/* ── Category multi-select ──────────────────────────────────────────────── */
+
+.sellmo-categories-select {
+	min-height: 130px;
+	min-width: 260px;
+}
+
+/* ── Inline notices ─────────────────────────────────────────────────────── */
+
+.sellmo-notice-inline {
+	color: #2271b1;
+	margin-top: 6px !important;
+}
+
+/* ── Dashboard layout ────────────────────────────────────────────────────── */
+
+.sellmo-dashboard-wrap {
+	max-width: 1100px;
+}
+
+.sellmo-dashboard-grid {
+	display: grid;
+	grid-template-columns: repeat( auto-fill, minmax( 280px, 1fr ) );
+	gap: 20px;
+	margin-bottom: 20px;
+}
+
+.sellmo-dashboard-grid .sellmo-card {
+	margin-bottom: 0;
+}
+
+/* ── Card body / footer ──────────────────────────────────────────────────── */
+
+.sellmo-card-body {
+	padding: 16px 20px;
+}
+
+.sellmo-card-footer {
+	padding: 10px 20px;
+	border-top: 1px solid #f0f0f1;
+	font-size: 13px;
+}
+
+/* ── Connection row ──────────────────────────────────────────────────────── */
+
+.sellmo-connection-row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+
+.sellmo-connection-hint {
+	color: #50575e;
+	font-size: 13px;
+}
+
+.sellmo-connection-hint a {
+	color: #2271b1;
+}
+
+/* ── Sync card meta table ────────────────────────────────────────────────── */
+
+.sellmo-meta-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 13px;
+}
+
+.sellmo-meta-table th,
+.sellmo-meta-table td {
+	padding: 5px 0;
+	vertical-align: top;
+}
+
+.sellmo-meta-table th {
+	width: 120px;
+	color: #646970;
+	font-weight: 400;
+}
+
+/* ── Toggle badge (Enabled / Disabled) ───────────────────────────────────── */
+
+.sellmo-toggle-badge {
+	display: inline-block;
+	padding: 1px 8px;
+	border-radius: 3px;
+	font-size: 12px;
+	font-weight: 500;
+}
+
+.sellmo-toggle-badge.enabled {
+	background: #d1fae5;
+	color: #065f46;
+}
+
+.sellmo-toggle-badge.disabled {
+	background: #f3f4f6;
+	color: #6b7280;
+}
+
+/* ── Result badge (Success / Error / Skipped) ────────────────────────────── */
+
+.sellmo-result-badge {
+	display: inline-block;
+	padding: 1px 8px;
+	border-radius: 3px;
+	font-size: 12px;
+	font-weight: 500;
+}
+
+.sellmo-result-badge.success {
+	background: #d1fae5;
+	color: #065f46;
+}
+
+.sellmo-result-badge.error {
+	background: #fee2e2;
+	color: #991b1b;
+}
+
+.sellmo-result-badge.skipped {
+	background: #fef3c7;
+	color: #92400e;
+}
+
+/* ── Sync action area ────────────────────────────────────────────────────── */
+
+.sellmo-sync-actions {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-top: 14px;
+}
+
+.sellmo-sync-result {
+	font-size: 13px;
+}
+
+.sellmo-sync-result.success {
+	color: #065f46;
+}
+
+.sellmo-sync-result.error {
+	color: #991b1b;
+}
+
+/* ── Type badge (Product / Stock / Order / Webhook) ──────────────────────── */
+
+.sellmo-type-badge {
+	display: inline-block;
+	padding: 1px 7px;
+	border-radius: 3px;
+	font-size: 11px;
+	font-weight: 500;
+	background: #f3f4f6;
+	color: #374151;
+}
+
+/* ── Activity table ──────────────────────────────────────────────────────── */
+
+.sellmo-activity-table {
+	border: none;
+	border-top: 1px solid #f0f0f1;
+}
+
+.sellmo-activity-table thead th {
+	font-size: 12px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+	color: #646970;
+	padding: 10px 20px;
+}
+
+.sellmo-activity-table tbody td {
+	padding: 9px 20px;
+	vertical-align: middle;
+}
+
+.sellmo-log-time {
+	white-space: nowrap;
+	color: #646970;
+	font-size: 12px;
+}
+
+/* ── Inline meta time (order sync card) ──────────────────────────────────── */
+
+.sellmo-meta-time {
+	color: #646970;
+	font-size: 12px;
+	margin-left: 4px;
+}
+
+/* ── Products page ───────────────────────────────────────────────────────── */
+
+.sellmo-products-wrap {
+	max-width: 1400px;
+}
+
+.sellmo-products-loading {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 20px 0;
+	color: #50575e;
+	font-size: 13px;
+}
+
+/* ── Products table column widths ────────────────────────────────────────── */
+
+.sellmo-products-table .column-image     { width: 62px; }
+.sellmo-products-table .column-code      { width: 110px; }
+.sellmo-products-table .column-category  { width: 120px; }
+.sellmo-products-table .column-price     { width: 95px; }
+.sellmo-products-table .column-variants  { width: 80px; }
+.sellmo-products-table .column-wc-status { width: 135px; }
+.sellmo-products-table .column-sync      { width: 52px; }
+.sellmo-products-table .column-actions   { width: 155px; }
+/* column-name fills the remaining space */
+
+/* ── Product thumbnail ───────────────────────────────────────────────────── */
+
+.sellmo-product-thumb {
+	display: block;
+	width: 48px;
+	height: 48px;
+	object-fit: cover;
+	border-radius: 3px;
+	border: 1px solid #dcdcde;
+}
+
+.sellmo-no-image {
+	display: inline-block;
+	width: 48px;
+	height: 48px;
+	line-height: 48px;
+	text-align: center;
+	background: #f6f7f7;
+	border: 1px solid #dcdcde;
+	border-radius: 3px;
+	color: #a7aaad;
+	font-size: 18px;
+}
+
+/* ── Price: sale / regular ───────────────────────────────────────────────── */
+
+.sellmo-products-table del {
+	color: #a7aaad;
+}
+
+.sellmo-products-table ins {
+	text-decoration: none;
+	font-weight: 600;
+	color: #cc1818;
+}
+
+/* ── Sync toggle switch ──────────────────────────────────────────────────── */
+
+.sellmo-switch {
+	position: relative;
+	display: inline-block;
+	width: 36px;
+	height: 20px;
+	vertical-align: middle;
+	cursor: pointer;
+}
+
+.sellmo-switch input {
+	opacity: 0;
+	width: 0;
+	height: 0;
+	position: absolute;
+}
+
+.sellmo-switch-slider {
+	position: absolute;
+	inset: 0;
+	background: #c3c4c7;
+	border-radius: 20px;
+	transition: background-color 0.15s ease;
+	cursor: pointer;
+}
+
+.sellmo-switch-slider::before {
+	content: '';
+	position: absolute;
+	width: 14px;
+	height: 14px;
+	left: 3px;
+	top: 3px;
+	background: #fff;
+	border-radius: 50%;
+	transition: transform 0.15s ease;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+.sellmo-switch input:checked + .sellmo-switch-slider {
+	background: #2271b1;
+}
+
+.sellmo-switch input:checked + .sellmo-switch-slider::before {
+	transform: translateX( 16px );
+}
+
+.sellmo-switch input:focus-visible + .sellmo-switch-slider {
+	outline: 2px solid #2271b1;
+	outline-offset: 2px;
+}
+
+.sellmo-switch--disabled {
+	cursor: not-allowed;
+	opacity: 0.45;
+}
+
+.sellmo-switch--disabled .sellmo-switch-slider {
+	cursor: not-allowed;
+}
+
+/* ── Bulk result text ────────────────────────────────────────────────────── */
+
+.sellmo-bulk-result {
+	font-size: 13px;
+	vertical-align: middle;
+}
+
+.sellmo-bulk-result.success {
+	color: #065f46;
+}
+
+.sellmo-bulk-result.error {
+	color: #991b1b;
+}
+
+/* ── Pagination buttons ──────────────────────────────────────────────────── */
+
+.sellmo-page-current {
+	cursor: default;
+}
+
+.sellmo-pag-ellipsis {
+	display: inline-block;
+	line-height: 28px;
+	padding: 0 4px;
+	color: #646970;
+}
+
+/* ── Sync Log page ───────────────────────────────────────────────────────────── */
+
+.sellmo-log-wrap {
+	max-width: 1400px;
+}
+
+/* ── Filter bar ──────────────────────────────────────────────────────────────── */
+
+.sellmo-log-filters {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	padding: 14px 20px;
+}
+
+.sellmo-log-filters select,
+.sellmo-log-filters input[type="date"] {
+	height: 30px;
+	line-height: 28px;
+	font-size: 13px;
+}
+
+.sellmo-log-filters label:not(.screen-reader-text) {
+	font-size: 13px;
+	color: #50575e;
+}
+
+.sellmo-log-clear-filters {
+	font-size: 13px;
+	color: #646970;
+	text-decoration: none;
+	margin-left: 4px;
+}
+
+.sellmo-log-clear-filters:hover {
+	color: #d63638;
+}
+
+/* ── Auto-refresh label ──────────────────────────────────────────────────────── */
+
+.sellmo-autoreload-label {
+	font-size: 13px;
+	color: #50575e;
+	cursor: pointer;
+	user-select: none;
+	line-height: 28px;
+}
+
+/* ── Log table column widths ─────────────────────────────────────────────────── */
+
+.sellmo-log-table .column-date      { width: 130px; }
+.sellmo-log-table .column-type      { width: 85px;  }
+.sellmo-log-table .column-direction { width: 105px; }
+.sellmo-log-table .column-status    { width: 85px;  }
+.sellmo-log-table .column-item      { width: 120px; }
+/* column-message fills remaining space */
+
+/* ── Empty cell / empty table ────────────────────────────────────────────────── */
+
+.sellmo-log-empty {
+	text-align: center;
+	padding: 24px 20px;
+	color: #50575e;
+}
+
+.sellmo-log-empty-cell {
+	color: #a7aaad;
+}
+
+/* ── Message truncation tooltip ──────────────────────────────────────────────── */
+
+.sellmo-log-msg-truncated {
+	cursor: help;
+	border-bottom: 1px dashed #c3c4c7;
+}
+
+/* ── Bottom action bar ───────────────────────────────────────────────────────── */
+
+.sellmo-log-actions {
+	padding: 6px 0;
+}
+
+.sellmo-log-clear-btn {
+	color: #d63638 !important;
+	border-color: #d63638 !important;
+}
+
+.sellmo-log-clear-btn:hover {
+	background: #d63638 !important;
+	color: #fff !important;
+}
+
+/* ── Colour-coded type badges ────────────────────────────────────────────────── */
+
+.sellmo-type-badge.product { background: #dbeafe; color: #1e40af; }
+.sellmo-type-badge.stock   { background: #fef3c7; color: #92400e; }
+.sellmo-type-badge.order   { background: #ede9fe; color: #5b21b6; }
+.sellmo-type-badge.webhook { background: #f3f4f6; color: #374151; }

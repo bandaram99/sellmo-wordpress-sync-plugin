@@ -1,0 +1,259 @@
+[
+  {
+    "id": "d2hVcUhON040RjBZbFhjeldGTUZGZz09",
+    "product_code": "10077459",
+    "product_name": "test",
+    "category": "No category",
+    "sub_category": "",
+    "stock_control": false,
+    "stock_expire_mode": false,
+    "safety_stock": 0,
+    "price_change": true,
+    "cost": 0,
+    "quantity_change": false,
+    "barcode": "",
+    "measurement": "",
+    "tax_codes": [],
+    "is_vat_product": false,
+    "is_composite": false,
+    "use_production": false,
+    "components": [],
+    "is_combo": false,
+    "combo_sets": [],
+    "modifier_group_ids": [],
+    "is_ingredient": false,
+    "image_url": "",
+    "variants": [],
+    "shops": [
+      {
+        "shop_id": "a1grd1FUdDF4Z0lyMVROZG9QTHM2dz09",
+        "price": 0,
+        "available_for_sale": false,
+        "safety_stock": 0
+      }
+    ],
+    "created_date": "2026-05-28 04:22:23",
+    "updated_date": "2026-05-28 04:22:23",
+    "delete_date": null
+  },
+  {
+    "id": "OWIxOUprQk5GVUIrQzVFakQ3TW05dz09",
+    "product_code": "10067",
+    "product_name": "Addy",
+    "category": "Dress",
+    "sub_category": "",
+    "stock_control": true,
+    "stock_expire_mode": false,
+    "safety_stock": 0,
+    "price_change": false,
+    "cost": 3000,
+    "quantity_change": false,
+    "barcode": "",
+    "measurement": "",
+    "tax_codes": [],
+    "is_vat_product": false,
+    "is_composite": false,
+    "use_production": false,
+    "components": [],
+    "is_combo": false,
+    "combo_sets": [],
+    "modifier_group_ids": [],
+    "is_ingredient": false,
+    "image_url": "https://cloud.salesplaypos.com/img/product_images/SE94267347_1265378.png",
+    "variants": [
+      {
+        "variant_id": "cXFXZ2NIQ0NldFVYVlNWeWRaNWM4QT09",
+        "product_code": "10067-351",
+        "product_barcode": "10067351",
+        "default_cost": 3000,
+        "option1_value": "White",
+        "option2_value": "S",
+        "option3_value": null,
+        "variant_product_code": "10067",
+        "shops": [
+          {
+            "shop_id": "a1grd1FUdDF4Z0lyMVROZG9QTHM2dz09",
+            "price": 6700,
+            "available_for_sale": true,
+            "safety_stock": 0
+          }
+        ]
+      },
+      {
+        "variant_id": "MGIzdWZCQVl6cWJOQ3hlbHU5d3p3UT09",
+        "product_code": "10067-352",
+        "product_barcode": "10067352",
+        "default_cost": 3000,
+        "option1_value": "White",
+        "option2_value": "M",
+        "option3_value": null,
+        "variant_product_code": "10067",
+        "shops": [
+          {
+            "shop_id": "a1grd1FUdDF4Z0lyMVROZG9QTHM2dz09",
+            "price": 6700,
+            "available_for_sale": true,
+            "safety_stock": 0
+          }
+        ]
+      },
+      {
+        "variant_id": "d25qcTFjNU5kUmUySFpmZjZTU1U5QT09",
+        "product_code": "10067-353",
+        "product_barcode": "10067353",
+        "default_cost": 3000,
+        "option1_value": "White",
+        "option2_value": "L",
+        "option3_value": null,
+        "variant_product_code": "10067",
+        "shops": [
+          {
+            "shop_id": "a1grd1FUdDF4Z0lyMVROZG9QTHM2dz09",
+            "price": 6700,
+            "available_for_sale": true,
+            "safety_stock": 0
+          }
+        ]
+      },
+      {
+        "variant_id": "T0t0bTl3UUJTb29lb1hXMm9iUkZYZz09",
+        "product_code": "10067-354",
+        "product_barcode": "10067354",
+        "default_cost": 3000,
+        "option1_value": "White",
+        "option2_value": "XL",
+        "option3_value": null,
+        "variant_product_code": "10067",
+        "shops": [
+          {
+            "shop_id": "a1grd1FUdDF4Z0lyMVROZG9QTHM2dz09",
+            "price": 6700,
+            "available_for_sale": true,
+            "safety_stock": 0
+          }
+        ]
+      }
+    ],
+    "created_date": "2026-05-12 11:32:24",
+    "updated_date": "2026-05-12 11:32:24",
+    "delete_date": null,
+    "shops": [
+      {
+        "shop_id": "a1grd1FUdDF4Z0lyMVROZG9QTHM2dz09",
+        "price": 6700,
+        "available_for_sale": false,
+        "safety_stock": 0
+      }
+    ]
+  },
+  {
+    "id": "WlRKeHAxRm04MFZTOUJGbmIrMndqZz09",
+    "product_code": "AWDS008",
+    "product_name": "Addy dress",
+    "category": "Dress",
+    "sub_category": "",
+    "stock_control": true,
+    "stock_expire_mode": false,
+    "safety_stock": 0,
+    "price_change": false,
+    "cost": 2925,
+    "quantity_change": false,
+    "barcode": "",
+    "measurement": "",
+    "tax_codes": [],
+    "is_vat_product": false,
+    "is_composite": false,
+    "use_production": false,
+    "components": [],
+    "is_combo": false,
+    "combo_sets": [],
+    "modifier_group_ids": [],
+    "is_ingredient": false,
+    "image_url": "https://cloud.salesplaypos.com/img/product_images/SE94267347_1179250.png",
+    "variants": [
+      {
+        "variant_id": "RFI0bzdqYWNZS3VsRnJsem9PT3ZSQT09",
+        "product_code": "AWDS008-01",
+        "product_barcode": "AWDS00801",
+        "default_cost": 2925,
+        "option1_value": "Pink",
+        "option2_value": "S",
+        "option3_value": null,
+        "variant_product_code": "AWDS008",
+        "shops": [
+          {
+            "shop_id": "a1grd1FUdDF4Z0lyMVROZG9QTHM2dz09",
+            "price": 6500,
+            "available_for_sale": true,
+            "safety_stock": 0
+          }
+        ]
+      },
+      {
+        "variant_id": "MnkrMitxWXcwY3V5UkdoU0N1RkU5dz09",
+        "product_code": "AWDS008-02",
+        "product_barcode": "AWDS00802",
+        "default_cost": 2925,
+        "option1_value": "Pink",
+        "option2_value": "M",
+        "option3_value": null,
+        "variant_product_code": "AWDS008",
+        "shops": [
+          {
+            "shop_id": "a1grd1FUdDF4Z0lyMVROZG9QTHM2dz09",
+            "price": 6500,
+            "available_for_sale": true,
+            "safety_stock": 0
+          }
+        ]
+      },
+      {
+        "variant_id": "bENOY3Q4NHZuSDVUanpUOHRYTGQ4UT09",
+        "product_code": "AWDS008-03",
+        "product_barcode": "AWDS00803",
+        "default_cost": 2925,
+        "option1_value": "Pink",
+        "option2_value": "L",
+        "option3_value": null,
+        "variant_product_code": "AWDS008",
+        "shops": [
+          {
+            "shop_id": "a1grd1FUdDF4Z0lyMVROZG9QTHM2dz09",
+            "price": 6500,
+            "available_for_sale": true,
+            "safety_stock": 0
+          }
+        ]
+      },
+      {
+        "variant_id": "cWhNTHJ5OFlJTWcvbEJ4K0RCbE1Ndz09",
+        "product_code": "AWDS008-04",
+        "product_barcode": "AWDS00804",
+        "default_cost": 2925,
+        "option1_value": "Pink",
+        "option2_value": "XL",
+        "option3_value": null,
+        "variant_product_code": "AWDS008",
+        "shops": [
+          {
+            "shop_id": "a1grd1FUdDF4Z0lyMVROZG9QTHM2dz09",
+            "price": 6500,
+            "available_for_sale": true,
+            "safety_stock": 0
+          }
+        ]
+      }
+    ],
+    "created_date": "2026-05-28 04:32:45",
+    "updated_date": "2026-05-28 04:32:45",
+    "delete_date": null,
+    "shops": [
+      {
+        "shop_id": "a1grd1FUdDF4Z0lyMVROZG9QTHM2dz09",
+        "price": 6500,
+        "available_for_sale": false,
+        "safety_stock": 0
+      }
+    ]
+  }
+]
