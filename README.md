@@ -1,0 +1,1 @@
+# sellmo-wordpress-sync-plugin
