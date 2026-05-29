@@ -147,6 +147,116 @@
     ]
   },
   {
+    "id": "QXYwa1VMNkhLZVpPSXZkVXFPWU5Wdz09",
+    "product_code": "10077460",
+    "product_name": "fanta",
+    "category": "Drinks",
+    "sub_category": "",
+    "stock_control": false,
+    "stock_expire_mode": false,
+    "safety_stock": 0,
+    "price_change": false,
+    "cost": 0,
+    "quantity_change": false,
+    "barcode": "",
+    "measurement": "",
+    "tax_codes": [],
+    "is_vat_product": false,
+    "is_composite": false,
+    "use_production": false,
+    "components": [],
+    "is_combo": false,
+    "combo_sets": [],
+    "modifier_group_ids": [],
+    "is_ingredient": false,
+    "image_url": "",
+    "variants": [
+      {
+        "variant_id": "ZGJVeCtrZHVGZmkvMFRDQ1dkNFo0QT09",
+        "product_code": "10077460-107",
+        "product_barcode": "10077460-107",
+        "default_cost": 20,
+        "option1_value": "S",
+        "option2_value": null,
+        "option3_value": null,
+        "variant_product_code": "10077460",
+        "shops": [
+          {
+            "shop_id": "a1grd1FUdDF4Z0lyMVROZG9QTHM2dz09",
+            "price": 200,
+            "available_for_sale": true,
+            "safety_stock": 0
+          }
+        ]
+      },
+      {
+        "variant_id": "eng4L3M0bGpnRGdvMHlCZ1RIYjBFdz09",
+        "product_code": "10077460-108",
+        "product_barcode": "10077460-108",
+        "default_cost": 30,
+        "option1_value": "M",
+        "option2_value": null,
+        "option3_value": null,
+        "variant_product_code": "10077460",
+        "shops": [
+          {
+            "shop_id": "a1grd1FUdDF4Z0lyMVROZG9QTHM2dz09",
+            "price": 200,
+            "available_for_sale": true,
+            "safety_stock": 0
+          }
+        ]
+      },
+      {
+        "variant_id": "QWZ3SlFPM3c3ZE0wRjIvVVphQ2ZEQT09",
+        "product_code": "10077460-109",
+        "product_barcode": "10077460-109",
+        "default_cost": 40,
+        "option1_value": "L",
+        "option2_value": null,
+        "option3_value": null,
+        "variant_product_code": "10077460",
+        "shops": [
+          {
+            "shop_id": "a1grd1FUdDF4Z0lyMVROZG9QTHM2dz09",
+            "price": 200,
+            "available_for_sale": true,
+            "safety_stock": 0
+          }
+        ]
+      },
+      {
+        "variant_id": "VXVhZHdyeEpTWDB4RWMwQldza2I2QT09",
+        "product_code": "10077460-110",
+        "product_barcode": "10077460-110",
+        "default_cost": 50,
+        "option1_value": "XL",
+        "option2_value": null,
+        "option3_value": null,
+        "variant_product_code": "10077460",
+        "shops": [
+          {
+            "shop_id": "a1grd1FUdDF4Z0lyMVROZG9QTHM2dz09",
+            "price": 200,
+            "available_for_sale": true,
+            "safety_stock": 0
+          }
+        ]
+      }
+    ],
+    "created_date": "2026-05-28 11:21:41",
+    "updated_date": "2026-05-28 11:21:41",
+    "delete_date": null,
+    "shops": [
+      {
+        "shop_id": "a1grd1FUdDF4Z0lyMVROZG9QTHM2dz09",
+        "price": 200,
+        "available_for_sale": false,
+        "safety_stock": 0
+      }
+    ]
+  },
+  {
     "id": "WlRKeHAxRm04MFZTOUJGbmIrMndqZz09",
     "product_code": "AWDS008",
     "product_name": "Addy dress",
