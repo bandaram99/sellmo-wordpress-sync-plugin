@@ -20,6 +20,7 @@ $is_connected = $has_token && ! empty( $conn_status['success'] );
 $product_meta = (array) ( Sellmo_Settings::get( 'last_product_sync' ) ?: [] );
 $stock_meta   = (array) ( Sellmo_Settings::get( 'last_stock_sync' ) ?: [] );
 $order_meta   = (array) ( Sellmo_Settings::get( 'last_order_sync' ) ?: [] );
+$mapper_stats = Sellmo_Product_Mapping::get_dashboard_stats();
 
 // ── Feature toggles ───────────────────────────────────────────────────────────
 $product_enabled = 'yes' === (string) Sellmo_Settings::get( 'product_sync_enabled' );
@@ -124,6 +125,48 @@ if ( ! function_exists( 'sellmo_dashboard_format_dt' ) ) {
 
 	<!-- ── Sync Status Cards ───────────────────────────────────────────────── -->
 	<div class="sellmo-dashboard-grid">
+
+		<!-- Product Mapping Stats -->
+		<div class="sellmo-card sellmo-sync-card">
+			<h2><?php esc_html_e( 'Product Mapping', 'sellmo-woocommerce' ); ?></h2>
+			<div class="sellmo-card-body">
+				<table class="sellmo-meta-table">
+					<tr>
+						<th><?php esc_html_e( 'Total Sellmo', 'sellmo-woocommerce' ); ?></th>
+						<td><?php echo absint( $mapper_stats['total_sellmo_products'] ?? 0 ); ?></td>
+					</tr>
+					<tr>
+						<th><?php esc_html_e( 'Mapped', 'sellmo-woocommerce' ); ?></th>
+						<td>
+							<span class="sellmo-result-badge success">
+								<?php echo absint( $mapper_stats['mapped_products'] ?? 0 ); ?>
+							</span>
+						</td>
+					</tr>
+					<tr>
+						<th><?php esc_html_e( 'Unmapped', 'sellmo-woocommerce' ); ?></th>
+						<td>
+							<span class="sellmo-result-badge skipped">
+								<?php echo absint( $mapper_stats['unmapped_products'] ?? 0 ); ?>
+							</span>
+						</td>
+					</tr>
+					<tr>
+						<th><?php esc_html_e( 'WooCommerce Only', 'sellmo-woocommerce' ); ?></th>
+						<td>
+							<span class="sellmo-toggle-badge disabled">
+								<?php echo absint( $mapper_stats['woocommerce_only_products'] ?? 0 ); ?>
+							</span>
+						</td>
+					</tr>
+				</table>
+				<div class="sellmo-sync-actions">
+					<a href="<?php echo esc_url( admin_url( 'admin.php?page=sellmo-product-mapper' ) ); ?>" class="button button-secondary">
+						<?php esc_html_e( 'Open Product Mapper', 'sellmo-woocommerce' ); ?>
+					</a>
+				</div>
+			</div>
+		</div>
 
 		<!-- Product Sync -->
 		<div class="sellmo-card sellmo-sync-card">

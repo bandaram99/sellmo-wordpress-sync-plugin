@@ -73,6 +73,8 @@ class Sellmo_API {
 	 */
 	private function make_request( string $method, string $endpoint, array $body = [] ): array|\WP_Error {
 		$url  = self::API_BASE . $endpoint;
+		$sync_type = $this->resolve_sync_type_from_endpoint( $endpoint );
+		$direction = 'POST' === $method ? 'wc_to_sellmo' : 'sellmo_to_wc';
 		$args = [
 			'headers' => [
 				'Authorization' => 'Bearer ' . $this->token,
@@ -92,6 +94,18 @@ class Sellmo_API {
 
 			// Connection-level failure — no retry.
 			if ( is_wp_error( $response ) ) {
+				Sellmo_Logger::log(
+					$sync_type,
+					$direction,
+					'error',
+					sprintf(
+						'API transport error on %s %s: %s',
+						$method,
+						$endpoint,
+						$this->truncate_for_log( $response->get_error_message() )
+					),
+					$endpoint
+				);
 				return $response;
 			}
 
@@ -110,6 +124,20 @@ class Sellmo_API {
 				$response_body = wp_remote_retrieve_body( $response );
 				$message       = '' !== $response_body ? $response_body : wp_remote_retrieve_response_message( $response );
 
+				Sellmo_Logger::log(
+					$sync_type,
+					$direction,
+					'error',
+					sprintf(
+						'API %s %s failed with HTTP %d: %s',
+						$method,
+						$endpoint,
+						$code,
+						$this->truncate_for_log( (string) $message )
+					),
+					$endpoint
+				);
+
 				return new \WP_Error(
 					'sellmo_api_error',
 					$message,
@@ -121,6 +149,14 @@ class Sellmo_API {
 			$decoded = json_decode( wp_remote_retrieve_body( $response ), true );
 
 			if ( null === $decoded ) {
+				Sellmo_Logger::log(
+					$sync_type,
+					$direction,
+					'error',
+					sprintf( 'API %s %s returned invalid JSON.', $method, $endpoint ),
+					$endpoint
+				);
+
 				return new \WP_Error( 'sellmo_invalid_json', 'Invalid JSON in Sellmo API response.', [ 'endpoint' => $endpoint ] );
 			}
 
@@ -128,14 +164,64 @@ class Sellmo_API {
 		}
 
 		// Exhausted all retries on 429.
+		$message = sprintf(
+			'Sellmo API rate limit exceeded after %d retries on %s.',
+			$this->max_retries,
+			$endpoint
+		);
+
+		Sellmo_Logger::log(
+			$sync_type,
+			$direction,
+			'error',
+			$message,
+			$endpoint
+		);
+
 		return new \WP_Error(
 			'sellmo_rate_limited',
-			sprintf(
-				'Sellmo API rate limit exceeded after %d retries on %s.',
-				$this->max_retries,
-				$endpoint
-			)
+			$message
 		);
+	}
+
+	/**
+	 * Resolve the sync log type from the API endpoint path.
+	 *
+	 * @since  1.0.0
+	 * @param  string $endpoint API endpoint path.
+	 * @return string
+	 */
+	private function resolve_sync_type_from_endpoint( string $endpoint ): string {
+		if ( str_contains( $endpoint, '/online_orders' ) ) {
+			return 'order';
+		}
+
+		if ( str_contains( $endpoint, '/inventory' ) ) {
+			return 'stock';
+		}
+
+		if ( str_contains( $endpoint, '/products' ) || str_contains( $endpoint, '/categories' ) ) {
+			return 'product';
+		}
+
+		return 'webhook';
+	}
+
+	/**
+	 * Truncate log text to keep the sync log table readable.
+	 *
+	 * @since  1.0.0
+	 * @param  string $message Log message.
+	 * @return string
+	 */
+	private function truncate_for_log( string $message ): string {
+		$max_length = 500;
+
+		if ( strlen( $message ) <= $max_length ) {
+			return $message;
+		}
+
+		return substr( $message, 0, $max_length - 3 ) . '...';
 	}
 
 	/**

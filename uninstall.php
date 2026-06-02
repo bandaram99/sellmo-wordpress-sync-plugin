@@ -20,6 +20,11 @@ $table = $wpdb->prefix . 'sellmo_sync_log';
 // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name constructed from trusted $wpdb->prefix.
 $wpdb->query( "DROP TABLE IF EXISTS `{$table}`" );
 
+// Drop the product mapping table.
+$mapping_table = $wpdb->prefix . 'sellmo_product_mapping';
+// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name constructed from trusted $wpdb->prefix.
+$wpdb->query( "DROP TABLE IF EXISTS `{$mapping_table}`" );
+
 // 2. Delete all sellmo_wc_* options.
 // Underscores in the LIKE value are escaped with a backslash so they match
 // literally rather than as single-character wildcards.

@@ -283,6 +283,14 @@
 				}
 			} )
 			.fail( function ( xhr ) {
+				var failMessage = i18n.syncError || 'Sync failed. Please try again.';
+
+				if ( xhr && xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message ) {
+					failMessage = xhr.responseJSON.data.message;
+				} else if ( xhr && '-1' === String( xhr.responseText || '' ).trim() ) {
+					failMessage = 'Security check failed. Please refresh the page and try again.';
+				}
+
 				if ( isSalesPlaySync ) {
 					console.error( 'SalesPlay Sync AJAX Failed:' );
 					console.dir( {
@@ -293,7 +301,7 @@
 
 				$result
 					.addClass( 'error' )
-					.text( i18n.syncError || 'Sync failed. Please try again.' );
+					.text( failMessage );
 			} )
 			.always( function () {
 				$btn.prop( 'disabled', false ).text( originalText );
@@ -799,5 +807,326 @@
 		}
 
 	} // end products page guard
+
+	// ── Product Mapper page ────────────────────────────────────────────────
+	if ( $( '#sellmo-mapper-tbody' ).length ) {
+		var mapperPage       = 1;
+		var mapperSearch     = '';
+		var mapperStatus     = '';
+		var mapperLoading    = false;
+		var mapperWcProducts = [];
+
+		loadMapperList( 1 );
+
+		$( '#sellmo-mapper-search-btn, #sellmo-mapper-refresh' ).on( 'click', function () {
+			mapperSearch = String( $( '#sellmo-mapper-search' ).val() || '' );
+			mapperStatus = String( $( '#sellmo-mapper-status-filter' ).val() || '' );
+			loadMapperList( 1 );
+		} );
+
+		$( '#sellmo-mapper-status-filter' ).on( 'change', function () {
+			mapperStatus = String( $( this ).val() || '' );
+			loadMapperList( 1 );
+		} );
+
+		$( document ).on( 'click', '.sellmo-mapper-page-link', function ( e ) {
+			e.preventDefault();
+			var nextPage = parseInt( $( this ).data( 'page' ), 10 );
+			if ( nextPage && ! mapperLoading ) {
+				loadMapperList( nextPage );
+			}
+		} );
+
+		$( '#sellmo-mapper-select-all' ).on( 'change', function () {
+			var checked = $( this ).is( ':checked' );
+			$( '.sellmo-mapper-checkbox' ).prop( 'checked', checked );
+			$( '.sellmo-mapper-select-all-foot' ).prop( 'checked', checked );
+		} );
+
+		$( document ).on( 'change', '.sellmo-mapper-select-all-foot', function () {
+			var checked = $( this ).is( ':checked' );
+			$( '.sellmo-mapper-checkbox' ).prop( 'checked', checked );
+			$( '#sellmo-mapper-select-all' ).prop( 'checked', checked );
+		} );
+
+		$( document ).on( 'click', '.sellmo-mapper-map-btn', function () {
+			var $btn      = $( this );
+			var $row      = $btn.closest( 'tr' );
+			var wcProduct = parseInt( $row.find( '.sellmo-mapper-wc-select' ).val() || 0, 10 );
+
+			if ( ! wcProduct ) {
+				// eslint-disable-next-line no-alert
+				window.alert( i18n.mapperChooseWc || 'Select a WooCommerce product first.' );
+				return;
+			}
+
+			$btn.prop( 'disabled', true );
+
+			$.post( ajaxUrl, {
+				action        : 'sellmo_wc_map_product',
+				nonce         : nonce,
+				sellmo_id     : String( $row.data( 'sellmo-id' ) || '' ),
+				sellmo_code   : String( $row.data( 'sellmo-code' ) || '' ),
+				sellmo_name   : String( $row.data( 'sellmo-name' ) || '' ),
+				wc_product_id : wcProduct
+			} )
+			.done( function ( res ) {
+				if ( res.success ) {
+					loadMapperList( mapperPage );
+				} else {
+					// eslint-disable-next-line no-alert
+					window.alert( ( res.data && res.data.message ) || ( i18n.mapperActionError || 'Mapping action failed.' ) );
+				}
+			} )
+			.fail( function () {
+				// eslint-disable-next-line no-alert
+				window.alert( i18n.mapperActionError || 'Mapping action failed. Please try again.' );
+			} )
+			.always( function () {
+				$btn.prop( 'disabled', false );
+			} );
+		} );
+
+		$( document ).on( 'click', '.sellmo-mapper-unmap-btn', function () {
+			var $btn = $( this );
+			var $row = $btn.closest( 'tr' );
+
+			$btn.prop( 'disabled', true );
+
+			$.post( ajaxUrl, {
+				action      : 'sellmo_wc_unmap_product',
+				nonce       : nonce,
+				sellmo_id   : String( $row.data( 'sellmo-id' ) || '' ),
+				sellmo_code : String( $row.data( 'sellmo-code' ) || '' ),
+				sellmo_name : String( $row.data( 'sellmo-name' ) || '' )
+			} )
+			.done( function ( res ) {
+				if ( res.success ) {
+					loadMapperList( mapperPage );
+				} else {
+					// eslint-disable-next-line no-alert
+					window.alert( ( res.data && res.data.message ) || ( i18n.mapperActionError || 'Mapping action failed.' ) );
+				}
+			} )
+			.fail( function () {
+				// eslint-disable-next-line no-alert
+				window.alert( i18n.mapperActionError || 'Mapping action failed. Please try again.' );
+			} )
+			.always( function () {
+				$btn.prop( 'disabled', false );
+			} );
+		} );
+
+		$( '#sellmo-mapper-bulk-apply' ).on( 'click', function () {
+			var bulkAction = String( $( '#sellmo-mapper-bulk-action' ).val() || '' );
+			var selected   = [];
+
+			if ( '' === bulkAction ) {
+				// eslint-disable-next-line no-alert
+				window.alert( i18n.mapperBulkHint || 'Please select a mapper bulk action.' );
+				return;
+			}
+
+			$( '.sellmo-mapper-checkbox:checked' ).each( function () {
+				var $row = $( this ).closest( 'tr' );
+				selected.push( {
+					sellmo_id   : String( $row.data( 'sellmo-id' ) || '' ),
+					sellmo_code : String( $row.data( 'sellmo-code' ) || '' ),
+					sellmo_name : String( $row.data( 'sellmo-name' ) || '' )
+				} );
+			} );
+
+			if ( 0 === selected.length ) {
+				// eslint-disable-next-line no-alert
+				window.alert( i18n.mapperSelectRows || 'Please select at least one row.' );
+				return;
+			}
+
+			$( '#sellmo-mapper-bulk-apply' ).prop( 'disabled', true );
+			$( '.sellmo-mapper-bulk-spinner' ).addClass( 'is-active' );
+			$( '#sellmo-mapper-bulk-result' ).text( '' ).removeClass( 'success error' );
+
+			$.post( ajaxUrl, {
+				action      : 'sellmo_wc_bulk_mapper',
+				nonce       : nonce,
+				bulk_action : bulkAction,
+				rows        : selected
+			} )
+			.done( function ( res ) {
+				if ( res.success ) {
+					$( '#sellmo-mapper-bulk-result' ).addClass( 'success' ).text( ( res.data && res.data.message ) || '' );
+					loadMapperList( mapperPage );
+				} else {
+					$( '#sellmo-mapper-bulk-result' )
+						.addClass( 'error' )
+						.text( ( res.data && res.data.message ) || ( i18n.mapperActionError || 'Mapping action failed.' ) );
+				}
+			} )
+			.fail( function () {
+				$( '#sellmo-mapper-bulk-result' )
+					.addClass( 'error' )
+					.text( i18n.mapperActionError || 'Mapping action failed. Please try again.' );
+			} )
+			.always( function () {
+				$( '#sellmo-mapper-bulk-apply' ).prop( 'disabled', false );
+				$( '.sellmo-mapper-bulk-spinner' ).removeClass( 'is-active' );
+			} );
+		} );
+
+		function loadMapperList( page ) {
+			if ( mapperLoading ) {
+				return;
+			}
+
+			mapperLoading = true;
+			mapperPage    = page;
+
+			$( '#sellmo-mapper-loading' ).show();
+			$( '#sellmo-mapper-table, #sellmo-mapper-pagination, #sellmo-mapper-top-pagination' ).hide();
+			$( '#sellmo-mapper-error' ).hide();
+
+			$.post( ajaxUrl, {
+				action : 'sellmo_wc_get_mapper_list',
+				nonce  : nonce,
+				page   : page,
+				search : mapperSearch,
+				status : mapperStatus
+			} )
+			.done( function ( res ) {
+				if ( ! res.success ) {
+					showMapperError( ( res.data && res.data.message ) || ( i18n.mapperLoadError || 'Failed to load mapper data.' ) );
+					return;
+				}
+
+				mapperWcProducts = Array.isArray( res.data.wc_products ) ? res.data.wc_products : [];
+				renderMapperRows( res.data );
+			} )
+			.fail( function () {
+				showMapperError( i18n.mapperLoadError || 'Failed to load mapper data.' );
+			} )
+			.always( function () {
+				mapperLoading = false;
+				$( '#sellmo-mapper-loading' ).hide();
+			} );
+		}
+
+		function renderMapperRows( data ) {
+			var rows    = data.rows || [];
+			var total   = parseInt( data.total || 0, 10 );
+			var pages   = parseInt( data.pages || 1, 10 );
+			var current = parseInt( data.current_page || 1, 10 );
+			var perPage = parseInt( data.per_page || 25, 10 );
+
+			var $tbody = $( '#sellmo-mapper-tbody' ).empty();
+
+			if ( 0 === rows.length ) {
+				$tbody.append( '<tr><td colspan="8" style="text-align:center;padding:24px 0;">' + escHtml( i18n.mapperNoRows || 'No products found.' ) + '</td></tr>' );
+			} else {
+				$.each( rows, function ( _idx, row ) {
+					$tbody.append( buildMapperRow( row ) );
+				} );
+			}
+
+			var from = total > 0 ? ( ( current - 1 ) * perPage + 1 ) : 0;
+			var to   = Math.min( current * perPage, total );
+			var text = total > 0 ? ( from + '–' + to + ' ' + ( i18n.of || 'of' ) + ' ' + total ) : '0';
+
+			$( '#sellmo-mapper-count, #sellmo-mapper-page-info' ).text( text );
+			var pagination = buildMapperPagination( current, pages );
+			$( '#sellmo-mapper-pagination-top, #sellmo-mapper-pagination-bottom' ).html( pagination );
+
+			$( '#sellmo-mapper-table' ).show();
+			if ( total > perPage ) {
+				$( '#sellmo-mapper-pagination, #sellmo-mapper-top-pagination' ).show();
+			}
+
+			$( '#sellmo-mapper-select-all, .sellmo-mapper-select-all-foot' ).prop( 'checked', false );
+		}
+
+		function buildMapperRow( row ) {
+			var sellmoId      = escHtml( String( row.sellmo_id || '' ) );
+			var sellmoName    = escHtml( String( row.sellmo_name || '' ) );
+			var sellmoCode    = escHtml( String( row.sellmo_code || '' ) );
+			var category      = escHtml( String( row.category || '—' ) );
+			var price         = parseFloat( row.price || 0 );
+			var status        = String( row.status || 'not_mapped' );
+			var wcProductId   = parseInt( row.wc_product_id || 0, 10 );
+			var wcEditUrl     = String( row.wc_edit_url || '' );
+
+			var wcSelect = '<select class="sellmo-mapper-wc-select"><option value="">—</option>';
+			$.each( mapperWcProducts, function ( _i, option ) {
+				var optionId = parseInt( option.id || 0, 10 );
+				wcSelect += '<option value="' + optionId + '"' + ( optionId === wcProductId ? ' selected' : '' ) + '>' + escHtml( String( option.label || '' ) ) + '</option>';
+			} );
+			wcSelect += '</select>';
+
+			var statusBadge = 'mapped' === status
+				? '<span class="sellmo-result-badge success">' + escHtml( i18n.mapped || 'Mapped' ) + '</span>'
+				: '<span class="sellmo-result-badge skipped">' + escHtml( i18n.notMapped || 'Not Mapped' ) + '</span>';
+
+			var actionLabel = 'mapped' === status ? ( i18n.change || 'Change' ) : ( i18n.map || 'Map' );
+			var actions     = '<button type="button" class="button button-small sellmo-mapper-map-btn">' + escHtml( actionLabel ) + '</button>';
+			if ( 'mapped' === status ) {
+				actions += ' <button type="button" class="button button-small sellmo-mapper-unmap-btn">' + escHtml( i18n.unmap || 'Unmap' ) + '</button>';
+			}
+			if ( wcEditUrl ) {
+				actions += ' <a class="button button-small" target="_blank" href="' + escHtml( wcEditUrl ) + '">' + escHtml( i18n.viewInWC || 'View in WC' ) + '</a>';
+			}
+
+			return '<tr data-sellmo-id="' + sellmoId + '" data-sellmo-code="' + sellmoCode + '" data-sellmo-name="' + sellmoName + '">'
+				+ '<th class="check-column"><input type="checkbox" class="sellmo-mapper-checkbox"></th>'
+				+ '<td><strong>' + sellmoName + '</strong></td>'
+				+ '<td><code>' + sellmoCode + '</code></td>'
+				+ '<td>' + category + '</td>'
+				+ '<td>' + ( price > 0 ? escHtml( price.toFixed( 2 ) ) : '—' ) + '</td>'
+				+ '<td>' + wcSelect + '</td>'
+				+ '<td>' + statusBadge + '</td>'
+				+ '<td>' + actions + '</td>'
+				+ '</tr>';
+		}
+
+		function buildMapperPagination( currentPage, totalPages ) {
+			if ( totalPages <= 1 ) {
+				return '';
+			}
+
+			var html = '';
+			var start = Math.max( 1, currentPage - 2 );
+			var end = Math.min( totalPages, currentPage + 2 );
+
+			if ( currentPage > 1 ) {
+				html += '<a class="button sellmo-mapper-page-link" data-page="' + ( currentPage - 1 ) + '">‹</a> ';
+			}
+
+			if ( start > 1 ) {
+				html += '<a class="button sellmo-mapper-page-link" data-page="1">1</a>';
+				html += start > 2 ? ' <span class="sellmo-pag-ellipsis">…</span> ' : ' ';
+			}
+
+			for ( var p = start; p <= end; p++ ) {
+				if ( p === currentPage ) {
+					html += '<span class="button button-primary sellmo-page-current">' + p + '</span> ';
+				} else {
+					html += '<a class="button sellmo-mapper-page-link" data-page="' + p + '">' + p + '</a> ';
+				}
+			}
+
+			if ( end < totalPages ) {
+				html += end < ( totalPages - 1 ) ? '<span class="sellmo-pag-ellipsis">…</span> ' : '';
+				html += '<a class="button sellmo-mapper-page-link" data-page="' + totalPages + '">' + totalPages + '</a>';
+			}
+
+			if ( currentPage < totalPages ) {
+				html += ' <a class="button sellmo-mapper-page-link" data-page="' + ( currentPage + 1 ) + '">›</a>';
+			}
+
+			return html;
+		}
+
+		function showMapperError( message ) {
+			$( '#sellmo-mapper-error-text' ).text( message );
+			$( '#sellmo-mapper-error' ).show();
+		}
+	}
 
 } )( jQuery );

@@ -447,6 +447,40 @@
 	color: #646970;
 }
 
+/* ── Product Mapper page ─────────────────────────────────────────────────── */
+
+.sellmo-mapper-wrap {
+	max-width: 1500px;
+}
+
+.sellmo-mapper-stats-grid {
+	margin-bottom: 12px;
+}
+
+.sellmo-mapper-stat {
+	font-size: 26px;
+	line-height: 1.1;
+	font-weight: 600;
+	color: #1d2327;
+}
+
+.sellmo-mapper-table .column-sellmo-product { width: 220px; }
+.sellmo-mapper-table .column-sellmo-code    { width: 120px; }
+.sellmo-mapper-table .column-sellmo-category{ width: 130px; }
+.sellmo-mapper-table .column-sellmo-price   { width: 90px; }
+.sellmo-mapper-table .column-wc-product     { width: 280px; }
+.sellmo-mapper-table .column-sellmo-status  { width: 120px; }
+.sellmo-mapper-table .column-sellmo-actions { width: 260px; }
+
+.sellmo-mapper-table .sellmo-mapper-wc-select {
+	width: 100%;
+	max-width: 360px;
+}
+
+#sellmo-mapper-search {
+	min-width: 260px;
+}
+
 /* ── Sync Log page ───────────────────────────────────────────────────────────── */
 
 .sellmo-log-wrap {

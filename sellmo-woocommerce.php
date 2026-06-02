@@ -38,7 +38,9 @@ define( 'SELLMO_WC_BASENAME', plugin_basename( __FILE__ ) );
  */
 function sellmo_wc_activate(): void {
 	require_once SELLMO_WC_PATH . 'includes/class-sellmo-logger.php';
+	require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-mapping.php';
 	Sellmo_Logger::create_table();
+	Sellmo_Product_Mapping::create_table();
 	update_option( 'sellmo_wc_db_version', SELLMO_WC_VERSION );
 }
 register_activation_hook( __FILE__, 'sellmo_wc_activate' );
@@ -124,6 +126,7 @@ add_action(
 		// Load all classes in dependency order.
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-settings.php';
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-logger.php';
+		require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-mapping.php';
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-api.php';
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-admin.php';
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-sync.php';
