@@ -468,13 +468,47 @@
 .sellmo-mapper-table .column-sellmo-code    { width: 120px; }
 .sellmo-mapper-table .column-sellmo-category{ width: 130px; }
 .sellmo-mapper-table .column-sellmo-price   { width: 90px; }
-.sellmo-mapper-table .column-wc-product     { width: 280px; }
+.sellmo-mapper-table .column-wc-product     { width: 200px; }
 .sellmo-mapper-table .column-sellmo-status  { width: 120px; }
 .sellmo-mapper-table .column-sellmo-actions { width: 260px; }
 
+.sellmo-mapper-table {
+	table-layout: fixed;
+	width: 100%;
+}
+
+.sellmo-mapper-table td {
+	vertical-align: middle;
+}
+
 .sellmo-mapper-table .sellmo-mapper-wc-select {
 	width: 100%;
-	max-width: 360px;
+	max-width: 100%;
+	box-sizing: border-box;
+}
+
+.sellmo-mapper-table .sellmo-mapper-wc-cell {
+	overflow: hidden;
+}
+
+.sellmo-mapper-table .sellmo-mapper-status-cell {
+	white-space: nowrap;
+	min-width: 110px;
+}
+
+.sellmo-mapper-table .sellmo-mapper-actions-cell {
+	min-width: 200px;
+}
+
+.sellmo-mapper-actions-wrap {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+}
+
+.sellmo-mapper-actions-wrap .button {
+	margin: 0;
 }
 
 #sellmo-mapper-search {

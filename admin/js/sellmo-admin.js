@@ -1075,13 +1075,13 @@
 
 			return '<tr data-sellmo-id="' + sellmoId + '" data-sellmo-code="' + sellmoCode + '" data-sellmo-name="' + sellmoName + '">'
 				+ '<th class="check-column"><input type="checkbox" class="sellmo-mapper-checkbox"></th>'
-				+ '<td><strong>' + sellmoName + '</strong></td>'
-				+ '<td><code>' + sellmoCode + '</code></td>'
-				+ '<td>' + category + '</td>'
-				+ '<td>' + ( price > 0 ? escHtml( price.toFixed( 2 ) ) : '—' ) + '</td>'
-				+ '<td>' + wcSelect + '</td>'
-				+ '<td>' + statusBadge + '</td>'
-				+ '<td>' + actions + '</td>'
+				+ '<td class="sellmo-mapper-product-cell"><strong>' + sellmoName + '</strong></td>'
+				+ '<td class="sellmo-mapper-code-cell"><code>' + sellmoCode + '</code></td>'
+				+ '<td class="sellmo-mapper-category-cell">' + category + '</td>'
+				+ '<td class="sellmo-mapper-price-cell">' + ( price > 0 ? escHtml( price.toFixed( 2 ) ) : '—' ) + '</td>'
+				+ '<td class="sellmo-mapper-wc-cell">' + wcSelect + '</td>'
+				+ '<td class="sellmo-mapper-status-cell">' + statusBadge + '</td>'
+				+ '<td class="sellmo-mapper-actions-cell"><div class="sellmo-mapper-actions-wrap">' + actions + '</div></td>'
 				+ '</tr>';
 		}
 
