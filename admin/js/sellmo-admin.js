@@ -810,11 +810,12 @@
 
 	// ── Product Mapper page ────────────────────────────────────────────────
 	if ( $( '#sellmo-mapper-tbody' ).length ) {
-		var mapperPage       = 1;
-		var mapperSearch     = '';
-		var mapperStatus     = '';
-		var mapperLoading    = false;
-		var mapperWcProducts = [];
+		var mapperPage           = 1;
+		var mapperSearch         = '';
+		var mapperStatus         = '';
+		var mapperLoading        = false;
+		var mapperWcProducts     = [];
+		var mapperSellmoProducts = [];
 
 		loadMapperList( 1 );
 
@@ -850,14 +851,34 @@
 		} );
 
 		$( document ).on( 'click', '.sellmo-mapper-map-btn', function () {
-			var $btn      = $( this );
-			var $row      = $btn.closest( 'tr' );
-			var wcProduct = parseInt( $row.find( '.sellmo-mapper-wc-select' ).val() || 0, 10 );
+			var $btn    = $( this );
+			var $row    = $btn.closest( 'tr' );
+			var rowType = String( $row.data( 'row-type' ) || 'sellmo' );
 
-			if ( ! wcProduct ) {
-				// eslint-disable-next-line no-alert
-				window.alert( i18n.mapperChooseWc || 'Select a WooCommerce product first.' );
-				return;
+			var sellmoId, sellmoCode, sellmoName, wcProduct;
+
+			if ( 'wc_only' === rowType ) {
+				var $sellmoSel = $row.find( '.sellmo-mapper-sellmo-select' );
+				sellmoId = String( $sellmoSel.val() || '' );
+				if ( ! sellmoId ) {
+					// eslint-disable-next-line no-alert
+					window.alert( i18n.mapperChooseSellmo || 'Select a Sellmo product first.' );
+					return;
+				}
+				var $selOpt = $sellmoSel.find( 'option:selected' );
+				sellmoCode = String( $selOpt.attr( 'data-code' ) || '' );
+				sellmoName = String( $selOpt.attr( 'data-name' ) || '' );
+				wcProduct  = parseInt( $row.data( 'wc-product-id' ) || 0, 10 );
+			} else {
+				wcProduct = parseInt( $row.find( '.sellmo-mapper-wc-select' ).val() || 0, 10 );
+				if ( ! wcProduct ) {
+					// eslint-disable-next-line no-alert
+					window.alert( i18n.mapperChooseWc || 'Select a WooCommerce product first.' );
+					return;
+				}
+				sellmoId   = String( $row.data( 'sellmo-id' ) || '' );
+				sellmoCode = String( $row.data( 'sellmo-code' ) || '' );
+				sellmoName = String( $row.data( 'sellmo-name' ) || '' );
 			}
 
 			$btn.prop( 'disabled', true );
@@ -865,9 +886,9 @@
 			$.post( ajaxUrl, {
 				action        : 'sellmo_wc_map_product',
 				nonce         : nonce,
-				sellmo_id     : String( $row.data( 'sellmo-id' ) || '' ),
-				sellmo_code   : String( $row.data( 'sellmo-code' ) || '' ),
-				sellmo_name   : String( $row.data( 'sellmo-name' ) || '' ),
+				sellmo_id     : sellmoId,
+				sellmo_code   : sellmoCode,
+				sellmo_name   : sellmoName,
 				wc_product_id : wcProduct
 			} )
 			.done( function ( res ) {
@@ -998,7 +1019,8 @@
 					return;
 				}
 
-				mapperWcProducts = Array.isArray( res.data.wc_products ) ? res.data.wc_products : [];
+				mapperWcProducts     = Array.isArray( res.data.wc_products )     ? res.data.wc_products     : [];
+				mapperSellmoProducts = Array.isArray( res.data.sellmo_products ) ? res.data.sellmo_products : [];
 				renderMapperRows( res.data );
 			} )
 			.fail( function () {
@@ -1052,6 +1074,39 @@
 			var status        = String( row.status || 'not_mapped' );
 			var wcProductId   = parseInt( row.wc_product_id || 0, 10 );
 			var wcEditUrl     = String( row.wc_edit_url || '' );
+
+			// WC-only row: WooCommerce product with no Sellmo mapping yet.
+			if ( 'wc_only' === status ) {
+				var wcOnlyLabel = escHtml( String( row.wc_product_label || '' ) );
+				var wcOnlyEdit  = String( row.wc_edit_url || '' );
+
+				var sellmoSel = '<select class="sellmo-mapper-sellmo-select">'
+					+ '<option value="">— ' + escHtml( i18n.mapperChooseSellmo || 'Select a Sellmo product first.' ) + ' —</option>';
+				$.each( mapperSellmoProducts, function ( _i, sp ) {
+					sellmoSel += '<option value="' + escHtml( String( sp.id || '' ) ) + '"'
+						+ ' data-code="' + escHtml( String( sp.code || '' ) ) + '"'
+						+ ' data-name="' + escHtml( String( sp.name || '' ) ) + '">';
+					sellmoSel += escHtml( ( sp.name || '' ) + ( sp.code ? ' (' + sp.code + ')' : '' ) ) + '</option>';
+				} );
+				sellmoSel += '</select>';
+
+				var wcOnlyBadge   = '<span class="sellmo-result-badge wc-only">' + escHtml( i18n.woocommerceOnly || 'WC Only' ) + '</span>';
+				var wcOnlyActions = '<button type="button" class="button button-small sellmo-mapper-map-btn">' + escHtml( i18n.map || 'Map' ) + '</button>';
+				if ( wcOnlyEdit ) {
+					wcOnlyActions += ' <a class="button button-small" target="_blank" href="' + escHtml( wcOnlyEdit ) + '">' + escHtml( i18n.viewInWC || 'View in WC' ) + '</a>';
+				}
+
+				return '<tr data-row-type="wc_only" data-wc-product-id="' + wcProductId + '">'
+					+ '<th class="check-column"><input type="checkbox" class="sellmo-mapper-checkbox" disabled></th>'
+					+ '<td class="sellmo-mapper-product-cell">' + sellmoSel + '</td>'
+					+ '<td class="sellmo-mapper-code-cell">—</td>'
+					+ '<td class="sellmo-mapper-category-cell">' + category + '</td>'
+					+ '<td class="sellmo-mapper-price-cell">' + ( price > 0 ? escHtml( price.toFixed( 2 ) ) : '—' ) + '</td>'
+					+ '<td class="sellmo-mapper-wc-cell"><strong>' + wcOnlyLabel + '</strong></td>'
+					+ '<td class="sellmo-mapper-status-cell">' + wcOnlyBadge + '</td>'
+					+ '<td class="sellmo-mapper-actions-cell"><div class="sellmo-mapper-actions-wrap">' + wcOnlyActions + '</div></td>'
+					+ '</tr>';
+			}
 
 			var wcSelect = '<select class="sellmo-mapper-wc-select"><option value="">—</option>';
 			$.each( mapperWcProducts, function ( _i, option ) {

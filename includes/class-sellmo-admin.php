@@ -545,8 +545,9 @@ class Sellmo_Admin {
 					'mapperNoRows'      => __( 'No products found.', 'sellmo-woocommerce' ),
 					'mapperLoadError'   => __( 'Failed to load mapper data.', 'sellmo-woocommerce' ),
 					'mapperActionError' => __( 'Mapping action failed. Please try again.', 'sellmo-woocommerce' ),
-					'mapperChooseWc'    => __( 'Select a WooCommerce product first.', 'sellmo-woocommerce' ),
-					'mapperBulkHint'    => __( 'Please select a mapper bulk action.', 'sellmo-woocommerce' ),
+					'mapperChooseWc'     => __( 'Select a WooCommerce product first.', 'sellmo-woocommerce' ),
+					'mapperChooseSellmo' => __( 'Select a Sellmo product first.', 'sellmo-woocommerce' ),
+					'mapperBulkHint'     => __( 'Please select a mapper bulk action.', 'sellmo-woocommerce' ),
 					'mapperSelectRows'  => __( 'Please select at least one row.', 'sellmo-woocommerce' ),
 				],
 			]
@@ -671,19 +672,75 @@ class Sellmo_Admin {
 			$rows[] = $row;
 		}
 
+		// Build Sellmo product list for WC-only row dropdowns (all deduped, before pagination).
+		$sellmo_products_list = [];
+		foreach ( $deduped_rows as $s_row ) {
+			if ( '' === (string) ( $s_row['sellmo_id'] ?? '' ) ) {
+				continue;
+			}
+			$sellmo_products_list[] = [
+				'id'   => (string) $s_row['sellmo_id'],
+				'name' => (string) $s_row['sellmo_name'],
+				'code' => (string) $s_row['sellmo_code'],
+			];
+		}
+
+		$wc_products = $this->get_wc_products_for_mapper_selector();
+
+		// Append WC-only rows: WC products that exist in WooCommerce but have no Sellmo mapping.
+		if ( 'mapped' !== $status ) {
+			$mapped_wc_ids = Sellmo_Product_Mapping::get_mapped_wc_product_ids();
+
+			foreach ( $wc_products as $wc_item ) {
+				$wc_id = (int) ( $wc_item['id'] ?? 0 );
+				if ( $wc_id <= 0 || in_array( $wc_id, $mapped_wc_ids, true ) ) {
+					continue;
+				}
+
+				$wc_product = wc_get_product( $wc_id );
+				if ( ! $wc_product instanceof WC_Product ) {
+					continue;
+				}
+
+				$wc_price    = (float) $wc_product->get_price();
+				$terms       = get_the_terms( $wc_id, 'product_cat' );
+				$wc_cats     = is_array( $terms ) ? implode( ', ', wp_list_pluck( $terms, 'name' ) ) : '';
+				$wc_edit_url = (string) get_edit_post_link( $wc_id, 'raw' );
+
+				if ( '' !== $search ) {
+					$haystack = mb_strtolower( $wc_product->get_name() . ' ' . $wc_product->get_sku() . ' ' . $wc_cats );
+					if ( ! str_contains( $haystack, mb_strtolower( $search ) ) ) {
+						continue;
+					}
+				}
+
+				$rows[] = [
+					'row_type'         => 'wc_only',
+					'sellmo_id'        => '',
+					'sellmo_name'      => '',
+					'sellmo_code'      => '',
+					'category'         => $wc_cats,
+					'price'            => $wc_price,
+					'wc_product_id'    => $wc_id,
+					'wc_product_label' => (string) ( $wc_item['label'] ?? '' ),
+					'wc_edit_url'      => $wc_edit_url,
+					'status'           => 'wc_only',
+				];
+			}
+		}
+
 		$total       = count( $rows );
 		$total_pages = (int) ceil( $total / $per_page );
 		$offset      = ( $page - 1 ) * $per_page;
 
-		$wc_products = $this->get_wc_products_for_mapper_selector();
-
 		wp_send_json_success( [
-			'rows'         => array_values( array_slice( $rows, $offset, $per_page ) ),
-			'total'        => $total,
-			'pages'        => max( 1, $total_pages ),
-			'current_page' => $page,
-			'per_page'     => $per_page,
-			'wc_products'  => $wc_products,
+			'rows'            => array_values( array_slice( $rows, $offset, $per_page ) ),
+			'total'           => $total,
+			'pages'           => max( 1, $total_pages ),
+			'current_page'    => $page,
+			'per_page'        => $per_page,
+			'wc_products'     => $wc_products,
+			'sellmo_products' => $sellmo_products_list,
 		] );
 	}
 

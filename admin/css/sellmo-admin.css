@@ -487,6 +487,17 @@
 	box-sizing: border-box;
 }
 
+.sellmo-mapper-table .sellmo-mapper-sellmo-select {
+	width: 100%;
+	max-width: 100%;
+	box-sizing: border-box;
+}
+
+.sellmo-result-badge.wc-only {
+	background: #e0e7ff;
+	color: #3730a3;
+}
+
 .sellmo-mapper-table .sellmo-mapper-wc-cell {
 	overflow: hidden;
 }
