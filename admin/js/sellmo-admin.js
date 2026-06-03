@@ -830,6 +830,68 @@
 			loadMapperList( 1 );
 		} );
 
+		// ── Custom WC product searchable dropdown ─────────────────────────────────
+
+		// Open / close the dropdown panel when the trigger button is clicked.
+		$( document ).on( 'click', '.sellmo-wc-custom-trigger', function ( e ) {
+			e.stopPropagation();
+			var $wrap  = $( this ).closest( '.sellmo-wc-custom-select' );
+			var $panel = $wrap.find( '.sellmo-wc-custom-dropdown' );
+			var isOpen = $panel.is( ':visible' );
+
+			// Close every other open dropdown first.
+			$( '.sellmo-wc-custom-dropdown' ).hide();
+
+			if ( ! isOpen ) {
+				$panel.show();
+				$panel.find( '.sellmo-wc-custom-search' ).val( '' ).trigger( 'input' ).focus();
+			}
+		} );
+
+		// Close all dropdowns when clicking anywhere outside.
+		$( document ).on( 'click', function () {
+			$( '.sellmo-wc-custom-dropdown' ).hide();
+		} );
+
+		// Prevent clicks inside the panel from bubbling up and closing it.
+		$( document ).on( 'click', '.sellmo-wc-custom-dropdown', function ( e ) {
+			e.stopPropagation();
+		} );
+
+		// Filter the visible options as the user types in the search box.
+		$( document ).on( 'input', '.sellmo-wc-custom-search', function () {
+			var term     = $( this ).val().toLowerCase();
+			var $options = $( this ).closest( '.sellmo-wc-custom-dropdown' ).find( '.sellmo-wc-custom-option' );
+
+			$options.each( function () {
+				var label = $( this ).text().toLowerCase();
+				$( this ).toggle( '' === term || label.indexOf( term ) !== -1 );
+			} );
+		} );
+
+		// When the user clicks an option item: update the hidden select,
+		// update the trigger button label, mark it active, and close the panel.
+		$( document ).on( 'click', '.sellmo-wc-custom-option', function () {
+			var $option = $( this );
+			var $wrap   = $option.closest( '.sellmo-wc-custom-select' );
+			var value   = $option.data( 'value' );
+			var label   = $option.text();
+
+			// Update the hidden real <select> so the Map button reads the right value.
+			$wrap.prev( '.sellmo-mapper-wc-select' ).val( value );
+
+			// Update the trigger label and the data attribute.
+			$wrap.find( '.sellmo-wc-custom-trigger' ).text( label );
+			$wrap.attr( 'data-selected-id', value );
+
+			// Highlight the selected option.
+			$wrap.find( '.sellmo-wc-custom-option' ).removeClass( 'sellmo-wc-option-active' );
+			$option.addClass( 'sellmo-wc-option-active' );
+
+			// Close the panel.
+			$wrap.find( '.sellmo-wc-custom-dropdown' ).hide();
+		} );
+
 		$( document ).on( 'click', '.sellmo-mapper-page-link', function ( e ) {
 			e.preventDefault();
 			var nextPage = parseInt( $( this ).data( 'page' ), 10 );
@@ -1108,12 +1170,58 @@
 					+ '</tr>';
 			}
 
-			var wcSelect = '<select class="sellmo-mapper-wc-select"><option value="">—</option>';
+			// Build the WC product list for the custom searchable dropdown.
+			// Start with a blank "—" option.
+			var wcOptions = [ { id: 0, label: '—' } ];
+
+			// If this row is already mapped, put the mapped product first.
+			if ( 'mapped' === status && wcProductId > 0 ) {
+				wcOptions.push( { id: wcProductId, label: String( row.wc_product_label || ( '#' + wcProductId ) ) } );
+			}
+
+			// Then add all the unmapped WC products.
 			$.each( mapperWcProducts, function ( _i, option ) {
-				var optionId = parseInt( option.id || 0, 10 );
-				wcSelect += '<option value="' + optionId + '"' + ( optionId === wcProductId ? ' selected' : '' ) + '>' + escHtml( String( option.label || '' ) ) + '</option>';
+				wcOptions.push( { id: parseInt( option.id || 0, 10 ), label: String( option.label || '' ) } );
 			} );
-			wcSelect += '</select>';
+
+			// Determine which option is currently selected (for display in the trigger button).
+			var selectedWcId    = ( 'mapped' === status && wcProductId > 0 ) ? wcProductId : 0;
+			var selectedWcLabel = '—';
+			$.each( wcOptions, function ( _i, opt ) {
+				if ( opt.id === selectedWcId ) {
+					selectedWcLabel = opt.label;
+					return false; // break the loop
+				}
+			} );
+
+			// Build the hidden real <select> (still used by the Map button handler to read the value).
+			var wcHiddenSelect = '<select class="sellmo-mapper-wc-select" style="display:none;">';
+			$.each( wcOptions, function ( _i, opt ) {
+				var sel = opt.id === selectedWcId ? ' selected' : '';
+				wcHiddenSelect += '<option value="' + opt.id + '"' + sel + '>' + escHtml( opt.label ) + '</option>';
+			} );
+			wcHiddenSelect += '</select>';
+
+			// Build the visible custom dropdown HTML.
+			// It has: a trigger button showing the current selection,
+			//         a dropdown panel with a search box and a list of items.
+			var wcSelect = wcHiddenSelect
+				+ '<div class="sellmo-wc-custom-select" data-selected-id="' + selectedWcId + '">'
+				+   '<button type="button" class="sellmo-wc-custom-trigger">' + escHtml( selectedWcLabel ) + '</button>'
+				+   '<div class="sellmo-wc-custom-dropdown" style="display:none;">'
+				+     '<input type="text" class="sellmo-wc-custom-search" placeholder="Search…" autocomplete="off">'
+				+     '<div class="sellmo-wc-custom-options">';
+
+			$.each( wcOptions, function ( _i, opt ) {
+				var activeClass = opt.id === selectedWcId ? ' sellmo-wc-option-active' : '';
+				wcSelect += '<div class="sellmo-wc-custom-option' + activeClass + '" data-value="' + opt.id + '">'
+					+ escHtml( opt.label )
+					+ '</div>';
+			} );
+
+			wcSelect +=     '</div>'  // .sellmo-wc-custom-options
+				+   '</div>'            // .sellmo-wc-custom-dropdown
+				+ '</div>';             // .sellmo-wc-custom-select
 
 			var statusBadge = 'mapped' === status
 				? '<span class="sellmo-result-badge success">' + escHtml( i18n.mapped || 'Mapped' ) + '</span>'
