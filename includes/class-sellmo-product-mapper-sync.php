@@ -26,16 +26,6 @@ defined( 'ABSPATH' ) || exit;
 class Sellmo_Product_Mapper_Sync {
 
 	/**
-	 * SalesPlay products endpoint.
-	 */
-	private const PRODUCTS_ENDPOINT = 'https://api.salesplaypos.com/v1.0/products';
-
-	/**
-	 * Page size requested from the API.
-	 */
-	private const PAGE_LIMIT = '100';
-
-	/**
 	 * Safety cap on pages fetched per run.
 	 */
 	private const MAX_PAGES = 100;
@@ -76,6 +66,9 @@ class Sellmo_Product_Mapper_Sync {
 			];
 		}
 
+		// All HTTP goes through Sellmo_API (GET with query-string params, not a body).
+		$api = new Sellmo_API();
+
 		// Snapshot of already-staged ids so membership is O(1), not a query per row.
 		$existing = Sellmo_Product_Mapper_Store::get_existing_id_set();
 
@@ -88,18 +81,18 @@ class Sellmo_Product_Mapper_Sync {
 
 		do {
 			$page++;
-			$page_result = $this->request_products_page( $token, $cursor );
+			$response = $api->get_products( $cursor );
 
-			if ( is_wp_error( $page_result ) ) {
+			if ( is_wp_error( $response ) ) {
 				// HTTP/transport failure already captured the code + body in the log.
 				return [
 					'success' => false,
 					'count'   => $inserted,
-					'message' => $page_result->get_error_message(),
+					'message' => $response->get_error_message(),
 				];
 			}
 
-			$products = $page_result['products'];
+			$products = $this->extract_products( $response );
 			if ( empty( $products ) ) {
 				break;
 			}
@@ -150,7 +143,7 @@ class Sellmo_Product_Mapper_Sync {
 				}
 			}
 
-			$cursor = $page_result['cursor'];
+			$cursor = $this->extract_cursor( $response );
 
 		} while ( '' !== $cursor && $page < self::MAX_PAGES );
 
@@ -176,69 +169,6 @@ class Sellmo_Product_Mapper_Sync {
 				$inserted,
 				$skipped
 			),
-		];
-	}
-
-	/**
-	 * Fetch one page of products using a GET request with a JSON body.
-	 *
-	 * wp_remote_get() cannot send a body, so per the SalesPlay API contract we
-	 * use wp_remote_request() with method=GET and a JSON-encoded body. The HTTP
-	 * status and response body are inspected by Sellmo_Sync_Guard::log_response()
-	 * so any failure is logged with its exact code instead of failing silently.
-	 *
-	 * @since  1.1.0
-	 * @param  string $token  Bearer token.
-	 * @param  string $cursor Pagination cursor.
-	 * @return array{ products: array<int, array<string, mixed>>, cursor: string }|WP_Error
-	 */
-	private function request_products_page( string $token, string $cursor ): array|\WP_Error {
-		$body = [
-			'product_ids'    => '',
-			'created_at_min' => '',
-			'created_at_max' => '',
-			'limit'          => self::PAGE_LIMIT,
-			'cursor'         => $cursor,
-		];
-
-		$args = [
-			'method'  => 'GET',
-			'timeout' => 45,
-			'headers' => [
-				'Content-Type' => 'application/json',
-				'token'        => 'Bearer ' . $token,
-			],
-			'body'    => wp_json_encode( $body ),
-		];
-
-		$response = wp_remote_request( self::PRODUCTS_ENDPOINT, $args );
-
-		// Logs transport errors and non-2xx with HTTP code + body; returns false on failure.
-		if ( ! Sellmo_Sync_Guard::log_response( $response, '/products', 'product', 'sellmo_to_wc' ) ) {
-			if ( is_wp_error( $response ) ) {
-				return $response;
-			}
-
-			$code = (int) wp_remote_retrieve_response_code( $response );
-			return new \WP_Error(
-				'sellmo_products_http_error',
-				sprintf( __( 'SalesPlay /products returned HTTP %d.', 'sellmo-woocommerce' ), $code ),
-				[ 'status' => $code, 'endpoint' => '/products' ]
-			);
-		}
-
-		$decoded = json_decode( (string) wp_remote_retrieve_body( $response ), true );
-		if ( ! is_array( $decoded ) ) {
-			return new \WP_Error(
-				'sellmo_products_invalid_json',
-				__( 'Invalid JSON returned by SalesPlay /products.', 'sellmo-woocommerce' ),
-				[ 'endpoint' => '/products' ]
-			);
-		}
-
-		return [
-			'products' => $this->extract_products( $decoded ),
-			'cursor'   => $this->extract_cursor( $decoded ),
 		];
 	}
 

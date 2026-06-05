@@ -26,10 +26,7 @@ defined( 'ABSPATH' ) || exit;
  */
 class Sellmo_Stock_Sync_Pagination {
 
-	private const PRODUCTS_ENDPOINT  = 'https://api.salesplaypos.com/v1.0/products';
-	private const INVENTORY_ENDPOINT = 'https://api.salesplaypos.com/v1.0/inventory';
-	private const PAGE_LIMIT         = '100';
-	private const MAX_PAGES          = 200;
+	private const MAX_PAGES = 200;
 
 	// ── Public entry point ────────────────────────────────────────────────────
 
@@ -64,6 +61,9 @@ class Sellmo_Stock_Sync_Pagination {
 			return [ 'success' => false, 'count' => 0, 'message' => __( 'SalesPlay API token is not configured.', 'sellmo-woocommerce' ) ];
 		}
 
+		// All HTTP goes through Sellmo_API (GET with query-string params, not a body).
+		$api = new Sellmo_API();
+
 		// ── Step 1: load active mappings ─────────────────────────────────────
 		$all_mappings = Sellmo_Product_Mapping::get_all_mappings_indexed();
 		$by_id        = $all_mappings['by_id']; // sellmo_product_id → row
@@ -78,13 +78,13 @@ class Sellmo_Stock_Sync_Pagination {
 		}
 
 		// ── Step 2: fetch Sellmo product catalogue (variant details) ─────────
-		$sellmo_products = $this->fetch_sellmo_product_map( $token );
+		$sellmo_products = $this->fetch_sellmo_product_map( $api );
 		if ( is_wp_error( $sellmo_products ) ) {
 			return [ 'success' => false, 'count' => 0, 'message' => $sellmo_products->get_error_message() ];
 		}
 
 		// ── Step 3: page /inventory into one local array ─────────────────────
-		$inventory = $this->fetch_all_inventory( $token );
+		$inventory = $this->fetch_all_inventory( $api );
 		if ( is_wp_error( $inventory ) ) {
 			return [ 'success' => false, 'count' => 0, 'message' => $inventory->get_error_message() ];
 		}
@@ -310,25 +310,27 @@ class Sellmo_Stock_Sync_Pagination {
 	 * Fetch the Sellmo product catalogue and index it by product UUID.
 	 *
 	 * Each entry is the raw product array from the API (including a 'variants' key
-	 * when the product has variants).
+	 * when the product has variants). Uses Sellmo_API so the request is a GET with
+	 * query-string params — never a GET with a JSON body (which crashes the
+	 * WordPress Requests transport).
 	 *
 	 * @since  1.1.0
-	 * @param  string $token Bearer token.
+	 * @param  Sellmo_API $api Shared API client.
 	 * @return array<string, array<string, mixed>>|WP_Error  UUID → product data.
 	 */
-	private function fetch_sellmo_product_map( string $token ): array|\WP_Error {
+	private function fetch_sellmo_product_map( Sellmo_API $api ): array|\WP_Error {
 		$cursor = '';
 		$page   = 0;
 		$map    = [];
 
 		do {
 			$page++;
-			$result = $this->request_page( self::PRODUCTS_ENDPOINT, '/products', $token, $cursor );
-			if ( is_wp_error( $result ) ) {
-				return $result;
+			$response = $api->get_products( $cursor );
+			if ( is_wp_error( $response ) ) {
+				return $response;
 			}
 
-			$products = $this->extract_list( $result['body'], [ 'products', 'data' ] );
+			$products = $this->extract_list( $response, [ 'products', 'data' ] );
 			if ( empty( $products ) ) {
 				break;
 			}
@@ -343,7 +345,7 @@ class Sellmo_Stock_Sync_Pagination {
 				}
 			}
 
-			$cursor = $this->extract_cursor( $result['body'] );
+			$cursor = $this->extract_cursor( $response );
 		} while ( '' !== $cursor && $page < self::MAX_PAGES );
 
 		return $map;
@@ -351,26 +353,26 @@ class Sellmo_Stock_Sync_Pagination {
 
 	/**
 	 * Page the /inventory endpoint and return all rows indexed by:
-	 *   - Sellmo product_id (UUID)
+	 *   - Sellmo product_id (UUID — matches a product "id" or a "variant_id")
 	 *   - 'code:{product_code}' (fallback when UUID matching fails)
 	 *
 	 * @since  1.1.0
-	 * @param  string $token Bearer token.
+	 * @param  Sellmo_API $api Shared API client.
 	 * @return array<string, array{ in_stock: int, product_code: string }>|WP_Error
 	 */
-	private function fetch_all_inventory( string $token ): array|\WP_Error {
+	private function fetch_all_inventory( Sellmo_API $api ): array|\WP_Error {
 		$cursor    = '';
 		$page      = 0;
 		$inventory = [];
 
 		do {
 			$page++;
-			$result = $this->request_page( self::INVENTORY_ENDPOINT, '/inventory', $token, $cursor );
-			if ( is_wp_error( $result ) ) {
-				return $result;
+			$response = $api->get_inventory( $cursor );
+			if ( is_wp_error( $response ) ) {
+				return $response;
 			}
 
-			$rows = $this->extract_list( $result['body'], [ 'inventory_levels', 'inventory', 'data' ] );
+			$rows = $this->extract_list( $response, [ 'inventory_levels', 'inventory', 'data' ] );
 			if ( empty( $rows ) ) {
 				break;
 			}
@@ -393,67 +395,10 @@ class Sellmo_Stock_Sync_Pagination {
 				}
 			}
 
-			$cursor = $this->extract_cursor( $result['body'] );
+			$cursor = $this->extract_cursor( $response );
 		} while ( '' !== $cursor && $page < self::MAX_PAGES );
 
 		return $inventory;
-	}
-
-	// ── HTTP helper ───────────────────────────────────────────────────────────
-
-	/**
-	 * Issue one GET request (with JSON body) and return the decoded response.
-	 *
-	 * @since  1.1.0
-	 * @param  string $url      Full endpoint URL.
-	 * @param  string $endpoint Short path for logging.
-	 * @param  string $token    Bearer token.
-	 * @param  string $cursor   Pagination cursor.
-	 * @return array{ body: array<string, mixed> }|WP_Error
-	 */
-	private function request_page( string $url, string $endpoint, string $token, string $cursor ): array|\WP_Error {
-		$payload = [
-			'product_ids' => '',
-			'shop_ids'    => '',
-			'limit'       => self::PAGE_LIMIT,
-			'cursor'      => $cursor,
-		];
-
-		$response = wp_remote_request(
-			$url,
-			[
-				'method'  => 'GET',
-				'timeout' => 45,
-				'headers' => [
-					'Content-Type' => 'application/json',
-					'token'        => 'Bearer ' . $token,
-				],
-				'body'    => wp_json_encode( $payload ),
-			]
-		);
-
-		if ( ! Sellmo_Sync_Guard::log_response( $response, $endpoint, 'stock', 'sellmo_to_wc' ) ) {
-			if ( is_wp_error( $response ) ) {
-				return $response;
-			}
-			$code = (int) wp_remote_retrieve_response_code( $response );
-			return new \WP_Error(
-				'sellmo_stock_http_error',
-				sprintf( __( 'SalesPlay %s returned HTTP %d.', 'sellmo-woocommerce' ), $endpoint, $code ),
-				[ 'status' => $code, 'endpoint' => $endpoint ]
-			);
-		}
-
-		$decoded = json_decode( (string) wp_remote_retrieve_body( $response ), true );
-		if ( ! is_array( $decoded ) ) {
-			return new \WP_Error(
-				'sellmo_stock_invalid_json',
-				sprintf( __( 'Invalid JSON from SalesPlay %s.', 'sellmo-woocommerce' ), $endpoint ),
-				[ 'endpoint' => $endpoint ]
-			);
-		}
-
-		return [ 'body' => $decoded ];
 	}
 
 	// ── Response helpers ──────────────────────────────────────────────────────
