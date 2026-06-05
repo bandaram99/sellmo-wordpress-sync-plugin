@@ -192,23 +192,20 @@ if ( ! function_exists( 'sellmo_dashboard_format_dt' ) ) {
 					<tr>
 						<th><?php esc_html_e( 'Last result', 'sellmo-woocommerce' ); ?></th>
 						<td>
-							<span class="sellmo-result-badge <?php echo 'success' === $product_meta['status'] ? 'success' : 'error'; ?>">
-								<?php
-								if ( 'success' === $product_meta['status'] ) {
-									printf(
-										/* translators: %d: synced product count */
-										esc_html__( 'Success (%d synced)', 'sellmo-woocommerce' ),
-										absint( $product_meta['count'] ?? 0 )
-									);
-								} else {
-									printf(
-										/* translators: %d: failed count */
-										esc_html__( 'Error (%d failed)', 'sellmo-woocommerce' ),
-										absint( $product_meta['count'] ?? 0 )
-									);
-								}
-								?>
-							</span>
+							<?php
+							$p_status = (string) ( $product_meta['status'] ?? '' );
+							$p_count  = absint( $product_meta['count'] ?? 0 );
+
+							if ( 'error' === $p_status ) : ?>
+								<span class="sellmo-result-badge error">
+									<?php printf( esc_html__( 'Error — %d synced before failure', 'sellmo-woocommerce' ), $p_count ); ?>
+								</span>
+							<?php else : ?>
+								<span class="sellmo-result-badge success">
+									<?php printf( esc_html__( 'Success (%d synced)', 'sellmo-woocommerce' ), $p_count ); ?>
+								</span>
+							<?php endif;
+							?>
 						</td>
 					</tr>
 					<?php endif; ?>

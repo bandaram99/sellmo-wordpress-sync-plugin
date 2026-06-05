@@ -16,7 +16,7 @@ $mapper_stats = Sellmo_Product_Mapping::get_dashboard_stats();
 	<h1 class="wp-heading-inline"><?php esc_html_e( 'Sellmo POS - Product Mapper', 'sellmo-woocommerce' ); ?></h1>
 	<hr class="wp-header-end">
 
-	<div class="sellmo-dashboard-grid sellmo-mapper-stats-grid">
+	<!-- <div class="sellmo-dashboard-grid sellmo-mapper-stats-grid">
 		<div class="sellmo-card">
 			<h2><?php esc_html_e( 'Total Sellmo Products', 'sellmo-woocommerce' ); ?></h2>
 			<div class="sellmo-card-body"><strong class="sellmo-mapper-stat"><?php echo absint( $mapper_stats['total_sellmo_products'] ?? 0 ); ?></strong></div>
@@ -32,6 +32,25 @@ $mapper_stats = Sellmo_Product_Mapping::get_dashboard_stats();
 		<div class="sellmo-card">
 			<h2><?php esc_html_e( 'WooCommerce Only Products', 'sellmo-woocommerce' ); ?></h2>
 			<div class="sellmo-card-body"><strong class="sellmo-mapper-stat"><?php echo absint( $mapper_stats['woocommerce_only_products'] ?? 0 ); ?></strong></div>
+		</div>
+	</div> -->
+
+	<div class="sellmo-dashboard-grid sellmo-mapper-stats-grid">
+		<div class="sellmo-card">
+			<h2><?php esc_html_e( 'Total Sellmo Products', 'sellmo-woocommerce' ); ?></h2>
+			<div class="sellmo-card-body"><strong class="sellmo-mapper-stat" id="stat-total-sellmo"><?php echo absint( $mapper_stats['total_sellmo_products'] ?? 0 ); ?></strong></div>
+		</div>
+		<div class="sellmo-card">
+			<h2><?php esc_html_e( 'Mapped Products', 'sellmo-woocommerce' ); ?></h2>
+			<div class="sellmo-card-body"><strong class="sellmo-mapper-stat" id="stat-mapped"><?php echo absint( $mapper_stats['mapped_products'] ?? 0 ); ?></strong></div>
+		</div>
+		<div class="sellmo-card">
+			<h2><?php esc_html_e( 'Unmapped Products', 'sellmo-woocommerce' ); ?></h2>
+			<div class="sellmo-card-body"><strong class="sellmo-mapper-stat" id="stat-unmapped"><?php echo absint( $mapper_stats['unmapped_products'] ?? 0 ); ?></strong></div>
+		</div>
+		<div class="sellmo-card">
+			<h2><?php esc_html_e( 'WooCommerce Only Products', 'sellmo-woocommerce' ); ?></h2>
+			<div class="sellmo-card-body"><strong class="sellmo-mapper-stat" id="stat-wc-only"><?php echo absint( $mapper_stats['woocommerce_only_products'] ?? 0 ); ?></strong></div>
 		</div>
 	</div>
 

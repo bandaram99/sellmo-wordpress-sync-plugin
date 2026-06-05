@@ -678,6 +678,10 @@ class Sellmo_Admin {
 			if ( '' === (string) ( $s_row['sellmo_id'] ?? '' ) ) {
 				continue;
 			}
+			// Only unmapped Sellmo products appear in the selector dropdown.
+			if ( 'mapped' === (string) ( $s_row['status'] ?? '' ) ) {
+				continue;
+			}
 			$sellmo_products_list[] = [
 				'id'   => (string) $s_row['sellmo_id'],
 				'name' => (string) $s_row['sellmo_name'],
@@ -685,12 +689,11 @@ class Sellmo_Admin {
 			];
 		}
 
-		$wc_products = $this->get_wc_products_for_mapper_selector();
+		$wc_products   = $this->get_wc_products_for_mapper_selector();
+		$mapped_wc_ids = Sellmo_Product_Mapping::get_mapped_wc_product_ids();
 
 		// Append WC-only rows: WC products that exist in WooCommerce but have no Sellmo mapping.
 		if ( 'mapped' !== $status ) {
-			$mapped_wc_ids = Sellmo_Product_Mapping::get_mapped_wc_product_ids();
-
 			foreach ( $wc_products as $wc_item ) {
 				$wc_id = (int) ( $wc_item['id'] ?? 0 );
 				if ( $wc_id <= 0 || in_array( $wc_id, $mapped_wc_ids, true ) ) {
@@ -733,14 +736,38 @@ class Sellmo_Admin {
 		$total_pages = (int) ceil( $total / $per_page );
 		$offset      = ( $page - 1 ) * $per_page;
 
+		// Only send unmapped WC products for the selector dropdown.
+		$wc_products_for_selector = array_values( array_filter(
+			$wc_products,
+			static function( array $item ) use ( $mapped_wc_ids ): bool {
+				return ! in_array( (int) ( $item['id'] ?? 0 ), $mapped_wc_ids, true );
+			}
+		) );
+
+		// Compute live stats from the full (unfiltered, unpaginated) data.
+		$sellmo_total   = count( $deduped_rows );
+		$sellmo_mapped  = 0;
+		foreach ( $deduped_rows as $r ) {
+			if ( 'mapped' === (string) ( $r['status'] ?? '' ) ) {
+				$sellmo_mapped++;
+			}
+		}
+		$wc_only_count = count( $wc_products ) - count( $mapped_wc_ids );
+
 		wp_send_json_success( [
 			'rows'            => array_values( array_slice( $rows, $offset, $per_page ) ),
 			'total'           => $total,
 			'pages'           => max( 1, $total_pages ),
 			'current_page'    => $page,
 			'per_page'        => $per_page,
-			'wc_products'     => $wc_products,
+			'wc_products'     => $wc_products_for_selector,
 			'sellmo_products' => $sellmo_products_list,
+			'stats'           => [
+				'total_sellmo_products'   => $sellmo_total,
+				'mapped_products'         => $sellmo_mapped,
+				'unmapped_products'       => $sellmo_total - $sellmo_mapped,
+				'woocommerce_only_products' => max( 0, $wc_only_count ),
+			],
 		] );
 	}
 
@@ -1110,8 +1137,8 @@ class Sellmo_Admin {
 		}
 
 		try {
-			$sync   = new Sellmo_Product_Sync();
-			$result = $sync->run_ajax_trace_sync();
+			$sync   = new Sellmo_Product_Mapper_Sync();
+			$result = $sync->run_incremental_sync();
 		} catch ( \Throwable $e ) {
 			Sellmo_Logger::log(
 				'product',
@@ -1181,8 +1208,8 @@ class Sellmo_Admin {
 			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
 		}
 
-		$sync   = new Sellmo_Stock_Sync();
-		$result = $sync->run_manual_sync();
+		$sync   = new Sellmo_Stock_Sync_Pagination();
+		$result = $sync->run();
 
 		$meta = [
 			'time'   => time(),

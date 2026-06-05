@@ -844,7 +844,16 @@
 
 			if ( ! isOpen ) {
 				$panel.show();
-				$panel.find( '.sellmo-wc-custom-search' ).val( '' ).trigger( 'input' ).focus();
+				// Show all options (clear any previous search filter).
+				$panel.find( '.sellmo-wc-custom-option' ).show();
+				var $search = $panel.find( '.sellmo-wc-custom-search' );
+				$search.val( '' ).focus();
+				// Scroll the currently active option into view.
+				var $active = $panel.find( '.sellmo-wc-option-active' );
+				if ( $active.length ) {
+					var $opts = $panel.find( '.sellmo-wc-custom-options' );
+					$opts.scrollTop( $active.offset().top - $opts.offset().top + $opts.scrollTop() - 4 );
+				}
 			}
 		} );
 
@@ -880,8 +889,10 @@
 			// Update the hidden real <select> so the Map button reads the right value.
 			$wrap.prev( '.sellmo-mapper-wc-select' ).val( value );
 
-			// Update the trigger label and the data attribute.
-			$wrap.find( '.sellmo-wc-custom-trigger' ).text( label );
+			// Update the trigger label span, title attribute, and the data attribute.
+			var $trigger = $wrap.find( '.sellmo-wc-custom-trigger' );
+			$trigger.find( '.sellmo-wc-trigger-label' ).text( label );
+			$trigger.attr( 'title', label );
 			$wrap.attr( 'data-selected-id', value );
 
 			// Highlight the selected option.
@@ -927,9 +938,8 @@
 					window.alert( i18n.mapperChooseSellmo || 'Select a Sellmo product first.' );
 					return;
 				}
-				var $selOpt = $sellmoSel.find( 'option:selected' );
-				sellmoCode = String( $selOpt.attr( 'data-code' ) || '' );
-				sellmoName = String( $selOpt.attr( 'data-name' ) || '' );
+				sellmoCode = String( $row.data( 'sellmo-code' ) || '' );
+				sellmoName = String( $row.data( 'sellmo-name' ) || '' );
 				wcProduct  = parseInt( $row.data( 'wc-product-id' ) || 0, 10 );
 			} else {
 				wcProduct = parseInt( $row.find( '.sellmo-mapper-wc-select' ).val() || 0, 10 );
@@ -1101,6 +1111,14 @@
 			var current = parseInt( data.current_page || 1, 10 );
 			var perPage = parseInt( data.per_page || 25, 10 );
 
+			// Update DOM Stats if provided by the backend
+			if ( data.stats ) {
+				$( '#stat-total-sellmo' ).text( data.stats.total_sellmo_products || 0 );
+				$( '#stat-mapped' ).text( data.stats.mapped_products || 0 );
+				$( '#stat-unmapped' ).text( data.stats.unmapped_products || 0 );
+				$( '#stat-wc-only' ).text( data.stats.woocommerce_only_products || 0 );
+			}
+
 			var $tbody = $( '#sellmo-mapper-tbody' ).empty();
 
 			if ( 0 === rows.length ) {
@@ -1109,6 +1127,7 @@
 				$.each( rows, function ( _idx, row ) {
 					$tbody.append( buildMapperRow( row ) );
 				} );
+				$( document ).trigger( 'sellmo:mapper-rendered', [ mapperSellmoProducts ] );
 			}
 
 			var from = total > 0 ? ( ( current - 1 ) * perPage + 1 ) : 0;
@@ -1142,15 +1161,7 @@
 				var wcOnlyLabel = escHtml( String( row.wc_product_label || '' ) );
 				var wcOnlyEdit  = String( row.wc_edit_url || '' );
 
-				var sellmoSel = '<select class="sellmo-mapper-sellmo-select">'
-					+ '<option value="">— ' + escHtml( i18n.mapperChooseSellmo || 'Select a Sellmo product first.' ) + ' —</option>';
-				$.each( mapperSellmoProducts, function ( _i, sp ) {
-					sellmoSel += '<option value="' + escHtml( String( sp.id || '' ) ) + '"'
-						+ ' data-code="' + escHtml( String( sp.code || '' ) ) + '"'
-						+ ' data-name="' + escHtml( String( sp.name || '' ) ) + '">';
-					sellmoSel += escHtml( ( sp.name || '' ) + ( sp.code ? ' (' + sp.code + ')' : '' ) ) + '</option>';
-				} );
-				sellmoSel += '</select>';
+var sellmoSel = '<select class="sellmo-sellmo-select2 sellmo-mapper-sellmo-select" style="width:100%"></select>';
 
 				var wcOnlyBadge   = '<span class="sellmo-result-badge wc-only">' + escHtml( i18n.woocommerceOnly || 'WC Only' ) + '</span>';
 				var wcOnlyActions = '<button type="button" class="button button-small sellmo-mapper-map-btn">' + escHtml( i18n.map || 'Map' ) + '</button>';
@@ -1174,54 +1185,42 @@
 			// Start with a blank "—" option.
 			var wcOptions = [ { id: 0, label: '—' } ];
 
-			// If this row is already mapped, put the mapped product first.
-			if ( 'mapped' === status && wcProductId > 0 ) {
-				wcOptions.push( { id: wcProductId, label: String( row.wc_product_label || ( '#' + wcProductId ) ) } );
-			}
-
-			// Then add all the unmapped WC products.
+			// Add all unmapped WC products (mapped ones are filtered server-side).
 			$.each( mapperWcProducts, function ( _i, option ) {
 				wcOptions.push( { id: parseInt( option.id || 0, 10 ), label: String( option.label || '' ) } );
 			} );
 
-			// Determine which option is currently selected (for display in the trigger button).
-			var selectedWcId    = ( 'mapped' === status && wcProductId > 0 ) ? wcProductId : 0;
+			// Determine the currently selected WC product.
+			// For a mapped row the server provides wc_product_id + wc_product_label so we
+			// can show the correct label even though the mapped product may not appear in
+			// the unmapped list.
+			var selectedWcId    = wcProductId > 0 ? wcProductId : 0;
 			var selectedWcLabel = '—';
-			$.each( wcOptions, function ( _i, opt ) {
-				if ( opt.id === selectedWcId ) {
-					selectedWcLabel = opt.label;
-					return false; // break the loop
+
+			if ( selectedWcId > 0 ) {
+				// Use the server-supplied label if available.
+				var serverLabel = String( row.wc_product_label || '' );
+				selectedWcLabel = serverLabel || ( '#' + selectedWcId );
+
+				// Also make sure the mapped product exists in the options list so
+				// the hidden <select> has a matching <option>.
+				var alreadyInList = false;
+				$.each( wcOptions, function ( _i, opt ) {
+					if ( opt.id === selectedWcId ) {
+						alreadyInList = true;
+						selectedWcLabel = opt.label; // prefer the list label if present
+						return false;
+					}
+				} );
+				if ( ! alreadyInList ) {
+					wcOptions.splice( 1, 0, { id: selectedWcId, label: selectedWcLabel } );
 				}
-			} );
+			}
 
-			// Build the hidden real <select> (still used by the Map button handler to read the value).
-			var wcHiddenSelect = '<select class="sellmo-mapper-wc-select" style="display:none;">';
-			$.each( wcOptions, function ( _i, opt ) {
-				var sel = opt.id === selectedWcId ? ' selected' : '';
-				wcHiddenSelect += '<option value="' + opt.id + '"' + sel + '>' + escHtml( opt.label ) + '</option>';
-			} );
-			wcHiddenSelect += '</select>';
-
-			// Build the visible custom dropdown HTML.
-			// It has: a trigger button showing the current selection,
-			//         a dropdown panel with a search box and a list of items.
-			var wcSelect = wcHiddenSelect
-				+ '<div class="sellmo-wc-custom-select" data-selected-id="' + selectedWcId + '">'
-				+   '<button type="button" class="sellmo-wc-custom-trigger">' + escHtml( selectedWcLabel ) + '</button>'
-				+   '<div class="sellmo-wc-custom-dropdown" style="display:none;">'
-				+     '<input type="text" class="sellmo-wc-custom-search" placeholder="Search…" autocomplete="off">'
-				+     '<div class="sellmo-wc-custom-options">';
-
-			$.each( wcOptions, function ( _i, opt ) {
-				var activeClass = opt.id === selectedWcId ? ' sellmo-wc-option-active' : '';
-				wcSelect += '<div class="sellmo-wc-custom-option' + activeClass + '" data-value="' + opt.id + '">'
-					+ escHtml( opt.label )
-					+ '</div>';
-			} );
-
-			wcSelect +=     '</div>'  // .sellmo-wc-custom-options
-				+   '</div>'            // .sellmo-wc-custom-dropdown
-				+ '</div>';             // .sellmo-wc-custom-select
+var wcOption = selectedWcId > 0
+				? '<option value="' + selectedWcId + '" selected>' + escHtml( selectedWcLabel ) + '</option>'
+				: '';
+			var wcSelect = '<select class="sellmo-wc-select2 sellmo-mapper-wc-select" style="width:100%">' + wcOption + '</select>';
 
 			var statusBadge = 'mapped' === status
 				? '<span class="sellmo-result-badge success">' + escHtml( i18n.mapped || 'Mapped' ) + '</span>'
