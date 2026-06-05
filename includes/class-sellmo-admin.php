@@ -117,8 +117,8 @@ class Sellmo_Admin {
 
 		add_submenu_page(
 			'sellmo-pos',
-			__( 'Sync Log — Sellmo POS', 'sellmo-woocommerce' ),
-			__( 'Sync Log', 'sellmo-woocommerce' ),
+			__( 'Log — Sellmo POS', 'sellmo-woocommerce' ),
+			__( 'Log', 'sellmo-woocommerce' ),
 			'manage_woocommerce',
 			'sellmo-sync-log',
 			[ $this, 'page_sync_log' ]

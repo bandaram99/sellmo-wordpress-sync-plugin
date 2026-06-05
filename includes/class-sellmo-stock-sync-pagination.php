@@ -159,14 +159,15 @@ class Sellmo_Stock_Sync_Pagination {
 	/**
 	 * Sync stock for a simple WooCommerce product.
 	 *
-	 * Enables stock management, sets the quantity from the Sellmo inventory,
-	 * and sets the stock status to instock / outofstock.
+	 * Inventory lookup: /inventory product_id matches the Sellmo product "id" field.
+	 * WooCommerce automatically recalculates stock_status on save() when
+	 * manage_stock is enabled, so set_stock_status() is not called explicitly.
 	 *
 	 * @since  1.1.0
 	 * @param  WC_Product            $product      WooCommerce product object.
-	 * @param  string                $sellmo_id    Sellmo product UUID.
-	 * @param  string                $sellmo_code  Sellmo product code (SKU).
-	 * @param  array<string, array>  $inventory    Inventory map (keyed by UUID and 'code:{code}').
+	 * @param  string                $sellmo_id    Sellmo product UUID ("id" from /products).
+	 * @param  string                $sellmo_code  Sellmo product code (SKU fallback).
+	 * @param  array<string, array>  $inventory    Inventory map keyed by UUID and 'code:{code}'.
 	 * @return string 'success' | 'skipped' | 'error'
 	 */
 	private function sync_simple_product(
@@ -175,7 +176,8 @@ class Sellmo_Stock_Sync_Pagination {
 		string $sellmo_code,
 		array $inventory
 	): string {
-		// Primary lookup by Sellmo product UUID; fallback to product_code.
+		// /inventory product_id = Sellmo product "id" for simple products.
+		// Fallback to product_code when the UUID isn't present in the inventory response.
 		$inv = $inventory[ $sellmo_id ]
 			?? ( '' !== $sellmo_code ? ( $inventory[ 'code:' . $sellmo_code ] ?? null ) : null );
 
@@ -185,22 +187,17 @@ class Sellmo_Stock_Sync_Pagination {
 
 		$in_stock = max( 0, (int) $inv['in_stock'] );
 
+		// Enable stock management and set quantity.
+		// WooCommerce recalculates stock_status automatically on save().
 		$product->set_manage_stock( true );
 		$product->set_stock_quantity( $in_stock );
-		$product->set_stock_status( $in_stock > 0 ? 'instock' : 'outofstock' );
 		$product->save();
 
 		Sellmo_Logger::log(
 			'stock',
 			'sellmo_to_wc',
 			'success',
-			sprintf(
-				'Simple #%d (code: %s): stock set to %d (%s).',
-				$product->get_id(),
-				$sellmo_code,
-				$in_stock,
-				$in_stock > 0 ? 'instock' : 'outofstock'
-			),
+			sprintf( 'Simple #%d (SKU: %s): stock set to %d.', $product->get_id(), $sellmo_code, $in_stock ),
 			(string) $product->get_id()
 		);
 
@@ -210,15 +207,16 @@ class Sellmo_Stock_Sync_Pagination {
 	/**
 	 * Sync stock for a variable WooCommerce product.
 	 *
-	 * Matches each Sellmo variant to a WC variation by SKU (product_code),
-	 * then enables manage_stock and sets the quantity on each matched variation.
+	 * Inventory lookup: /inventory product_id matches the Sellmo "variant_id" field
+	 * for each variant. The WC variation is resolved by its SKU (= Sellmo product_code).
+	 * WooCommerce recalculates stock_status automatically on save().
 	 *
 	 * @since  1.1.0
-	 * @param  WC_Product            $parent         WooCommerce parent product.
-	 * @param  string                $sellmo_id      Sellmo product UUID.
-	 * @param  string                $sellmo_code    Sellmo product code.
+	 * @param  WC_Product            $parent          WooCommerce parent product.
+	 * @param  string                $sellmo_id       Sellmo product UUID ("id" from /products).
+	 * @param  string                $sellmo_code     Sellmo product code (SKU fallback).
 	 * @param  array<string, array>  $sellmo_products Sellmo product map (UUID → product data).
-	 * @param  array<string, array>  $inventory       Inventory map.
+	 * @param  array<string, array>  $inventory        Inventory map keyed by UUID and 'code:{code}'.
 	 * @return string 'success' | 'skipped' | 'error'
 	 */
 	private function sync_variable_product(
@@ -228,9 +226,10 @@ class Sellmo_Stock_Sync_Pagination {
 		array $sellmo_products,
 		array $inventory
 	): string {
-		// Find the Sellmo product data (which includes the variants array).
+		// Find the Sellmo product record that carries the variants array.
 		$sellmo_product = $sellmo_products[ $sellmo_id ] ?? null;
 
+		// Fallback: match by product_code when the UUID isn't in the local map.
 		if ( null === $sellmo_product && '' !== $sellmo_code ) {
 			foreach ( $sellmo_products as $sp ) {
 				if ( (string) ( $sp['product_code'] ?? '' ) === $sellmo_code ) {
@@ -245,7 +244,6 @@ class Sellmo_Stock_Sync_Pagination {
 			: [];
 
 		if ( empty( $variants ) ) {
-			// No variant data available — skip the whole product.
 			return 'skipped';
 		}
 
@@ -256,10 +254,10 @@ class Sellmo_Stock_Sync_Pagination {
 				continue;
 			}
 
+			// /inventory product_id = variant_id for variant rows.
 			$variant_id   = (string) ( $variant['variant_id'] ?? $variant['id'] ?? '' );
 			$variant_code = (string) ( $variant['product_code'] ?? '' );
 
-			// Look up inventory for this variant.
 			$inv = ( '' !== $variant_id ? ( $inventory[ $variant_id ] ?? null ) : null )
 				?? ( '' !== $variant_code ? ( $inventory[ 'code:' . $variant_code ] ?? null ) : null );
 
@@ -269,9 +267,8 @@ class Sellmo_Stock_Sync_Pagination {
 
 			$in_stock = max( 0, (int) $inv['in_stock'] );
 
-			// Resolve the WC variation by variant SKU.
+			// Resolve the WC variation by its SKU (= Sellmo variant product_code).
 			$wc_var_id = '' !== $variant_code ? (int) wc_get_product_id_by_sku( $variant_code ) : 0;
-
 			if ( $wc_var_id <= 0 ) {
 				continue;
 			}
@@ -281,9 +278,10 @@ class Sellmo_Stock_Sync_Pagination {
 				continue;
 			}
 
+			// Enable stock management and set quantity.
+			// WooCommerce recalculates stock_status automatically on save().
 			$variation->set_manage_stock( true );
 			$variation->set_stock_quantity( $in_stock );
-			$variation->set_stock_status( $in_stock > 0 ? 'instock' : 'outofstock' );
 			$variation->save();
 
 			Sellmo_Logger::log(
@@ -291,12 +289,11 @@ class Sellmo_Stock_Sync_Pagination {
 				'sellmo_to_wc',
 				'success',
 				sprintf(
-					'Variation #%d (SKU: %s) of parent #%d: stock set to %d (%s).',
+					'Variation #%d (SKU: %s) of parent #%d: stock set to %d.',
 					$wc_var_id,
 					$variant_code,
 					$parent->get_id(),
-					$in_stock,
-					$in_stock > 0 ? 'instock' : 'outofstock'
+					$in_stock
 				),
 				(string) $wc_var_id
 			);
