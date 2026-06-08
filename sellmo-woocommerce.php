@@ -40,8 +40,10 @@ function sellmo_wc_activate(): void {
 	require_once SELLMO_WC_PATH . 'includes/class-sellmo-logger.php';
 	require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-mapping.php';
 	require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-mapper-store.php';
-	
+	require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-variant-store.php';
+
 	Sellmo_Product_Mapper_Store::create_table();
+	Sellmo_Product_Variant_Store::create_table();
 	Sellmo_Logger::create_table();
 	Sellmo_Product_Mapping::create_table();
 	update_option( 'sellmo_wc_db_version', SELLMO_WC_VERSION );
@@ -140,7 +142,9 @@ add_action(
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-plugin.php';
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-sync-guard.php';
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-mapper-store.php';
+		require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-variant-store.php';
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-mapper-sync.php';
+		require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-variant-sync.php';
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-mapper-ajax.php';
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-stock-sync-pagination.php';
 

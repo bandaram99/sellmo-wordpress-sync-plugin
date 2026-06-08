@@ -42,12 +42,22 @@ class Sellmo_Product_Mapper_Sync {
 	public function run_incremental_sync(): array {
 		set_time_limit( 300 );
 
-		return Sellmo_Sync_Guard::run(
+		$result = Sellmo_Sync_Guard::run(
 			fn(): array => $this->do_delta_sync(),
 			'product',
 			'sellmo_to_wc',
 			'Incremental product mapper sync'
 		);
+
+		// After staging products, refresh the variant store for mapped products.
+		// Isolated so a variant-sync failure never breaks the product sync result.
+		try {
+			( new Sellmo_Product_Variant_Sync() )->run();
+		} catch ( \Throwable $e ) {
+			Sellmo_Logger::log( 'product', 'sellmo_to_wc', 'error', 'Variant sync failed: ' . $e->getMessage() );
+		}
+
+		return $result;
 	}
 
 	/**
