@@ -2,19 +2,13 @@
 declare(strict_types=1);
 
 /**
- * Mapping-aware stock synchronisation.
+ * Stock sync pagination handler for Sellmo POS Integration.
  *
- * Sync flow:
- *   1. Load all active Sellmo ↔ WooCommerce mappings from the DB.
- *   2. Fetch the Sellmo product catalogue (for variant data on variable products).
- *   3. Page the /inventory endpoint into one local array.
- *   4. For each mapping:
- *        Simple product  → enable manage_stock, set quantity + status.
- *        Variable product → match every Sellmo variant to a WC variation by SKU,
- *                           then enable manage_stock + set quantity + status per variation.
+ * Pulls inventory levels from the Sellmo API and applies them to WooCommerce
+ * products and variations based on matching meta keys.
  *
  * @package Sellmo_WooCommerce
- * @since   1.1.0
+ * @since   1.0.0
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -22,315 +16,186 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Class Sellmo_Stock_Sync_Pagination
  *
- * @since 1.1.0
+ * @since 1.0.0
  */
 class Sellmo_Stock_Sync_Pagination {
 
-	private const MAX_PAGES = 200;
-
-	// ── Public entry point ────────────────────────────────────────────────────
+	/**
+	 * Maximum pages fetched per full sync run to prevent infinite loops.
+	 */
+	private const MAX_PAGES = 100;
 
 	/**
-	 * Run the stock sync. Called by the "Sync Stock Now" button and the cron.
+	 * Run the stock synchronization process.
 	 *
-	 * @since  1.1.0
+	 * Loops through the Sellmo /inventory API endpoint, maps the items to
+	 * local WooCommerce products, and updates their stock quantities.
+	 *
+	 * @since  1.0.0
 	 * @return array{ success: bool, count: int, message: string }
 	 */
 	public function run(): array {
-		set_time_limit( 300 );
-
-		return Sellmo_Sync_Guard::run(
-			fn(): array => $this->do_stock_sync(),
-			'stock',
-			'sellmo_to_wc',
-			'Stock sync'
-		);
-	}
-
-	// ── Orchestration ─────────────────────────────────────────────────────────
-
-	/**
-	 * Run the four-step mapping-aware sync.
-	 *
-	 * @since  1.1.0
-	 * @return array{ success: bool, count: int, message: string }
-	 */
-	private function do_stock_sync(): array {
-		$token = trim( (string) Sellmo_Settings::get( 'api_token' ) );
-		if ( '' === $token ) {
-			return [ 'success' => false, 'count' => 0, 'message' => __( 'SalesPlay API token is not configured.', 'sellmo-woocommerce' ) ];
-		}
-
-		// All HTTP goes through Sellmo_API (GET with query-string params, not a body).
-		$api = new Sellmo_API();
-
-		// ── Step 1: load active mappings ─────────────────────────────────────
-		$all_mappings = Sellmo_Product_Mapping::get_all_mappings_indexed();
-		$by_id        = $all_mappings['by_id']; // sellmo_product_id → row
-
-		if ( empty( $by_id ) ) {
-			Sellmo_Logger::log( 'stock', 'sellmo_to_wc', 'skipped', 'Stock sync: no mapped products found.' );
-			return [
-				'success' => true,
-				'count'   => 0,
-				'message' => __( 'No mapped products to sync.', 'sellmo-woocommerce' ),
-			];
-		}
-
-		// ── Step 2: fetch Sellmo product catalogue (variant details) ─────────
-		$sellmo_products = $this->fetch_sellmo_product_map( $api );
-		if ( is_wp_error( $sellmo_products ) ) {
-			return [ 'success' => false, 'count' => 0, 'message' => $sellmo_products->get_error_message() ];
-		}
-
-		// ── Step 3: page /inventory into one local array ─────────────────────
-		$inventory = $this->fetch_all_inventory( $api );
-		if ( is_wp_error( $inventory ) ) {
-			return [ 'success' => false, 'count' => 0, 'message' => $inventory->get_error_message() ];
-		}
-
-		// ── Step 4: update WooCommerce stock for every mapped product ─────────
-		$updated = 0;
+		$api     = new Sellmo_API();
+		$cursor  = '';
+		$page    = 0;
+		$synced  = 0;
 		$skipped = 0;
 		$errors  = 0;
 
-		foreach ( $by_id as $sellmo_id => $mapping ) {
-			$wc_id       = (int)    ( $mapping['wc_product_id']       ?? 0 );
-			$sellmo_code = (string) ( $mapping['sellmo_product_code'] ?? '' );
+		// Only update stock for the shop configured in the plugin settings.
+		$shop_id = (string) Sellmo_Settings::get( 'shop_id' );
 
-			if ( $wc_id <= 0 ) {
-				$skipped++;
-				continue;
-			}
-
-			$wc_product = wc_get_product( $wc_id );
-			if ( ! $wc_product instanceof WC_Product ) {
-				Sellmo_Logger::log( 'stock', 'sellmo_to_wc', 'error',
-					sprintf( 'Could not load WooCommerce product #%d.', $wc_id ), (string) $wc_id );
-				$errors++;
-				continue;
-			}
-
-			if ( $wc_product->is_type( 'variable' ) ) {
-				// Variable product — update each variation via Sellmo variant data.
-				$outcome = $this->sync_variable_product(
-					$wc_product,
-					$sellmo_id,
-					$sellmo_code,
-					$sellmo_products,
-					$inventory
-				);
-			} else {
-				// Simple product — look up inventory directly.
-				$outcome = $this->sync_simple_product( $wc_product, $sellmo_id, $sellmo_code, $inventory );
-			}
-
-			match ( $outcome ) {
-				'success' => $updated++,
-				'skipped' => $skipped++,
-				default   => $errors++,
-			};
+		if ( '' === $shop_id ) {
+			return [
+				'success' => false,
+				'count'   => 0,
+				'message' => __( 'Sync failed: No shop ID configured in settings.', 'sellmo-woocommerce' ),
+			];
 		}
 
-		$status = ( $errors > 0 && 0 === $updated ) ? 'error' : 'success';
+		Sellmo_Logger::log( 'stock', 'sellmo_to_wc', 'skipped', 'Manual stock sync started.' );
 
-		Sellmo_Settings::set( 'last_stock_sync', [
-			'time'   => time(),
-			'status' => $status,
-			'count'  => $updated,
-		] );
+		// Step 1 — build the Sellmo product/variant lookup map from /products so
+		// each inventory row can be attributed to the corresponding product or
+		// (for variants) its parent product when writing the stock snapshot.
+		$lookup = $this->collect_product_lookup_map();
+
+		do {
+			$page++;
+			
+			// Fetch the paginated inventory data
+			$response = $api->get_inventory( $cursor );
+
+			if ( is_wp_error( $response ) ) {
+				$error_message = $response->get_error_message();
+				Sellmo_Logger::log( 'stock', 'sellmo_to_wc', 'error', 'API Error: ' . $error_message );
+
+				return [
+					'success' => false,
+					'count'   => $synced,
+					'message' => $error_message,
+				];
+			}
+
+			$inventory_levels = $response['inventory_levels'] ?? $response['data'] ?? [];
+
+			// If no data is returned on this page, exit the loop.
+			if ( empty( $inventory_levels ) ) {
+				break;
+			}
+
+			foreach ( $inventory_levels as $level ) {
+				// Only process stock belonging to the currently selected shop.
+				if ( isset( $level['shop_id'] ) && (string) $level['shop_id'] !== $shop_id ) {
+					continue;
+				}
+
+				$product_code = (string) ( $level['product_code'] ?? '' );
+				$sellmo_id    = (string) ( $level['product_id'] ?? '' );
+				$variant_id   = (string) ( $level['variant_id'] ?? '' );
+				$in_stock     = (int) ( $level['in_stock'] ?? 0 );
+
+				// Validate that we have at least one identifier.
+				if ( '' === $product_code && '' === $sellmo_id && '' === $variant_id ) {
+					$skipped++;
+					continue;
+				}
+
+				// Resolve this row to its product/variant via the map, then persist
+				// the stock snapshot into the mapper/mapping tables.
+				$this->store_stock_snapshot( $lookup, $sellmo_id, $variant_id, $product_code, $in_stock );
+
+				// Look up the WooCommerce product or variation ID.
+				$wc_product_id = $this->find_local_product_id( $product_code, $sellmo_id, $variant_id );
+
+				if ( $wc_product_id > 0 ) {
+					$product = wc_get_product( $wc_product_id );
+
+					if ( $product ) {
+						try {
+							$product->set_manage_stock( true );
+							$product->set_stock_quantity( $in_stock );
+							$product->set_stock_status( $in_stock > 0 ? 'instock' : 'outofstock' );
+							$product->save();
+							
+							$synced++;
+						} catch ( Exception $e ) {
+							$errors++;
+							Sellmo_Logger::log(
+								'stock',
+								'sellmo_to_wc',
+								'error',
+								sprintf( 'Failed to save stock for WC Product #%d: %s', $wc_product_id, $e->getMessage() ),
+								$product_code ?: $sellmo_id
+							);
+						}
+					} else {
+						$skipped++;
+					}
+				} else {
+					$skipped++;
+				}
+			}
+
+			// Extract the cursor for the next API request.
+			$cursor = $this->extract_cursor( $response );
+
+		} while ( '' !== $cursor && $page < self::MAX_PAGES );
+
+		// Determine the final status to log.
+		$status = ( $errors > 0 && 0 === $synced ) ? 'error' : 'success';
 
 		Sellmo_Logger::log(
 			'stock',
 			'sellmo_to_wc',
 			$status,
-			sprintf( '%d updated, %d skipped, %d errors.', $updated, $skipped, $errors )
+			sprintf( 'Stock sync completed. %d items synced, %d skipped, %d errors.', $synced, $skipped, $errors )
 		);
 
 		return [
 			'success' => 'success' === $status,
-			'count'   => $updated,
-			'message' => '',
+			'count'   => $synced,
+			'message' => ''
 		];
 	}
 
-	// ── Per-product sync helpers ──────────────────────────────────────────────
-
 	/**
-	 * Sync stock for a simple WooCommerce product.
+	 * Build the Sellmo product/variant lookup map from the /products endpoint.
 	 *
-	 * Inventory lookup: /inventory product_id matches the Sellmo product "id" field.
-	 * WooCommerce automatically recalculates stock_status on save() when
-	 * manage_stock is enabled, so set_stock_status() is not called explicitly.
+	 * Indexes every product by id and code, and every variant by its variant id
+	 * (so an inventory row keyed by a variant id can be traced to its parent
+	 * product). Capped at 20 pages and degrades to an empty map on API failure —
+	 * the stock sync still runs, it just loses variant-to-parent attribution.
 	 *
-	 * @since  1.1.0
-	 * @param  WC_Product            $product      WooCommerce product object.
-	 * @param  string                $sellmo_id    Sellmo product UUID ("id" from /products).
-	 * @param  string                $sellmo_code  Sellmo product code (SKU fallback).
-	 * @param  array<string, array>  $inventory    Inventory map keyed by UUID and 'code:{code}'.
-	 * @return string 'success' | 'skipped' | 'error'
+	 * @since  1.0.0
+	 * @return array{ products_by_id: array<string, array<string, mixed>>, variants_by_id: array<string, array<string, mixed>>, products_by_code: array<string, array<string, mixed>> }
 	 */
-	private function sync_simple_product(
-		WC_Product $product,
-		string $sellmo_id,
-		string $sellmo_code,
-		array $inventory
-	): string {
-		// /inventory product_id = Sellmo product "id" for simple products.
-		// Fallback to product_code when the UUID isn't present in the inventory response.
-		$inv = $inventory[ $sellmo_id ]
-			?? ( '' !== $sellmo_code ? ( $inventory[ 'code:' . $sellmo_code ] ?? null ) : null );
-
-		if ( null === $inv ) {
-			return 'skipped';
-		}
-
-		$in_stock = max( 0, (int) $inv['in_stock'] );
-
-		// Enable stock management and set quantity.
-		// WooCommerce recalculates stock_status automatically on save().
-		$product->set_manage_stock( true );
-		$product->set_stock_quantity( $in_stock );
-		$product->save();
-
-		Sellmo_Logger::log(
-			'stock',
-			'sellmo_to_wc',
-			'success',
-			sprintf( 'Simple #%d (SKU: %s): stock set to %d.', $product->get_id(), $sellmo_code, $in_stock ),
-			(string) $product->get_id()
-		);
-
-		return 'success';
-	}
-
-	/**
-	 * Sync stock for a variable WooCommerce product.
-	 *
-	 * Inventory lookup: /inventory product_id matches the Sellmo "variant_id" field
-	 * for each variant. The WC variation is resolved by its SKU (= Sellmo product_code).
-	 * WooCommerce recalculates stock_status automatically on save().
-	 *
-	 * @since  1.1.0
-	 * @param  WC_Product            $parent          WooCommerce parent product.
-	 * @param  string                $sellmo_id       Sellmo product UUID ("id" from /products).
-	 * @param  string                $sellmo_code     Sellmo product code (SKU fallback).
-	 * @param  array<string, array>  $sellmo_products Sellmo product map (UUID → product data).
-	 * @param  array<string, array>  $inventory        Inventory map keyed by UUID and 'code:{code}'.
-	 * @return string 'success' | 'skipped' | 'error'
-	 */
-	private function sync_variable_product(
-		WC_Product $parent,
-		string $sellmo_id,
-		string $sellmo_code,
-		array $sellmo_products,
-		array $inventory
-	): string {
-		// Find the Sellmo product record that carries the variants array.
-		$sellmo_product = $sellmo_products[ $sellmo_id ] ?? null;
-
-		// Fallback: match by product_code when the UUID isn't in the local map.
-		if ( null === $sellmo_product && '' !== $sellmo_code ) {
-			foreach ( $sellmo_products as $sp ) {
-				if ( (string) ( $sp['product_code'] ?? '' ) === $sellmo_code ) {
-					$sellmo_product = $sp;
-					break;
-				}
-			}
-		}
-
-		$variants = ( $sellmo_product && is_array( $sellmo_product['variants'] ?? null ) )
-			? $sellmo_product['variants']
-			: [];
-
-		if ( empty( $variants ) ) {
-			return 'skipped';
-		}
-
-		$any_updated = false;
-
-		foreach ( $variants as $variant ) {
-			if ( ! is_array( $variant ) ) {
-				continue;
-			}
-
-			// /inventory product_id = variant_id for variant rows.
-			$variant_id   = (string) ( $variant['variant_id'] ?? $variant['id'] ?? '' );
-			$variant_code = (string) ( $variant['product_code'] ?? '' );
-
-			$inv = ( '' !== $variant_id ? ( $inventory[ $variant_id ] ?? null ) : null )
-				?? ( '' !== $variant_code ? ( $inventory[ 'code:' . $variant_code ] ?? null ) : null );
-
-			if ( null === $inv ) {
-				continue;
-			}
-
-			$in_stock = max( 0, (int) $inv['in_stock'] );
-
-			// Resolve the WC variation by its SKU (= Sellmo variant product_code).
-			$wc_var_id = '' !== $variant_code ? (int) wc_get_product_id_by_sku( $variant_code ) : 0;
-			if ( $wc_var_id <= 0 ) {
-				continue;
-			}
-
-			$variation = wc_get_product( $wc_var_id );
-			if ( ! $variation instanceof WC_Product ) {
-				continue;
-			}
-
-			// Enable stock management and set quantity.
-			// WooCommerce recalculates stock_status automatically on save().
-			$variation->set_manage_stock( true );
-			$variation->set_stock_quantity( $in_stock );
-			$variation->save();
-
-			Sellmo_Logger::log(
-				'stock',
-				'sellmo_to_wc',
-				'success',
-				sprintf(
-					'Variation #%d (SKU: %s) of parent #%d: stock set to %d.',
-					$wc_var_id,
-					$variant_code,
-					$parent->get_id(),
-					$in_stock
-				),
-				(string) $wc_var_id
-			);
-
-			$any_updated = true;
-		}
-
-		return $any_updated ? 'success' : 'skipped';
-	}
-
-	// ── API fetching ──────────────────────────────────────────────────────────
-
-	/**
-	 * Fetch the Sellmo product catalogue and index it by product UUID.
-	 *
-	 * Each entry is the raw product array from the API (including a 'variants' key
-	 * when the product has variants). Uses Sellmo_API so the request is a GET with
-	 * query-string params — never a GET with a JSON body (which crashes the
-	 * WordPress Requests transport).
-	 *
-	 * @since  1.1.0
-	 * @param  Sellmo_API $api Shared API client.
-	 * @return array<string, array<string, mixed>>|WP_Error  UUID → product data.
-	 */
-	private function fetch_sellmo_product_map( Sellmo_API $api ): array|\WP_Error {
-		$cursor = '';
-		$page   = 0;
-		$map    = [];
+	private function collect_product_lookup_map(): array {
+		$api       = new Sellmo_API();
+		$cursor    = '';
+		$page      = 0;
+		$max_pages = 20;
+		$lookup    = [
+			'products_by_id'   => [],
+			'variants_by_id'   => [],
+			'products_by_code' => [],
+		];
 
 		do {
 			$page++;
 			$response = $api->get_products( $cursor );
+
 			if ( is_wp_error( $response ) ) {
-				return $response;
+				Sellmo_Logger::log(
+					'stock',
+					'sellmo_to_wc',
+					'error',
+					'Could not build product map for stock attribution: ' . $response->get_error_message()
+				);
+				break;
 			}
 
-			$products = $this->extract_list( $response, [ 'products', 'data' ] );
+			$products = $response['products'] ?? $response['data'] ?? [];
 			if ( empty( $products ) ) {
 				break;
 			}
@@ -339,93 +204,171 @@ class Sellmo_Stock_Sync_Pagination {
 				if ( ! is_array( $product ) ) {
 					continue;
 				}
-				$pid = (string) ( $product['id'] ?? '' );
-				if ( '' !== $pid ) {
-					$map[ $pid ] = $product;
+
+				$product_id   = (string) ( $product['id'] ?? '' );
+				$product_code = (string) ( $product['product_code'] ?? '' );
+				$entry        = [
+					'product_id'   => $product_id,
+					'product_code' => $product_code,
+				];
+
+				if ( '' !== $product_id ) {
+					$lookup['products_by_id'][ $product_id ] = $entry;
+				}
+
+				if ( '' !== $product_code ) {
+					$lookup['products_by_code'][ $product_code ] = $entry;
+				}
+
+				$variants = isset( $product['variants'] ) && is_array( $product['variants'] ) ? $product['variants'] : [];
+				foreach ( $variants as $variant ) {
+					if ( ! is_array( $variant ) ) {
+						continue;
+					}
+
+					$variant_id = (string) ( $variant['variant_id'] ?? $variant['id'] ?? '' );
+					if ( '' === $variant_id ) {
+						continue;
+					}
+
+					$lookup['variants_by_id'][ $variant_id ] = [
+						'variant_id'          => $variant_id,
+						'parent_product_id'   => $product_id,
+						'parent_product_code' => $product_code,
+						'product_code'        => (string) ( $variant['product_code'] ?? '' ),
+					];
 				}
 			}
 
 			$cursor = $this->extract_cursor( $response );
-		} while ( '' !== $cursor && $page < self::MAX_PAGES );
 
-		return $map;
+		} while ( '' !== $cursor && $page < $max_pages );
+
+		return $lookup;
 	}
 
 	/**
-	 * Page the /inventory endpoint and return all rows indexed by:
-	 *   - Sellmo product_id (UUID — matches a product "id" or a "variant_id")
-	 *   - 'code:{product_code}' (fallback when UUID matching fails)
+	 * Persist a Sellmo stock snapshot into the mapper and mapping tables.
 	 *
-	 * @since  1.1.0
-	 * @param  Sellmo_API $api Shared API client.
-	 * @return array<string, array{ in_stock: int, product_code: string }>|WP_Error
-	 */
-	private function fetch_all_inventory( Sellmo_API $api ): array|\WP_Error {
-		$cursor    = '';
-		$page      = 0;
-		$inventory = [];
-
-		do {
-			$page++;
-			$response = $api->get_inventory( $cursor );
-			if ( is_wp_error( $response ) ) {
-				return $response;
-			}
-
-			$rows = $this->extract_list( $response, [ 'inventory_levels', 'inventory', 'data' ] );
-			if ( empty( $rows ) ) {
-				break;
-			}
-
-			foreach ( $rows as $row ) {
-				if ( ! is_array( $row ) || ! isset( $row['in_stock'] ) || ! is_numeric( $row['in_stock'] ) ) {
-					continue;
-				}
-
-				$in_stock = (int) $row['in_stock'];
-				$code     = (string) ( $row['product_code'] ?? '' );
-
-				$pid = (string) ( $row['product_id'] ?? '' );
-				if ( '' !== $pid ) {
-					$inventory[ $pid ] = [ 'in_stock' => $in_stock, 'product_code' => $code ];
-				}
-
-				if ( '' !== $code ) {
-					$inventory[ 'code:' . $code ] = [ 'in_stock' => $in_stock, 'product_code' => $code ];
-				}
-			}
-
-			$cursor = $this->extract_cursor( $response );
-		} while ( '' !== $cursor && $page < self::MAX_PAGES );
-
-		return $inventory;
-	}
-
-	// ── Response helpers ──────────────────────────────────────────────────────
-
-	/**
-	 * Pull a list from a decoded response, trying each candidate key in order.
+	 * When the inventory row's product_id is actually a variant id (per the
+	 * lookup map), the stock is attributed to the parent product id as well, so
+	 * the master row in the staging table is updated alongside any variant row.
+	 * stock_status is derived inside update_stock(): 1 when in_stock > 0, else 0.
 	 *
-	 * @since  1.1.0
-	 * @param  array<string, mixed> $response
-	 * @param  string[]             $keys
-	 * @return array<int, mixed>
+	 * @since  1.0.0
+	 * @param  array<string, mixed> $lookup       Product/variant lookup map.
+	 * @param  string               $sellmo_id    Inventory product_id (may be a variant id).
+	 * @param  string               $variant_id   Variant id from the row, when present.
+	 * @param  string               $product_code Inventory product_code.
+	 * @param  int                  $in_stock     Stock count from /inventory.
+	 * @return void
 	 */
-	private function extract_list( array $response, array $keys ): array {
-		foreach ( $keys as $key ) {
-			if ( isset( $response[ $key ] ) && is_array( $response[ $key ] ) ) {
-				return $response[ $key ];
+	private function store_stock_snapshot( array $lookup, string $sellmo_id, string $variant_id, string $product_code, int $in_stock ): void {
+		$match_product_id = $sellmo_id;
+		$match_variant_id = $variant_id;
+		$match_code       = $product_code;
+
+		// Inventory rows carry the variant's own id in product_id and have no
+		// separate variant_id, so trace it back to the parent product here.
+		if ( '' !== $sellmo_id && isset( $lookup['variants_by_id'][ $sellmo_id ] ) ) {
+			$variant          = $lookup['variants_by_id'][ $sellmo_id ];
+			$match_product_id = (string) ( $variant['parent_product_id'] ?? '' );
+			$match_variant_id = $sellmo_id;
+
+			if ( '' === $match_code ) {
+				$match_code = (string) ( $variant['product_code'] ?? '' );
 			}
 		}
-		return [];
+
+		Sellmo_Product_Mapper_Store::update_stock( $match_product_id, $match_variant_id, $match_code, $in_stock );
+		Sellmo_Product_Mapping::update_stock( $match_product_id, $match_variant_id, $match_code, $in_stock );
 	}
 
 	/**
-	 * Pull the next pagination cursor from a decoded response.
+	 * Locate a WooCommerce Product or Variation ID using Sellmo identifiers.
 	 *
-	 * @since  1.1.0
-	 * @param  array<string, mixed> $response
-	 * @return string Empty string when there are no more pages.
+	 * Uses an order of precedence: Variant ID -> Product Code -> Master Product ID.
+	 *
+	 * @since  1.0.0
+	 * @param  string $product_code Sellmo product code (SKU equivalent).
+	 * @param  string $sellmo_id    Sellmo master product ID.
+	 * @param  string $variant_id   Sellmo variant ID.
+	 * @return int                  The WooCommerce Post ID, or 0 if not found.
+	 */
+	private function find_local_product_id( string $product_code, string $sellmo_id, string $variant_id ): int {
+		
+		// 1. Variant ID: Most specific match for variations.
+		if ( '' !== $variant_id ) {
+			$query = new WP_Query( [
+				'post_type'      => 'product_variation',
+				'post_status'    => [ 'publish', 'private' ],
+				'fields'         => 'ids',
+				'posts_per_page' => 1,
+				'no_found_rows'  => true,
+				'meta_query'     => [
+					[
+						'key'   => '_salesplay_variant_id',
+						'value' => $variant_id,
+					]
+				]
+			] );
+
+			if ( ! empty( $query->posts ) ) {
+				return (int) $query->posts[0];
+			}
+		}
+
+		// 2. Product Code: Matches both simple products and variations.
+		if ( '' !== $product_code ) {
+			$query = new WP_Query( [
+				'post_type'      => [ 'product', 'product_variation' ],
+				'post_status'    => [ 'publish', 'private' ],
+				'fields'         => 'ids',
+				'posts_per_page' => 1,
+				'no_found_rows'  => true,
+				'meta_query'     => [
+					[
+						'key'   => '_sellmo_product_code',
+						'value' => $product_code,
+					]
+				]
+			] );
+
+			if ( ! empty( $query->posts ) ) {
+				return (int) $query->posts[0];
+			}
+		}
+
+		// 3. Master Product ID: Fallback for simple products.
+		if ( '' !== $sellmo_id ) {
+			$query = new WP_Query( [
+				'post_type'      => 'product',
+				'post_status'    => [ 'publish', 'private' ],
+				'fields'         => 'ids',
+				'posts_per_page' => 1,
+				'no_found_rows'  => true,
+				'meta_query'     => [
+					[
+						'key'   => '_salesplay_pos_product_id',
+						'value' => $sellmo_id,
+					]
+				]
+			] );
+
+			if ( ! empty( $query->posts ) ) {
+				return (int) $query->posts[0];
+			}
+		}
+
+		return 0; // Not found
+	}
+
+	/**
+	 * Extract the pagination cursor from the Sellmo API response.
+	 *
+	 * @since  1.0.0
+	 * @param  array<string, mixed> $response Decoded API response.
+	 * @return string                         Next cursor string, or empty if done.
 	 */
 	private function extract_cursor( array $response ): string {
 		foreach ( [ 'cursor', 'next_cursor', 'next_page_cursor' ] as $key ) {
@@ -433,9 +376,11 @@ class Sellmo_Stock_Sync_Pagination {
 				return $response[ $key ];
 			}
 		}
+
 		if ( ! empty( $response['meta']['cursor'] ) && is_string( $response['meta']['cursor'] ) ) {
 			return $response['meta']['cursor'];
 		}
+
 		return '';
 	}
 }

@@ -68,6 +68,8 @@ class Sellmo_Product_Mapper_Store {
   category            VARCHAR(191) NOT NULL DEFAULT '',
   price               DECIMAL(20,4) NOT NULL DEFAULT 0,
   variant_count       INT UNSIGNED NOT NULL DEFAULT 0,
+  stock_count         INT NOT NULL DEFAULT 0,
+  stock_status        TINYINT(1) NOT NULL DEFAULT 0,
   raw_payload         LONGTEXT NULL,
   imported_at         DATETIME NOT NULL DEFAULT '1970-01-01 00:00:00',
   updated_at          DATETIME NOT NULL DEFAULT '1970-01-01 00:00:00',
@@ -112,9 +114,100 @@ class Sellmo_Product_Mapper_Store {
 
 		if ( $table !== $exists ) {
 			self::create_table();
+		} else {
+			self::ensure_stock_columns();
 		}
 
 		self::$table_verified = true;
+	}
+
+	/**
+	 * Add the stock_count / stock_status columns to an older table that predates them.
+	 *
+	 * dbDelta only runs on activation, so an already-installed table needs an
+	 * explicit ALTER. Checks SHOW COLUMNS first so the ALTER never runs twice.
+	 *
+	 * @since  1.1.0
+	 * @return void
+	 */
+	private static function ensure_stock_columns(): void {
+		global $wpdb;
+
+		$table = self::table_name();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$columns = array_map( 'strval', (array) $wpdb->get_col( "SHOW COLUMNS FROM `{$table}`" ) );
+
+		if ( ! in_array( 'stock_count', $columns, true ) ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$wpdb->query( "ALTER TABLE `{$table}` ADD COLUMN stock_count INT NOT NULL DEFAULT 0" );
+		}
+
+		if ( ! in_array( 'stock_status', $columns, true ) ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$wpdb->query( "ALTER TABLE `{$table}` ADD COLUMN stock_status TINYINT(1) NOT NULL DEFAULT 0" );
+		}
+	}
+
+	/**
+	 * Store the latest Sellmo in_stock count against any matching staged row.
+	 *
+	 * Matches a row by Sellmo product id, variant id, or product code so an
+	 * inventory record keyed by any of those identifiers updates the right row.
+	 * stock_status is derived: 1 when in_stock is greater than 0, otherwise 0.
+	 *
+	 * @since  1.1.0
+	 * @param  string $sellmo_product_id Sellmo master product id.
+	 * @param  string $variant_id        Sellmo variant id (may be empty).
+	 * @param  string $product_code      Sellmo product code (may be empty).
+	 * @param  int    $in_stock          Stock count from the /inventory endpoint.
+	 * @return int                       Number of rows updated.
+	 */
+	public static function update_stock( string $sellmo_product_id, string $variant_id, string $product_code, int $in_stock ): int {
+		self::ensure_table();
+		global $wpdb;
+
+		$sellmo_product_id = trim( $sellmo_product_id );
+		$variant_id        = trim( $variant_id );
+		$product_code      = trim( $product_code );
+
+		$conditions = [];
+		$params     = [];
+
+		if ( '' !== $sellmo_product_id ) {
+			$conditions[] = 'sellmo_product_id = %s';
+			$params[]     = $sellmo_product_id;
+		}
+
+		if ( '' !== $variant_id && $variant_id !== $sellmo_product_id ) {
+			$conditions[] = 'sellmo_product_id = %s';
+			$params[]     = $variant_id;
+		}
+
+		if ( '' !== $product_code ) {
+			$conditions[] = 'sellmo_product_code = %s';
+			$params[]     = $product_code;
+		}
+
+		if ( empty( $conditions ) ) {
+			return 0;
+		}
+
+		$table        = self::table_name();
+		$where        = implode( ' OR ', $conditions );
+		$stock_status = $in_stock > 0 ? 1 : 0;
+		$now          = current_time( 'mysql', true );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return (int) $wpdb->query(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				"UPDATE `{$table}` SET stock_count = %d, stock_status = %d, updated_at = %s WHERE {$where}",
+				$in_stock,
+				$stock_status,
+				$now,
+				...$params
+			)
+		);
 	}
 
 	/**

@@ -298,6 +298,12 @@ class Sellmo_API {
 	 *
 	 * Requests 250 items per page. Cached for 1 minute to keep stock levels fresh.
 	 *
+	 * The SalesPlay /inventory endpoint only paginates when limit + cursor are sent
+	 * in the JSON body of a GET request (a query-string cursor is ignored, so the
+	 * returned cursor never advances and the same first page repeats forever). This
+	 * delegates to request_inventory() which sends the cursor in the body — matching
+	 * the standalone export script — instead of the generic query-string make_request().
+	 *
 	 * @since  1.0.0
 	 * @param  string $cursor Optional pagination cursor from a previous response.
 	 * @return array<string, mixed>|WP_Error
@@ -310,18 +316,117 @@ class Sellmo_API {
 			return $cached;
 		}
 
-		$endpoint = '/inventory?limit=250';
-		if ( '' !== $cursor ) {
-			$endpoint .= '&cursor=' . rawurlencode( $cursor );
-		}
-
-		$result = $this->make_request( 'GET', $endpoint );
+		$result = $this->request_inventory( $cursor );
 
 		if ( ! is_wp_error( $result ) ) {
 			set_transient( $transient_key, $result, MINUTE_IN_SECONDS );
 		}
 
 		return $result;
+	}
+
+	/**
+	 * Execute a single /inventory page request with the cursor in the JSON body.
+	 *
+	 * SalesPlay expects a GET request whose body carries { product_ids, shop_ids,
+	 * limit, cursor } and authenticates via the `token` header. Mirrors the proven
+	 * export script. Handles HTTP 429 with exponential backoff (up to max_retries)
+	 * and never logs the token.
+	 *
+	 * @since  1.0.0
+	 * @param  string $cursor Pagination cursor from a previous response.
+	 * @return array<string, mixed>|WP_Error  Decoded JSON array on success, WP_Error on failure.
+	 */
+	private function request_inventory( string $cursor ): array|\WP_Error {
+		$url     = self::API_BASE . '/inventory';
+		$payload = [
+			'product_ids' => '',
+			'shop_ids'    => '',
+			'limit'       => '250',
+			'cursor'      => $cursor,
+		];
+
+		$headers = [
+			'token'        => 'Bearer ' . $this->token,
+			'Content-Type' => 'application/json',
+		];
+		$body = wp_json_encode( $payload );
+
+		// WordPress's wp_remote_* helpers force GET data into the query string, but
+		// SalesPlay /inventory requires an uppercase GET whose body carries the
+		// cursor. WP's bundled Requests library supports that directly when
+		// data_format is 'body', so call it instead of wp_remote_request().
+		$options = [
+			'data_format' => 'body',
+			'timeout'     => 20,
+		];
+
+		for ( $attempt = 0; $attempt < $this->max_retries; $attempt++ ) {
+			try {
+				$response = \WpOrg\Requests\Requests::request( $url, $headers, $body, 'GET', $options );
+			} catch ( \Throwable $e ) {
+				// Connection-level failure — no retry.
+				Sellmo_Logger::log(
+					'stock',
+					'sellmo_to_wc',
+					'error',
+					sprintf( 'API transport error on GET /inventory: %s', $this->truncate_for_log( $e->getMessage() ) ),
+					'/inventory'
+				);
+				return new \WP_Error( 'sellmo_http_error', $e->getMessage(), [ 'endpoint' => '/inventory' ] );
+			}
+
+			$code = (int) $response->status_code;
+
+			// Rate limited — back off and retry.
+			if ( 429 === $code ) {
+				sleep( (int) pow( 2, $attempt ) );
+				continue;
+			}
+
+			// Any other non-2xx — return error immediately.
+			if ( $code < 200 || $code >= 300 ) {
+				$message = '' !== (string) $response->body ? (string) $response->body : ( 'HTTP ' . $code );
+
+				Sellmo_Logger::log(
+					'stock',
+					'sellmo_to_wc',
+					'error',
+					sprintf( 'API GET /inventory failed with HTTP %d: %s', $code, $this->truncate_for_log( $message ) ),
+					'/inventory'
+				);
+
+				return new \WP_Error(
+					'sellmo_api_error',
+					$message,
+					[ 'status' => $code, 'endpoint' => '/inventory' ]
+				);
+			}
+
+			// Success — decode and return.
+			$decoded = json_decode( (string) $response->body, true );
+
+			if ( null === $decoded ) {
+				Sellmo_Logger::log(
+					'stock',
+					'sellmo_to_wc',
+					'error',
+					'API GET /inventory returned invalid JSON.',
+					'/inventory'
+				);
+
+				return new \WP_Error( 'sellmo_invalid_json', 'Invalid JSON in Sellmo API response.', [ 'endpoint' => '/inventory' ] );
+			}
+
+			return $decoded;
+		}
+
+		// Exhausted all retries on 429.
+		$message = sprintf( 'Sellmo API rate limit exceeded after %d retries on /inventory.', $this->max_retries );
+
+		Sellmo_Logger::log( 'stock', 'sellmo_to_wc', 'error', $message, '/inventory' );
+
+		return new \WP_Error( 'sellmo_rate_limited', $message );
 	}
 
 	/**

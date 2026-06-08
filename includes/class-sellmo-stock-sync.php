@@ -180,6 +180,10 @@ class Sellmo_Stock_Sync {
 		foreach ( $inventory_records as $record ) {
 			$target = $this->resolve_inventory_target( $record, $lookup );
 
+			// Persist the Sellmo stock snapshot into the mapper/mapping tables,
+			// attributing variant stock to its parent product via the lookup map.
+			$this->store_stock_snapshot( $record, $target );
+
 			if ( null === $target ) {
 				// Inventory row not represented in /products IDs; ignore silently.
 				continue;
@@ -231,6 +235,39 @@ class Sellmo_Stock_Sync {
 			'count'   => $synced,
 			'message' => '',
 		];
+	}
+
+	/**
+	 * Persist a Sellmo stock snapshot into the mapper and mapping tables.
+	 *
+	 * Prefers the map-resolved target (so a variant's stock is attributed to its
+	 * parent product id, which is what the staging table is keyed by) and falls
+	 * back to the raw inventory record when the row could not be resolved.
+	 *
+	 * @since  1.0.0
+	 * @param  array<string, mixed>      $record Raw inventory record.
+	 * @param  array<string, mixed>|null $target Resolved target, or null.
+	 * @return void
+	 */
+	private function store_stock_snapshot( array $record, ?array $target ): void {
+		if ( is_array( $target ) ) {
+			$product_id   = (string) ( $target['product_id'] ?? '' );
+			$variant_id   = (string) ( $target['variant_id'] ?? '' );
+			$product_code = (string) ( $target['product_code'] ?? '' );
+			$in_stock     = $this->extract_item_stock( $target );
+		} else {
+			$product_id   = (string) ( $record['product_id'] ?? '' );
+			$variant_id   = (string) ( $record['variant_id'] ?? '' );
+			$product_code = (string) ( $record['product_code'] ?? '' );
+			$in_stock     = $this->extract_item_stock( $record );
+		}
+
+		if ( null === $in_stock ) {
+			return;
+		}
+
+		Sellmo_Product_Mapper_Store::update_stock( $product_id, $variant_id, $product_code, $in_stock );
+		Sellmo_Product_Mapping::update_stock( $product_id, $variant_id, $product_code, $in_stock );
 	}
 
 	/**
