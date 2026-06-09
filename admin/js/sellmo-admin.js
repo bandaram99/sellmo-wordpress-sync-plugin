@@ -980,6 +980,42 @@
 			} );
 		} );
 
+		$( document ).on( 'click', '.sellmo-mapper-import-btn', function () {
+			var $btn = $( this );
+			var $row = $btn.closest( 'tr' );
+			var sellmoId   = String( $row.data( 'sellmo-id' ) || '' );
+			var sellmoCode = String( $row.data( 'sellmo-code' ) || '' );
+
+			if ( ! sellmoId && ! sellmoCode ) {
+				return;
+			}
+
+			var origLabel = $btn.text();
+			$btn.prop( 'disabled', true ).text( i18n.importing || 'Importing…' );
+
+			$.post( ajaxUrl, {
+				action      : 'sellmo_wc_mapper_import_map',
+				nonce       : nonce,
+				sellmo_id   : sellmoId,
+				sellmo_code : sellmoCode
+			} )
+			.done( function ( res ) {
+				if ( res && res.success ) {
+					// Row is rebuilt by the reload; it will now show as Mapped.
+					loadMapperList( mapperPage );
+				} else {
+					// eslint-disable-next-line no-alert
+					window.alert( ( res.data && res.data.message ) || ( i18n.importError || 'Import failed.' ) );
+					$btn.prop( 'disabled', false ).text( origLabel );
+				}
+			} )
+			.fail( function () {
+				// eslint-disable-next-line no-alert
+				window.alert( i18n.importError || 'Import failed. Please try again.' );
+				$btn.prop( 'disabled', false ).text( origLabel );
+			} );
+		} );
+
 		$( document ).on( 'click', '.sellmo-mapper-unmap-btn', function () {
 			var $btn = $( this );
 			var $row = $btn.closest( 'tr' );
@@ -1230,6 +1266,9 @@ var wcOption = selectedWcId > 0
 			var actions     = '<button type="button" class="button button-small sellmo-mapper-map-btn">' + escHtml( actionLabel ) + '</button>';
 			if ( 'mapped' === status ) {
 				actions += ' <button type="button" class="button button-small sellmo-mapper-unmap-btn">' + escHtml( i18n.unmap || 'Unmap' ) + '</button>';
+			} else {
+				// One-click: create the WooCommerce product and auto-map it.
+				actions += ' <button type="button" class="button button-small button-primary sellmo-mapper-import-btn">' + escHtml( i18n.importProduct || 'Import to WooCommerce' ) + '</button>';
 			}
 			if ( wcEditUrl ) {
 				actions += ' <a class="button button-small" target="_blank" href="' + escHtml( wcEditUrl ) + '">' + escHtml( i18n.viewInWC || 'View in WC' ) + '</a>';

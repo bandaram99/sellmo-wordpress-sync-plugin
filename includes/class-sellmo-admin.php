@@ -52,6 +52,7 @@ class Sellmo_Admin {
 
 		add_action( 'wp_ajax_sellmo_wc_get_mapper_list',    [ $this, 'ajax_get_mapper_list' ] );
 		add_action( 'wp_ajax_sellmo_wc_map_product',        [ $this, 'ajax_map_product' ] );
+		add_action( 'wp_ajax_sellmo_wc_mapper_import_map',  [ $this, 'ajax_mapper_import_product' ] );
 		add_action( 'wp_ajax_sellmo_wc_unmap_product',      [ $this, 'ajax_unmap_product' ] );
 		add_action( 'wp_ajax_sellmo_wc_bulk_mapper',        [ $this, 'ajax_bulk_mapper' ] );
 		add_action( 'wp_ajax_sellmo_wc_mapper_wc_products', [ $this, 'ajax_mapper_wc_products' ] );
@@ -822,6 +823,96 @@ class Sellmo_Admin {
 
 		wp_send_json_success( [
 			'message' => __( 'Mapping saved.', 'sellmo-woocommerce' ),
+		] );
+	}
+
+	/**
+	 * AJAX: import a Sellmo product into WooCommerce and auto-map it.
+	 *
+	 * Backs the "Import to WooCommerce" button on the Product Mapper page. Finds
+	 * the Sellmo product in the cached catalogue, creates the WooCommerce product
+	 * via Sellmo_Product_Sync::import_product(), then links the two with a mapping
+	 * row so the product immediately shows as Mapped.
+	 *
+	 * @since  1.1.0
+	 * @return void
+	 */
+	public function ajax_mapper_import_product(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$sellmo_id   = sanitize_text_field( wp_unslash( $_POST['sellmo_id'] ?? '' ) );
+		$sellmo_code = sanitize_text_field( wp_unslash( $_POST['sellmo_code'] ?? '' ) );
+
+		if ( '' === $sellmo_id && '' === $sellmo_code ) {
+			wp_send_json_error( [ 'message' => __( 'Invalid product reference.', 'sellmo-woocommerce' ) ] );
+		}
+
+		// Refuse if this Sellmo product is already mapped.
+		$existing = '' !== $sellmo_id ? Sellmo_Product_Mapping::get_mapping_by_sellmo_id( $sellmo_id ) : null;
+		if ( null === $existing && '' !== $sellmo_code ) {
+			$existing = Sellmo_Product_Mapping::get_mapping_by_sellmo_code( $sellmo_code );
+		}
+		if ( is_array( $existing ) ) {
+			wp_send_json_error( [ 'message' => __( 'Product is already mapped.', 'sellmo-woocommerce' ) ] );
+		}
+
+		// Locate the Sellmo product payload in the cached catalogue.
+		$all_products = $this->get_all_sellmo_products();
+		if ( is_wp_error( $all_products ) ) {
+			wp_send_json_error( [ 'message' => $all_products->get_error_message() ] );
+		}
+
+		$sellmo_product = null;
+		foreach ( $all_products as $p ) {
+			$p_id   = (string) ( $p['id'] ?? '' );
+			$p_code = (string) ( $p['product_code'] ?? '' );
+
+			if ( ( '' !== $sellmo_id && $p_id === $sellmo_id ) || ( '' !== $sellmo_code && $p_code === $sellmo_code ) ) {
+				$sellmo_product = $p;
+				break;
+			}
+		}
+
+		if ( null === $sellmo_product ) {
+			wp_send_json_error( [ 'message' => __( 'Product not found in Sellmo catalogue.', 'sellmo-woocommerce' ) ] );
+		}
+
+		// Create / update the WooCommerce product.
+		$sync   = new Sellmo_Product_Sync();
+		$new_id = $sync->import_product( $sellmo_product );
+
+		if ( $new_id <= 0 ) {
+			wp_send_json_error( [ 'message' => __( 'Import failed. Check the Sync Log for details.', 'sellmo-woocommerce' ) ] );
+		}
+
+		// Auto-map the Sellmo product to the freshly imported WooCommerce product.
+		$map_id   = (string) ( $sellmo_product['id'] ?? $sellmo_id );
+		$map_code = (string) ( $sellmo_product['product_code'] ?? $sellmo_code );
+		$map_name = (string) ( $sellmo_product['product_name'] ?? '' );
+
+		if ( ! Sellmo_Product_Mapping::upsert_mapping( $map_id, $map_code, $map_name, $new_id ) ) {
+			wp_send_json_error( [
+				'message' => __( 'Product imported, but automatic mapping failed (the WooCommerce product may already be mapped to another Sellmo product).', 'sellmo-woocommerce' ),
+				'wc_id'   => $new_id,
+			] );
+		}
+
+		Sellmo_Logger::log(
+			'product',
+			'sellmo_to_wc',
+			'success',
+			sprintf( 'Imported and auto-mapped "%s" to WooCommerce product #%d', $map_name, $new_id ),
+			$map_code
+		);
+
+		wp_send_json_success( [
+			'wc_id'    => $new_id,
+			'edit_url' => (string) get_edit_post_link( $new_id, 'raw' ),
+			'message'  => __( 'Product imported and mapped.', 'sellmo-woocommerce' ),
 		] );
 	}
 
