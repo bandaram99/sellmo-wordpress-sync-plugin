@@ -108,7 +108,7 @@ class Sellmo_Product_Sync {
 	 * @return array{ success: bool, count: int, message: string }
 	 */
 	public function run_manual_sync(): array {
-		set_time_limit( 120 );
+		set_time_limit( 300 );
 
 		return $this->run_full_sync( false );
 	}
@@ -120,7 +120,7 @@ class Sellmo_Product_Sync {
 	 * @return array{ success: bool, count: int, message: string, trace?: array<string, mixed>, error?: array<string, mixed> }
 	 */
 	public function run_ajax_trace_sync(): array {
-		set_time_limit( 120 );
+		set_time_limit( 300 );
 
 		return $this->run_full_sync( true );
 	}
@@ -138,6 +138,23 @@ class Sellmo_Product_Sync {
 	 * @return int                                  New WC product post ID, or 0 on failure.
 	 */
 	public function import_product( array $sellmo_product ): int {
+		$mapping = Sellmo_Product_Mapping::get_mapping_for_sellmo_product( $sellmo_product );
+		if ( is_array( $mapping ) ) {
+			$code = (string) ( $sellmo_product['product_code'] ?? '' );
+			Sellmo_Logger::log(
+				'product',
+				'sellmo_to_wc',
+				'skipped',
+				sprintf(
+					'Product skipped because mapped to WooCommerce product #%d',
+					(int) ( $mapping['wc_product_id'] ?? 0 )
+				),
+				$code
+			);
+
+			return 0;
+		}
+
 		return $this->sync_or_create_product( $sellmo_product );
 	}
 
@@ -183,6 +200,22 @@ class Sellmo_Product_Sync {
 			foreach ( $products as $sellmo_product ) {
 				if ( (string) ( $sellmo_product['product_code'] ?? '' ) !== $sellmo_product_code ) {
 					continue;
+				}
+
+				$mapping = Sellmo_Product_Mapping::get_mapping_for_sellmo_product( $sellmo_product );
+				if ( is_array( $mapping ) ) {
+					Sellmo_Logger::log(
+						'product',
+						'sellmo_to_wc',
+						'skipped',
+						sprintf(
+							'Product skipped because mapped to WooCommerce product #%d',
+							(int) ( $mapping['wc_product_id'] ?? 0 )
+						),
+						$sellmo_product_code
+					);
+
+					return true;
 				}
 
 				return $this->sync_or_create_product( $sellmo_product ) > 0;
@@ -270,6 +303,22 @@ class Sellmo_Product_Sync {
 			}
 
 			foreach ( $products as $sellmo_product ) {
+				$mapping = Sellmo_Product_Mapping::get_mapping_for_sellmo_product( $sellmo_product );
+				if ( is_array( $mapping ) ) {
+					$skipped++;
+					Sellmo_Logger::log(
+						'product',
+						'sellmo_to_wc',
+						'skipped',
+						sprintf(
+							'Product skipped because mapped to WooCommerce product #%d',
+							(int) ( $mapping['wc_product_id'] ?? 0 )
+						),
+						(string) ( $sellmo_product['product_code'] ?? '' )
+					);
+					continue;
+				}
+
 				if ( ! $this->passes_category_filter( $sellmo_product ) ) {
 					$skipped++;
 					continue;
@@ -286,6 +335,13 @@ class Sellmo_Product_Sync {
 
 				if ( $product_id > 0 ) {
 					$synced++;
+					Sellmo_Logger::log(
+						'product',
+						'sellmo_to_wc',
+						'success',
+						'Product synced because no mapping exists',
+						$code
+					);
 				} else {
 					$errors++;
 
@@ -383,6 +439,20 @@ class Sellmo_Product_Sync {
 			if ( $product_id > 0 ) {
 				$product = wc_get_product( $product_id );
 				if ( ! $product ) {
+					$this->last_error = [
+						'message'      => "Failed to load WooCommerce product #{$product_id}.",
+						'product_code' => $code,
+						'salesplay_id' => $salesplay_id,
+					];
+
+					Sellmo_Logger::log(
+						'product',
+						'sellmo_to_wc',
+						'error',
+						"Sync failed for product '{$code}': could not load WooCommerce product #{$product_id}.",
+						$code
+					);
+
 					return 0;
 				}
 
@@ -410,6 +480,20 @@ class Sellmo_Product_Sync {
 
 			$product_id = $product->save();
 			if ( $product_id <= 0 ) {
+				$this->last_error = [
+					'message'      => 'WooCommerce refused to save the product.',
+					'product_code' => $code,
+					'salesplay_id' => $salesplay_id,
+				];
+
+				Sellmo_Logger::log(
+					'product',
+					'sellmo_to_wc',
+					'error',
+					"Sync failed for product '{$code}': WooCommerce refused to save the product.",
+					$code
+				);
+
 				return 0;
 			}
 
@@ -497,6 +581,13 @@ class Sellmo_Product_Sync {
 				$product->set_sku( $code );
 			} catch ( \WC_Data_Exception $e ) {
 				// SKU already used by another product — leave the existing SKU intact.
+				Sellmo_Logger::log(
+					'product',
+					'sellmo_to_wc',
+					'skipped',
+					"SKU '{$code}' already exists in WooCommerce. Keeping existing SKU.",
+					$code
+				);
 			}
 		}
 
@@ -575,6 +666,14 @@ class Sellmo_Product_Sync {
 		if ( false === $existing || null === $existing ) {
 			$inserted = wp_insert_term( $category_name, 'product_cat' );
 			if ( is_wp_error( $inserted ) ) {
+				Sellmo_Logger::log(
+					'product',
+					'sellmo_to_wc',
+					'error',
+					sprintf( 'Failed to create product category "%s": %s', $category_name, $inserted->get_error_message() ),
+					$category_name
+				);
+
 				return 0;
 			}
 

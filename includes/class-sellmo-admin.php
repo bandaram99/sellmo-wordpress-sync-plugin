@@ -49,6 +49,13 @@ class Sellmo_Admin {
 		add_action( 'wp_ajax_sellmo_wc_import_product',    [ $this, 'ajax_import_product' ] );
 		add_action( 'wp_ajax_sellmo_wc_toggle_sync',       [ $this, 'ajax_toggle_sync' ] );
 		add_action( 'wp_ajax_sellmo_wc_bulk_products',     [ $this, 'ajax_bulk_products' ] );
+
+		add_action( 'wp_ajax_sellmo_wc_get_mapper_list',    [ $this, 'ajax_get_mapper_list' ] );
+		add_action( 'wp_ajax_sellmo_wc_map_product',        [ $this, 'ajax_map_product' ] );
+		add_action( 'wp_ajax_sellmo_wc_mapper_import_map',  [ $this, 'ajax_mapper_import_product' ] );
+		add_action( 'wp_ajax_sellmo_wc_unmap_product',      [ $this, 'ajax_unmap_product' ] );
+		add_action( 'wp_ajax_sellmo_wc_bulk_mapper',        [ $this, 'ajax_bulk_mapper' ] );
+		add_action( 'wp_ajax_sellmo_wc_mapper_wc_products', [ $this, 'ajax_mapper_wc_products' ] );
 	}
 
 	// -------------------------------------------------------------------------
@@ -84,15 +91,6 @@ class Sellmo_Admin {
 
 		add_submenu_page(
 			'sellmo-pos',
-			__( 'Settings — Sellmo POS', 'sellmo-woocommerce' ),
-			__( 'Settings', 'sellmo-woocommerce' ),
-			'manage_woocommerce',
-			'sellmo-settings',
-			[ $this, 'page_settings' ]
-		);
-
-		add_submenu_page(
-			'sellmo-pos',
 			__( 'Products — Sellmo POS', 'sellmo-woocommerce' ),
 			__( 'Products', 'sellmo-woocommerce' ),
 			'manage_woocommerce',
@@ -102,8 +100,26 @@ class Sellmo_Admin {
 
 		add_submenu_page(
 			'sellmo-pos',
-			__( 'Sync Log — Sellmo POS', 'sellmo-woocommerce' ),
-			__( 'Sync Log', 'sellmo-woocommerce' ),
+			__( 'Product Mapper — Sellmo POS', 'sellmo-woocommerce' ),
+			__( 'Product Mapper', 'sellmo-woocommerce' ),
+			'manage_woocommerce',
+			'sellmo-product-mapper',
+			[ $this, 'page_product_mapper' ]
+		);
+
+		add_submenu_page(
+			'sellmo-pos',
+			__( 'Settings — Sellmo POS', 'sellmo-woocommerce' ),
+			__( 'Settings', 'sellmo-woocommerce' ),
+			'manage_woocommerce',
+			'sellmo-settings',
+			[ $this, 'page_settings' ]
+		);
+
+		add_submenu_page(
+			'sellmo-pos',
+			__( 'Log — Sellmo POS', 'sellmo-woocommerce' ),
+			__( 'Log', 'sellmo-woocommerce' ),
 			'manage_woocommerce',
 			'sellmo-sync-log',
 			[ $this, 'page_sync_log' ]
@@ -164,6 +180,19 @@ class Sellmo_Admin {
 			wp_die( esc_html__( 'You do not have permission to access this page.', 'sellmo-woocommerce' ) );
 		}
 		require_once SELLMO_WC_PATH . 'admin/views/page-sync-log.php';
+	}
+
+	/**
+	 * Render the Product Mapper page.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function page_product_mapper(): void {
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'You do not have permission to access this page.', 'sellmo-woocommerce' ) );
+		}
+		require_once SELLMO_WC_PATH . 'admin/views/page-product-mapper.php';
 	}
 
 	// -------------------------------------------------------------------------
@@ -507,9 +536,511 @@ class Sellmo_Admin {
 					'selectBulkAction'  => __( 'Please select a bulk action.', 'sellmo-woocommerce' ),
 					'selectProducts'    => __( 'Please select at least one product.', 'sellmo-woocommerce' ),
 					'of'                => __( 'of', 'sellmo-woocommerce' ),
+					// Product mapper page.
+					'mapped'            => __( 'Mapped', 'sellmo-woocommerce' ),
+					'notMapped'         => __( 'Not Mapped', 'sellmo-woocommerce' ),
+					'woocommerceOnly'   => __( 'WooCommerce Only', 'sellmo-woocommerce' ),
+					'map'               => __( 'Map', 'sellmo-woocommerce' ),
+					'change'            => __( 'Change', 'sellmo-woocommerce' ),
+					'unmap'             => __( 'Unmap', 'sellmo-woocommerce' ),
+					'mapperNoRows'      => __( 'No products found.', 'sellmo-woocommerce' ),
+					'mapperLoadError'   => __( 'Failed to load mapper data.', 'sellmo-woocommerce' ),
+					'mapperActionError' => __( 'Mapping action failed. Please try again.', 'sellmo-woocommerce' ),
+					'mapperChooseWc'     => __( 'Select a WooCommerce product first.', 'sellmo-woocommerce' ),
+					'mapperChooseSellmo' => __( 'Select a Sellmo product first.', 'sellmo-woocommerce' ),
+					'mapperBulkHint'     => __( 'Please select a mapper bulk action.', 'sellmo-woocommerce' ),
+					'mapperSelectRows'  => __( 'Please select at least one row.', 'sellmo-woocommerce' ),
 				],
 			]
 		);
+	}
+
+	/**
+	 * AJAX: return mapper table data.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function ajax_get_mapper_list(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$page        = max( 1, absint( $_POST['page'] ?? 1 ) );
+		$per_page    = 25;
+		$search      = sanitize_text_field( wp_unslash( $_POST['search'] ?? '' ) );
+		$status      = sanitize_key( wp_unslash( $_POST['status'] ?? '' ) );
+		$status      = in_array( $status, [ 'mapped', 'not_mapped' ], true ) ? $status : '';
+		$all_products = $this->get_all_sellmo_products();
+
+		if ( is_wp_error( $all_products ) ) {
+			wp_send_json_error( [ 'message' => $all_products->get_error_message() ] );
+		}
+
+		$all_mappings   = Sellmo_Product_Mapping::get_all_mappings_indexed();
+		$deduped_rows   = [];
+
+		foreach ( $all_products as $product ) {
+			$sellmo_id   = (string) ( $product['id'] ?? '' );
+			$sellmo_code = (string) ( $product['product_code'] ?? '' );
+			$name        = (string) ( $product['product_name'] ?? '' );
+			$category    = (string) ( $product['category'] ?? '' );
+
+			$mapping = null;
+			if ( '' !== $sellmo_id && isset( $all_mappings['by_id'][ $sellmo_id ] ) ) {
+				$mapping = $all_mappings['by_id'][ $sellmo_id ];
+			} elseif ( '' !== $sellmo_code && isset( $all_mappings['by_code'][ $sellmo_code ] ) ) {
+				$mapping = $all_mappings['by_code'][ $sellmo_code ];
+			}
+
+			$is_mapped = is_array( $mapping );
+
+			$wc_product_id = $is_mapped ? absint( $mapping['wc_product_id'] ?? 0 ) : 0;
+			$wc_label      = '';
+			$wc_edit_url   = '';
+
+			if ( $wc_product_id > 0 ) {
+				$wc_product = wc_get_product( $wc_product_id );
+				if ( $wc_product instanceof WC_Product ) {
+					$wc_label = sprintf(
+						'#%d - %s',
+						$wc_product_id,
+						$wc_product->get_name()
+					);
+					$wc_edit_url = (string) get_edit_post_link( $wc_product_id, 'raw' );
+				}
+			}
+
+			$price = 0.0;
+			$shops = isset( $product['shops'] ) && is_array( $product['shops'] ) ? $product['shops'] : [];
+			if ( isset( $shops[0]['price'] ) && is_numeric( $shops[0]['price'] ) ) {
+				$price = (float) $shops[0]['price'];
+			}
+
+			$row = [
+				'sellmo_id'       => $sellmo_id,
+				'sellmo_name'     => $name,
+				'sellmo_code'     => $sellmo_code,
+				'category'        => $category,
+				'price'           => $price,
+				'wc_product_id'   => $wc_product_id,
+				'wc_product_label'=> $wc_label,
+				'wc_edit_url'     => $wc_edit_url,
+				'status'          => $is_mapped ? 'mapped' : 'not_mapped',
+			];
+
+			// Only one mapper row can exist per product code.
+			$dedupe_key = '' !== $sellmo_code ? $sellmo_code : $sellmo_id;
+			if ( '' === $dedupe_key ) {
+				continue;
+			}
+
+			if ( ! isset( $deduped_rows[ $dedupe_key ] ) ) {
+				$deduped_rows[ $dedupe_key ] = $row;
+				continue;
+			}
+
+			$existing = $deduped_rows[ $dedupe_key ];
+			if ( 'mapped' === $row['status'] && 'mapped' !== (string) ( $existing['status'] ?? '' ) ) {
+				$deduped_rows[ $dedupe_key ] = $row;
+			}
+		}
+
+		$rows = [];
+		foreach ( array_values( $deduped_rows ) as $row ) {
+			if ( 'mapped' === $status && 'mapped' !== (string) $row['status'] ) {
+				continue;
+			}
+
+			if ( 'not_mapped' === $status && 'not_mapped' !== (string) $row['status'] ) {
+				continue;
+			}
+
+			if ( '' !== $search ) {
+				$haystack = mb_strtolower(
+					(string) ( $row['sellmo_name'] ?? '' ) . ' ' .
+					(string) ( $row['sellmo_code'] ?? '' ) . ' ' .
+					(string) ( $row['category'] ?? '' )
+				);
+
+				if ( ! str_contains( $haystack, mb_strtolower( $search ) ) ) {
+					continue;
+				}
+			}
+
+			$rows[] = $row;
+		}
+
+		// Build Sellmo product list for WC-only row dropdowns (all deduped, before pagination).
+		$sellmo_products_list = [];
+		foreach ( $deduped_rows as $s_row ) {
+			if ( '' === (string) ( $s_row['sellmo_id'] ?? '' ) ) {
+				continue;
+			}
+			// Only unmapped Sellmo products appear in the selector dropdown.
+			if ( 'mapped' === (string) ( $s_row['status'] ?? '' ) ) {
+				continue;
+			}
+			$sellmo_products_list[] = [
+				'id'   => (string) $s_row['sellmo_id'],
+				'name' => (string) $s_row['sellmo_name'],
+				'code' => (string) $s_row['sellmo_code'],
+			];
+		}
+
+		$wc_products   = $this->get_wc_products_for_mapper_selector();
+		$mapped_wc_ids = Sellmo_Product_Mapping::get_mapped_wc_product_ids();
+
+		// Append WC-only rows: WC products that exist in WooCommerce but have no Sellmo mapping.
+		if ( 'mapped' !== $status ) {
+			foreach ( $wc_products as $wc_item ) {
+				$wc_id = (int) ( $wc_item['id'] ?? 0 );
+				if ( $wc_id <= 0 || in_array( $wc_id, $mapped_wc_ids, true ) ) {
+					continue;
+				}
+
+				$wc_product = wc_get_product( $wc_id );
+				if ( ! $wc_product instanceof WC_Product ) {
+					continue;
+				}
+
+				$wc_price    = (float) $wc_product->get_price();
+				$terms       = get_the_terms( $wc_id, 'product_cat' );
+				$wc_cats     = is_array( $terms ) ? implode( ', ', wp_list_pluck( $terms, 'name' ) ) : '';
+				$wc_edit_url = (string) get_edit_post_link( $wc_id, 'raw' );
+
+				if ( '' !== $search ) {
+					$haystack = mb_strtolower( $wc_product->get_name() . ' ' . $wc_product->get_sku() . ' ' . $wc_cats );
+					if ( ! str_contains( $haystack, mb_strtolower( $search ) ) ) {
+						continue;
+					}
+				}
+
+				$rows[] = [
+					'row_type'         => 'wc_only',
+					'sellmo_id'        => '',
+					'sellmo_name'      => '',
+					'sellmo_code'      => '',
+					'category'         => $wc_cats,
+					'price'            => $wc_price,
+					'wc_product_id'    => $wc_id,
+					'wc_product_label' => (string) ( $wc_item['label'] ?? '' ),
+					'wc_edit_url'      => $wc_edit_url,
+					'status'           => 'wc_only',
+				];
+			}
+		}
+
+		$total       = count( $rows );
+		$total_pages = (int) ceil( $total / $per_page );
+		$offset      = ( $page - 1 ) * $per_page;
+
+		// Only send unmapped WC products for the selector dropdown.
+		$wc_products_for_selector = array_values( array_filter(
+			$wc_products,
+			static function( array $item ) use ( $mapped_wc_ids ): bool {
+				return ! in_array( (int) ( $item['id'] ?? 0 ), $mapped_wc_ids, true );
+			}
+		) );
+
+		// Compute live stats from the full (unfiltered, unpaginated) data.
+		$sellmo_total   = count( $deduped_rows );
+		$sellmo_mapped  = 0;
+		foreach ( $deduped_rows as $r ) {
+			if ( 'mapped' === (string) ( $r['status'] ?? '' ) ) {
+				$sellmo_mapped++;
+			}
+		}
+		$wc_only_count = count( $wc_products ) - count( $mapped_wc_ids );
+
+		wp_send_json_success( [
+			'rows'            => array_values( array_slice( $rows, $offset, $per_page ) ),
+			'total'           => $total,
+			'pages'           => max( 1, $total_pages ),
+			'current_page'    => $page,
+			'per_page'        => $per_page,
+			'wc_products'     => $wc_products_for_selector,
+			'sellmo_products' => $sellmo_products_list,
+			'stats'           => [
+				'total_sellmo_products'   => $sellmo_total,
+				'mapped_products'         => $sellmo_mapped,
+				'unmapped_products'       => $sellmo_total - $sellmo_mapped,
+				'woocommerce_only_products' => max( 0, $wc_only_count ),
+			],
+		] );
+	}
+
+	/**
+	 * AJAX: map or change a Sellmo product mapping.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function ajax_map_product(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$sellmo_id   = sanitize_text_field( wp_unslash( $_POST['sellmo_id'] ?? '' ) );
+		$sellmo_code = sanitize_text_field( wp_unslash( $_POST['sellmo_code'] ?? '' ) );
+		$sellmo_name = sanitize_text_field( wp_unslash( $_POST['sellmo_name'] ?? '' ) );
+		$wc_product_id = absint( $_POST['wc_product_id'] ?? 0 );
+
+		if ( '' === $sellmo_id || $wc_product_id <= 0 ) {
+			wp_send_json_error( [ 'message' => __( 'Invalid mapping payload.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$wc_product = wc_get_product( $wc_product_id );
+		if ( ! $wc_product instanceof WC_Product ) {
+			wp_send_json_error( [ 'message' => __( 'WooCommerce product does not exist.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$was_mapped = Sellmo_Product_Mapping::get_mapping_by_sellmo_id( $sellmo_id );
+
+		if ( ! Sellmo_Product_Mapping::upsert_mapping( $sellmo_id, $sellmo_code, $sellmo_name, $wc_product_id ) ) {
+			wp_send_json_error( [
+				'message' => __( 'Unable to save mapping. This WooCommerce product may already be mapped.', 'sellmo-woocommerce' ),
+			] );
+		}
+
+		Sellmo_Logger::log(
+			'product',
+			'sellmo_to_wc',
+			'skipped',
+			sprintf(
+				is_array( $was_mapped )
+					? 'Mapping changed: %s -> WooCommerce product #%d'
+					: 'Mapping created: %s -> WooCommerce product #%d',
+				$sellmo_name,
+				$wc_product_id
+			),
+			$sellmo_code
+		);
+
+		wp_send_json_success( [
+			'message' => __( 'Mapping saved.', 'sellmo-woocommerce' ),
+		] );
+	}
+
+	/**
+	 * AJAX: import a Sellmo product into WooCommerce and auto-map it.
+	 *
+	 * Backs the "Import to WooCommerce" button on the Product Mapper page. Finds
+	 * the Sellmo product in the cached catalogue, creates the WooCommerce product
+	 * via Sellmo_Product_Sync::import_product(), then links the two with a mapping
+	 * row so the product immediately shows as Mapped.
+	 *
+	 * @since  1.1.0
+	 * @return void
+	 */
+	public function ajax_mapper_import_product(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$sellmo_id   = sanitize_text_field( wp_unslash( $_POST['sellmo_id'] ?? '' ) );
+		$sellmo_code = sanitize_text_field( wp_unslash( $_POST['sellmo_code'] ?? '' ) );
+
+		if ( '' === $sellmo_id && '' === $sellmo_code ) {
+			wp_send_json_error( [ 'message' => __( 'Invalid product reference.', 'sellmo-woocommerce' ) ] );
+		}
+
+		// Refuse if this Sellmo product is already mapped.
+		$existing = '' !== $sellmo_id ? Sellmo_Product_Mapping::get_mapping_by_sellmo_id( $sellmo_id ) : null;
+		if ( null === $existing && '' !== $sellmo_code ) {
+			$existing = Sellmo_Product_Mapping::get_mapping_by_sellmo_code( $sellmo_code );
+		}
+		if ( is_array( $existing ) ) {
+			wp_send_json_error( [ 'message' => __( 'Product is already mapped.', 'sellmo-woocommerce' ) ] );
+		}
+
+		// Locate the Sellmo product payload in the cached catalogue.
+		$all_products = $this->get_all_sellmo_products();
+		if ( is_wp_error( $all_products ) ) {
+			wp_send_json_error( [ 'message' => $all_products->get_error_message() ] );
+		}
+
+		$sellmo_product = null;
+		foreach ( $all_products as $p ) {
+			$p_id   = (string) ( $p['id'] ?? '' );
+			$p_code = (string) ( $p['product_code'] ?? '' );
+
+			if ( ( '' !== $sellmo_id && $p_id === $sellmo_id ) || ( '' !== $sellmo_code && $p_code === $sellmo_code ) ) {
+				$sellmo_product = $p;
+				break;
+			}
+		}
+
+		if ( null === $sellmo_product ) {
+			wp_send_json_error( [ 'message' => __( 'Product not found in Sellmo catalogue.', 'sellmo-woocommerce' ) ] );
+		}
+
+		// Create / update the WooCommerce product.
+		$sync   = new Sellmo_Product_Sync();
+		$new_id = $sync->import_product( $sellmo_product );
+
+		if ( $new_id <= 0 ) {
+			wp_send_json_error( [ 'message' => __( 'Import failed. Check the Sync Log for details.', 'sellmo-woocommerce' ) ] );
+		}
+
+		// Auto-map the Sellmo product to the freshly imported WooCommerce product.
+		$map_id   = (string) ( $sellmo_product['id'] ?? $sellmo_id );
+		$map_code = (string) ( $sellmo_product['product_code'] ?? $sellmo_code );
+		$map_name = (string) ( $sellmo_product['product_name'] ?? '' );
+
+		if ( ! Sellmo_Product_Mapping::upsert_mapping( $map_id, $map_code, $map_name, $new_id ) ) {
+			wp_send_json_error( [
+				'message' => __( 'Product imported, but automatic mapping failed (the WooCommerce product may already be mapped to another Sellmo product).', 'sellmo-woocommerce' ),
+				'wc_id'   => $new_id,
+			] );
+		}
+
+		// Populate stock from /inventory so the imported product (and, for variable
+		// products, its variations) carries current stock immediately — the
+		// /products payload used by import has no stock data.
+		( new Sellmo_Stock_Sync() )->sync_stock_for_wc_product( $new_id );
+
+		Sellmo_Logger::log(
+			'product',
+			'sellmo_to_wc',
+			'success',
+			sprintf( 'Imported and auto-mapped "%s" to WooCommerce product #%d', $map_name, $new_id ),
+			$map_code
+		);
+
+		wp_send_json_success( [
+			'wc_id'    => $new_id,
+			'edit_url' => (string) get_edit_post_link( $new_id, 'raw' ),
+			'message'  => __( 'Product imported and mapped.', 'sellmo-woocommerce' ),
+		] );
+	}
+
+	/**
+	 * AJAX: remove a Sellmo mapping.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function ajax_unmap_product(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$sellmo_id   = sanitize_text_field( wp_unslash( $_POST['sellmo_id'] ?? '' ) );
+		$sellmo_name = sanitize_text_field( wp_unslash( $_POST['sellmo_name'] ?? '' ) );
+		$sellmo_code = sanitize_text_field( wp_unslash( $_POST['sellmo_code'] ?? '' ) );
+
+		if ( '' === $sellmo_id ) {
+			wp_send_json_error( [ 'message' => __( 'Invalid Sellmo product id.', 'sellmo-woocommerce' ) ] );
+		}
+
+		if ( ! Sellmo_Product_Mapping::remove_mapping_by_sellmo_id( $sellmo_id ) ) {
+			wp_send_json_error( [ 'message' => __( 'No mapping found to remove.', 'sellmo-woocommerce' ) ] );
+		}
+
+		Sellmo_Logger::log(
+			'product',
+			'sellmo_to_wc',
+			'skipped',
+			sprintf( 'Mapping removed: %s', $sellmo_name ),
+			$sellmo_code
+		);
+
+		wp_send_json_success( [
+			'message' => __( 'Mapping removed.', 'sellmo-woocommerce' ),
+		] );
+	}
+
+	/**
+	 * AJAX: apply bulk mapper actions.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function ajax_bulk_mapper(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$action = sanitize_key( wp_unslash( $_POST['bulk_action'] ?? '' ) );
+		$rows   = isset( $_POST['rows'] ) ? (array) $_POST['rows'] : [];
+
+		if ( ! in_array( $action, [ 'unmap', 'auto_map_sku' ], true ) || empty( $rows ) ) {
+			wp_send_json_error( [ 'message' => __( 'Invalid bulk mapper request.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$processed = 0;
+		$errors    = 0;
+
+		foreach ( $rows as $row ) {
+			$row_data = is_array( $row ) ? $row : [];
+			$sellmo_id   = sanitize_text_field( (string) ( $row_data['sellmo_id'] ?? '' ) );
+			$sellmo_code = sanitize_text_field( (string) ( $row_data['sellmo_code'] ?? '' ) );
+			$sellmo_name = sanitize_text_field( (string) ( $row_data['sellmo_name'] ?? '' ) );
+
+			if ( '' === $sellmo_id ) {
+				$errors++;
+				continue;
+			}
+
+			if ( 'unmap' === $action ) {
+				if ( Sellmo_Product_Mapping::remove_mapping_by_sellmo_id( $sellmo_id ) ) {
+					$processed++;
+				} else {
+					$errors++;
+				}
+				continue;
+			}
+
+			$wc_id = (int) wc_get_product_id_by_sku( $sellmo_code );
+			if ( $wc_id <= 0 ) {
+				$errors++;
+				continue;
+			}
+
+			if ( Sellmo_Product_Mapping::upsert_mapping( $sellmo_id, $sellmo_code, $sellmo_name, $wc_id ) ) {
+				$processed++;
+			} else {
+				$errors++;
+			}
+		}
+
+		wp_send_json_success( [
+			'processed' => $processed,
+			'errors'    => $errors,
+			'message'   => sprintf(
+				/* translators: %d: processed rows count */
+				_n( '%d row processed.', '%d rows processed.', $processed, 'sellmo-woocommerce' ),
+				$processed
+			),
+		] );
+	}
+
+	/**
+	 * AJAX: provide WooCommerce product options for mapper selectors.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function ajax_mapper_wc_products(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$search = sanitize_text_field( wp_unslash( $_POST['search'] ?? '' ) );
+		wp_send_json_success( $this->get_wc_products_for_mapper_selector( $search ) );
 	}
 
 	// -------------------------------------------------------------------------
@@ -640,14 +1171,83 @@ class Sellmo_Admin {
 	 * @return void
 	 */
 	public function ajax_sync_products_now(): void {
-		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+		$sync_started_at = time();
+		$sync_completed  = false;
+
+		register_shutdown_function(
+			static function () use ( &$sync_completed, $sync_started_at ): void {
+				if ( $sync_completed ) {
+					return;
+				}
+
+				$last_error = error_get_last();
+				if ( is_array( $last_error ) && isset( $last_error['type'], $last_error['message'] ) ) {
+					$fatal_types = [ E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR ];
+					if ( in_array( (int) $last_error['type'], $fatal_types, true ) ) {
+						Sellmo_Logger::log(
+							'product',
+							'sellmo_to_wc',
+							'error',
+							sprintf(
+								'Manual product sync terminated by fatal error after %ds: %s',
+								max( 0, time() - $sync_started_at ),
+								(string) $last_error['message']
+							)
+						);
+					}
+				}
+			}
+		);
+
+		Sellmo_Logger::log(
+			'product',
+			'sellmo_to_wc',
+			'skipped',
+			'Manual product sync started from dashboard.'
+		);
+
+		if ( false === check_ajax_referer( 'sellmo_wc_admin', 'nonce', false ) ) {
+			Sellmo_Logger::log(
+				'product',
+				'sellmo_to_wc',
+				'error',
+				'Manual product sync blocked: invalid or expired AJAX nonce.'
+			);
+			$sync_completed = true;
+
+			wp_send_json_error( [
+				'message' => __( 'Security check failed. Please refresh the page and try again.', 'sellmo-woocommerce' ),
+			], 403 );
+		}
 
 		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			Sellmo_Logger::log(
+				'product',
+				'sellmo_to_wc',
+				'error',
+				'Manual product sync blocked: permission denied for current user.'
+			);
+			$sync_completed = true;
+
 			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
 		}
 
-		$sync   = new Sellmo_Product_Sync();
-		$result = $sync->run_ajax_trace_sync();
+		try {
+			$sync   = new Sellmo_Product_Mapper_Sync();
+			$result = $sync->run_incremental_sync();
+		} catch ( \Throwable $e ) {
+			Sellmo_Logger::log(
+				'product',
+				'sellmo_to_wc',
+				'error',
+				sprintf( 'Manual product sync crashed: %s', $e->getMessage() )
+			);
+			$sync_completed = true;
+
+			wp_send_json_error( [
+				'message' => __( 'Product sync failed due to a server error. Check Sync Log for details.', 'sellmo-woocommerce' ),
+			], 500 );
+		}
 
 		$meta = [
 			'time'   => time(),
@@ -657,6 +1257,7 @@ class Sellmo_Admin {
 		Sellmo_Settings::set( 'last_product_sync', $meta );
 
 		if ( $result['success'] ) {
+			$sync_completed = true;
 			wp_send_json_success( [
 				'message' => sprintf(
 					/* translators: %d: number of products synced */
@@ -667,8 +1268,21 @@ class Sellmo_Admin {
 			] );
 		}
 
+		$failed_message = (string) ( $result['message'] ?? '' );
+		if ( '' === $failed_message ) {
+			$failed_message = __( 'Product sync failed.', 'sellmo-woocommerce' );
+		}
+
+		Sellmo_Logger::log(
+			'product',
+			'sellmo_to_wc',
+			'error',
+			'Manual product sync failed: ' . $failed_message
+		);
+		$sync_completed = true;
+
 		wp_send_json_error( [
-			'message' => (string) ( $result['message'] ?? __( 'Product sync failed.', 'sellmo-woocommerce' ) ),
+			'message' => $failed_message,
 			'trace'   => isset( $result['trace'] ) && is_array( $result['trace'] ) ? $result['trace'] : [],
 			'error'   => isset( $result['error'] ) && is_array( $result['error'] ) ? $result['error'] : [],
 		] );
@@ -690,8 +1304,8 @@ class Sellmo_Admin {
 			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
 		}
 
-		$sync   = new Sellmo_Stock_Sync();
-		$result = $sync->run_manual_sync();
+		$sync   = new Sellmo_Stock_Sync_Pagination();
+		$result = $sync->run();
 
 		$meta = [
 			'time'   => time(),
@@ -1254,5 +1868,51 @@ class Sellmo_Admin {
 		}
 
 		return '';
+	}
+
+	/**
+	 * Build a lightweight list of WooCommerce products for the mapper selector.
+	 *
+	 * @since  1.0.0
+	 * @param  string $search Optional search query.
+	 * @return array<int, array{ id: int, label: string }>
+	 */
+	private function get_wc_products_for_mapper_selector( string $search = '' ): array {
+		$args = [
+			'post_type'      => 'product',
+			'post_status'    => [ 'publish', 'private', 'draft' ],
+			'posts_per_page' => 200,
+			'orderby'        => 'title',
+			'order'          => 'ASC',
+			'fields'         => 'ids',
+			'no_found_rows'  => true,
+		];
+
+		if ( '' !== $search ) {
+			$args['s'] = $search;
+		}
+
+		$query = new WP_Query( $args );
+		$rows  = [];
+
+		foreach ( (array) $query->posts as $product_id ) {
+			$product = wc_get_product( (int) $product_id );
+			if ( ! $product instanceof WC_Product ) {
+				continue;
+			}
+
+			$sku = (string) $product->get_sku();
+			$rows[] = [
+				'id'    => (int) $product_id,
+				'label' => sprintf(
+					'#%d - %s%s',
+					(int) $product_id,
+					$product->get_name(),
+					'' !== $sku ? ' (' . $sku . ')' : ''
+				),
+			];
+		}
+
+		return $rows;
 	}
 }

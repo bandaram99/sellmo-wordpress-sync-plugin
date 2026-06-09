@@ -73,6 +73,13 @@ class Sellmo_Plugin {
 	private Sellmo_Scheduler $scheduler;
 
 	/**
+	 * Mapper AJAX module.
+	 *
+	 * @var Sellmo_Mapper_Ajax
+	 */
+	private Sellmo_Mapper_Ajax $mapper_ajax;
+
+	/**
 	 * Retrieve or create the singleton instance.
 	 *
 	 * @since  1.0.0
@@ -121,6 +128,7 @@ class Sellmo_Plugin {
 		$this->order_sync   = new Sellmo_Order_Sync();
 		$this->webhook      = new Sellmo_Webhook();
 		$this->scheduler    = new Sellmo_Scheduler();
+		$this->mapper_ajax  = new Sellmo_Mapper_Ajax();
 
 		add_action( 'admin_enqueue_scripts', [ $this, 'admin_assets' ] );
 	}

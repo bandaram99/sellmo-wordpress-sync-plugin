@@ -113,6 +113,13 @@ class Sellmo_Webhook {
 		$payload = json_decode( $raw_body, true );
 
 		if ( ! is_array( $payload ) ) {
+			Sellmo_Logger::log(
+				'webhook',
+				'sellmo_to_wc',
+				'error',
+				'Webhook rejected: invalid JSON payload.'
+			);
+
 			return new WP_REST_Response( [ 'message' => 'Invalid JSON payload.' ], 400 );
 		}
 
@@ -146,43 +153,73 @@ class Sellmo_Webhook {
 		$data         = isset( $payload['data'] ) && is_array( $payload['data'] ) ? $payload['data'] : $payload;
 		$product_code = (string) ( $data['product_code'] ?? '' );
 
-		switch ( $event ) {
+		try {
+			switch ( $event ) {
 
-			case 'product.updated':
-				$sync    = new Sellmo_Product_Sync();
-				$success = $sync->sync_single( $product_code );
-				Sellmo_Logger::log(
-					'product',
-					'sellmo_to_wc',
-					$success ? 'success' : 'error',
-					$success
-						? sprintf( 'Webhook: product %s synced.', $product_code )
-						: sprintf( 'Webhook: product %s sync failed.', $product_code ),
-					$product_code
-				);
-				break;
+				case 'product.updated':
+					if ( '' === $product_code ) {
+						Sellmo_Logger::log(
+							'product',
+							'sellmo_to_wc',
+							'error',
+							'Webhook product.updated payload missing product_code.'
+						);
+						break;
+					}
 
-			case 'inventory.updated':
-				$sync    = new Sellmo_Stock_Sync();
-				$success = $sync->sync_single_product( $product_code );
-				Sellmo_Logger::log(
-					'stock',
-					'sellmo_to_wc',
-					$success ? 'success' : 'error',
-					$success
-						? sprintf( 'Webhook: stock for %s updated.', $product_code )
-						: sprintf( 'Webhook: stock for %s update failed.', $product_code ),
-					$product_code
-				);
-				break;
+					$sync    = new Sellmo_Product_Sync();
+					$success = $sync->sync_single( $product_code );
+					Sellmo_Logger::log(
+						'product',
+						'sellmo_to_wc',
+						$success ? 'success' : 'error',
+						$success
+							? sprintf( 'Webhook: product %s synced.', $product_code )
+							: sprintf( 'Webhook: product %s sync failed.', $product_code ),
+						$product_code
+					);
+					break;
 
-			default:
-				Sellmo_Logger::log(
-					'webhook',
-					'sellmo_to_wc',
-					'skipped',
-					sprintf( 'Webhook: unhandled event "%s".', $event )
-				);
+				case 'inventory.updated':
+					if ( '' === $product_code ) {
+						Sellmo_Logger::log(
+							'stock',
+							'sellmo_to_wc',
+							'error',
+							'Webhook inventory.updated payload missing product_code.'
+						);
+						break;
+					}
+
+					$sync    = new Sellmo_Stock_Sync();
+					$success = $sync->sync_single_product( $product_code );
+					Sellmo_Logger::log(
+						'stock',
+						'sellmo_to_wc',
+						$success ? 'success' : 'error',
+						$success
+							? sprintf( 'Webhook: stock for %s updated.', $product_code )
+							: sprintf( 'Webhook: stock for %s update failed.', $product_code ),
+						$product_code
+					);
+					break;
+
+				default:
+					Sellmo_Logger::log(
+						'webhook',
+						'sellmo_to_wc',
+						'skipped',
+						sprintf( 'Webhook: unhandled event "%s".', $event )
+					);
+			}
+		} catch ( \Throwable $e ) {
+			Sellmo_Logger::log(
+				'webhook',
+				'sellmo_to_wc',
+				'error',
+				sprintf( 'Webhook processing exception for event "%s": %s', $event, $e->getMessage() ),
+				$product_code
+			);
 		}
 	}
 }

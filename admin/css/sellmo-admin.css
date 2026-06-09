@@ -447,6 +447,86 @@
 	color: #646970;
 }
 
+/* ── Product Mapper page ─────────────────────────────────────────────────── */
+
+.sellmo-mapper-wrap {
+	max-width: 1500px;
+}
+
+.sellmo-mapper-stats-grid {
+	margin-bottom: 12px;
+}
+
+.sellmo-mapper-stat {
+	font-size: 26px;
+	line-height: 1.1;
+	font-weight: 600;
+	color: #1d2327;
+}
+
+.sellmo-mapper-table .column-sellmo-product { width: 220px; }
+.sellmo-mapper-table .column-sellmo-code    { width: 120px; }
+.sellmo-mapper-table .column-sellmo-category{ width: 130px; }
+.sellmo-mapper-table .column-sellmo-price   { width: 90px; }
+.sellmo-mapper-table .column-wc-product     { width: 200px; }
+.sellmo-mapper-table .column-sellmo-status  { width: 120px; }
+.sellmo-mapper-table .column-sellmo-actions { width: 260px; }
+
+.sellmo-mapper-table {
+	table-layout: fixed;
+	width: 100%;
+}
+
+.sellmo-mapper-table td {
+	vertical-align: middle;
+}
+
+.sellmo-mapper-table .sellmo-mapper-wc-select {
+	width: 100%;
+	max-width: 100%;
+	box-sizing: border-box;
+}
+
+.sellmo-mapper-table .sellmo-mapper-sellmo-select {
+	width: 100%;
+	max-width: 100%;
+	box-sizing: border-box;
+}
+
+.sellmo-result-badge.wc-only {
+	background: #e0e7ff;
+	color: #3730a3;
+}
+
+.sellmo-mapper-table .sellmo-mapper-wc-cell {
+	/* overflow: hidden; */
+	overflow: visible;
+}
+
+.sellmo-mapper-table .sellmo-mapper-status-cell {
+	white-space: nowrap;
+	min-width: 110px;
+}
+
+.sellmo-mapper-table .sellmo-mapper-actions-cell {
+	min-width: 200px;
+}
+
+.sellmo-mapper-actions-wrap {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+}
+
+.sellmo-mapper-actions-wrap .button {
+	margin: 0;
+}
+
+#sellmo-mapper-search {
+	min-width: 260px;
+}
+
 /* ── Sync Log page ───────────────────────────────────────────────────────────── */
 
 .sellmo-log-wrap {
@@ -546,3 +626,235 @@
 .sellmo-type-badge.stock   { background: #fef3c7; color: #92400e; }
 .sellmo-type-badge.order   { background: #ede9fe; color: #5b21b6; }
 .sellmo-type-badge.webhook { background: #f3f4f6; color: #374151; }
+
+/* ── Hide the underlying <select> that selectWoo wraps ────────────────────── */
+/*
+ * selectWoo/Select2 marks the original <select> with this class and relies on
+ * the stylesheet to make it visually invisible (while keeping it accessible).
+ * Without this rule the native select renders on top of the custom widget.
+ */
+.select2-hidden-accessible {
+	border: 0 !important;
+	clip: rect(0 0 0 0) !important;
+	-webkit-clip-path: inset(50%) !important;
+	clip-path: inset(50%) !important;
+	height: 1px !important;
+	overflow: hidden !important;
+	padding: 0 !important;
+	position: absolute !important;
+	width: 1px !important;
+	white-space: nowrap !important;
+}
+
+/* ── Select2 / selectWoo inside the mapper table ──────────────────────────── */
+/*
+ * These rules are needed because WooCommerce's select2.css may not load on
+ * non-WooCommerce admin pages. They ensure the selectWoo widgets always look
+ * and behave correctly regardless of which other stylesheets are present.
+ */
+
+/* Make the container fill its table cell */
+.sellmo-mapper-table .select2-container,
+.sellmo-mapper-product-cell .select2-container,
+.sellmo-mapper-wc-cell .select2-container {
+	width: 100% !important;
+	min-width: 0;
+}
+
+/* Single-select trigger area */
+.sellmo-mapper-table .select2-container .select2-selection--single {
+	display: block;
+	height: 30px;
+	background: #fff;
+	border: 1px solid #8c8f94;
+	border-radius: 3px;
+	cursor: pointer;
+	outline: 0;
+	position: relative;
+	box-sizing: border-box;
+}
+
+/* Rendered value / placeholder inside the trigger */
+.sellmo-mapper-table .select2-container .select2-selection--single .select2-selection__rendered {
+	display: block;
+	padding: 0 28px 0 8px;
+	line-height: 28px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: #2c3338;
+	font-size: 13px;
+}
+
+.sellmo-mapper-table .select2-container .select2-selection--single .select2-selection__placeholder {
+	color: #757575;
+}
+
+/* Dropdown arrow */
+.sellmo-mapper-table .select2-container .select2-selection--single .select2-selection__arrow {
+	position: absolute;
+	top: 1px;
+	right: 1px;
+	width: 22px;
+	height: 28px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.sellmo-mapper-table .select2-container .select2-selection--single .select2-selection__arrow b {
+	border-color: #555 transparent transparent;
+	border-style: solid;
+	border-width: 5px 4px 0;
+	width: 0;
+	height: 0;
+	display: block;
+}
+
+.sellmo-mapper-table .select2-container--open .select2-selection--single .select2-selection__arrow b {
+	border-color: transparent transparent #555;
+	border-width: 0 4px 5px;
+}
+
+/* Clear (×) button */
+.sellmo-mapper-table .select2-container .select2-selection__clear {
+	cursor: pointer;
+	position: absolute;
+	top: 0;
+	right: 22px;
+	line-height: 28px;
+	padding: 0 4px;
+	color: #999;
+	font-weight: 700;
+}
+
+.sellmo-mapper-table .select2-container .select2-selection__clear:hover {
+	color: #d63638;
+}
+
+/* Focus ring */
+.sellmo-mapper-table .select2-container--focus .select2-selection--single,
+.sellmo-mapper-table .select2-container--open  .select2-selection--single {
+	border-color: #2271b1;
+	box-shadow: 0 0 0 1px #2271b1;
+	outline: none;
+}
+
+/* ── Dropdown panel ────────────────────────────────────────────────────────── */
+/*
+ * High specificity + !important on the most critical properties so the panel
+ * always renders as a clearly distinct floating card, regardless of which
+ * WooCommerce or WordPress stylesheets are (or aren't) loaded.
+ */
+
+/* Floating panel container */
+.select2-container--selectWoo .select2-dropdown,
+.select2-container--select2  .select2-dropdown,
+.select2-dropdown {
+	z-index    : 999999      !important;
+	background-color: #fff  !important;
+	border     : 1px solid #2271b1 !important;
+	border-radius: 4px      !important;
+	box-shadow : 0 6px 20px rgba(0, 0, 0, 0.25) !important;
+	box-sizing : border-box;
+	min-width  : 260px;
+}
+
+/* When the panel opens below the trigger: flat top edge against the trigger */
+.select2-container--open.select2-container--below .select2-dropdown {
+	border-top-left-radius : 0;
+	border-top-right-radius: 0;
+	border-top             : 1px solid #dcdcde !important;
+	margin-top             : -1px;
+}
+
+/* When the panel opens above the trigger: flat bottom edge against the trigger */
+.select2-container--open.select2-container--above .select2-dropdown {
+	border-bottom-left-radius : 0;
+	border-bottom-right-radius: 0;
+	border-bottom             : 1px solid #dcdcde !important;
+	margin-bottom             : -1px;
+}
+
+/* Search-input area at the top of the panel */
+.select2-search--dropdown {
+	background-color: #f6f7f7;
+	border-bottom   : 1px solid #dcdcde;
+	padding         : 7px 8px;
+}
+
+.select2-search--dropdown .select2-search__field {
+	width        : 100%;
+	padding      : 5px 8px;
+	border       : 1px solid #c3c4c7;
+	border-radius: 3px;
+	font-size    : 13px;
+	line-height  : 1.5;
+	background   : #fff;
+	color        : #2c3338;
+	box-sizing   : border-box;
+	outline      : none;
+}
+
+.select2-search--dropdown .select2-search__field:focus {
+	border-color: #2271b1;
+	box-shadow  : 0 0 0 1px #2271b1;
+}
+
+/* Results list */
+.select2-results {
+	background-color: #fff !important;
+	display         : block;
+}
+
+.select2-results__options {
+	background-color: #fff !important;
+	max-height : 220px;
+	overflow-y : auto;
+	list-style : none;
+	margin     : 0;
+	padding    : 4px 0;
+}
+
+/* Individual result item */
+.select2-results__option {
+	background-color: #fff !important;
+	color       : #2c3338;
+	padding     : 7px 10px;
+	font-size   : 13px;
+	line-height : 1.4;
+	cursor      : pointer;
+	border-bottom: 1px solid #f6f7f7;
+}
+
+.select2-results__option:last-child {
+	border-bottom: none;
+}
+
+/* Keyboard / mouse hover highlight */
+.select2-results__option--highlighted.select2-results__option--selectable {
+	background-color: #2271b1 !important;
+	color           : #fff   !important;
+}
+
+.select2-results__option--disabled {
+	background-color: #fff !important;
+	color           : #a7aaad;
+	cursor          : default;
+}
+
+/* "No results" / "Searching…" message */
+.select2-results__message,
+.select2-results__option.loading-results {
+	background-color: #fff !important;
+	padding         : 8px 10px;
+	color           : #757575;
+	font-size       : 13px;
+	font-style      : italic;
+}
+
+/* Ensure the cells allow the panel to overflow their boundaries */
+.sellmo-mapper-wc-cell,
+.sellmo-mapper-product-cell {
+	overflow: visible;
+}

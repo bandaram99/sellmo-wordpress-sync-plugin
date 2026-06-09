@@ -283,6 +283,14 @@
 				}
 			} )
 			.fail( function ( xhr ) {
+				var failMessage = i18n.syncError || 'Sync failed. Please try again.';
+
+				if ( xhr && xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message ) {
+					failMessage = xhr.responseJSON.data.message;
+				} else if ( xhr && '-1' === String( xhr.responseText || '' ).trim() ) {
+					failMessage = 'Security check failed. Please refresh the page and try again.';
+				}
+
 				if ( isSalesPlaySync ) {
 					console.error( 'SalesPlay Sync AJAX Failed:' );
 					console.dir( {
@@ -293,7 +301,7 @@
 
 				$result
 					.addClass( 'error' )
-					.text( i18n.syncError || 'Sync failed. Please try again.' );
+					.text( failMessage );
 			} )
 			.always( function () {
 				$btn.prop( 'disabled', false ).text( originalText );
@@ -799,5 +807,527 @@
 		}
 
 	} // end products page guard
+
+	// ── Product Mapper page ────────────────────────────────────────────────
+	if ( $( '#sellmo-mapper-tbody' ).length ) {
+		var mapperPage           = 1;
+		var mapperSearch         = '';
+		var mapperStatus         = '';
+		var mapperLoading        = false;
+		var mapperWcProducts     = [];
+		var mapperSellmoProducts = [];
+
+		loadMapperList( 1 );
+
+		$( '#sellmo-mapper-search-btn, #sellmo-mapper-refresh' ).on( 'click', function () {
+			mapperSearch = String( $( '#sellmo-mapper-search' ).val() || '' );
+			mapperStatus = String( $( '#sellmo-mapper-status-filter' ).val() || '' );
+			loadMapperList( 1 );
+		} );
+
+		$( '#sellmo-mapper-status-filter' ).on( 'change', function () {
+			mapperStatus = String( $( this ).val() || '' );
+			loadMapperList( 1 );
+		} );
+
+		// ── Custom WC product searchable dropdown ─────────────────────────────────
+
+		// Open / close the dropdown panel when the trigger button is clicked.
+		$( document ).on( 'click', '.sellmo-wc-custom-trigger', function ( e ) {
+			e.stopPropagation();
+			var $wrap  = $( this ).closest( '.sellmo-wc-custom-select' );
+			var $panel = $wrap.find( '.sellmo-wc-custom-dropdown' );
+			var isOpen = $panel.is( ':visible' );
+
+			// Close every other open dropdown first.
+			$( '.sellmo-wc-custom-dropdown' ).hide();
+
+			if ( ! isOpen ) {
+				$panel.show();
+				// Show all options (clear any previous search filter).
+				$panel.find( '.sellmo-wc-custom-option' ).show();
+				var $search = $panel.find( '.sellmo-wc-custom-search' );
+				$search.val( '' ).focus();
+				// Scroll the currently active option into view.
+				var $active = $panel.find( '.sellmo-wc-option-active' );
+				if ( $active.length ) {
+					var $opts = $panel.find( '.sellmo-wc-custom-options' );
+					$opts.scrollTop( $active.offset().top - $opts.offset().top + $opts.scrollTop() - 4 );
+				}
+			}
+		} );
+
+		// Close all dropdowns when clicking anywhere outside.
+		$( document ).on( 'click', function () {
+			$( '.sellmo-wc-custom-dropdown' ).hide();
+		} );
+
+		// Prevent clicks inside the panel from bubbling up and closing it.
+		$( document ).on( 'click', '.sellmo-wc-custom-dropdown', function ( e ) {
+			e.stopPropagation();
+		} );
+
+		// Filter the visible options as the user types in the search box.
+		$( document ).on( 'input', '.sellmo-wc-custom-search', function () {
+			var term     = $( this ).val().toLowerCase();
+			var $options = $( this ).closest( '.sellmo-wc-custom-dropdown' ).find( '.sellmo-wc-custom-option' );
+
+			$options.each( function () {
+				var label = $( this ).text().toLowerCase();
+				$( this ).toggle( '' === term || label.indexOf( term ) !== -1 );
+			} );
+		} );
+
+		// When the user clicks an option item: update the hidden select,
+		// update the trigger button label, mark it active, and close the panel.
+		$( document ).on( 'click', '.sellmo-wc-custom-option', function () {
+			var $option = $( this );
+			var $wrap   = $option.closest( '.sellmo-wc-custom-select' );
+			var value   = $option.data( 'value' );
+			var label   = $option.text();
+
+			// Update the hidden real <select> so the Map button reads the right value.
+			$wrap.prev( '.sellmo-mapper-wc-select' ).val( value );
+
+			// Update the trigger label span, title attribute, and the data attribute.
+			var $trigger = $wrap.find( '.sellmo-wc-custom-trigger' );
+			$trigger.find( '.sellmo-wc-trigger-label' ).text( label );
+			$trigger.attr( 'title', label );
+			$wrap.attr( 'data-selected-id', value );
+
+			// Highlight the selected option.
+			$wrap.find( '.sellmo-wc-custom-option' ).removeClass( 'sellmo-wc-option-active' );
+			$option.addClass( 'sellmo-wc-option-active' );
+
+			// Close the panel.
+			$wrap.find( '.sellmo-wc-custom-dropdown' ).hide();
+		} );
+
+		$( document ).on( 'click', '.sellmo-mapper-page-link', function ( e ) {
+			e.preventDefault();
+			var nextPage = parseInt( $( this ).data( 'page' ), 10 );
+			if ( nextPage && ! mapperLoading ) {
+				loadMapperList( nextPage );
+			}
+		} );
+
+		$( '#sellmo-mapper-select-all' ).on( 'change', function () {
+			var checked = $( this ).is( ':checked' );
+			$( '.sellmo-mapper-checkbox' ).prop( 'checked', checked );
+			$( '.sellmo-mapper-select-all-foot' ).prop( 'checked', checked );
+		} );
+
+		$( document ).on( 'change', '.sellmo-mapper-select-all-foot', function () {
+			var checked = $( this ).is( ':checked' );
+			$( '.sellmo-mapper-checkbox' ).prop( 'checked', checked );
+			$( '#sellmo-mapper-select-all' ).prop( 'checked', checked );
+		} );
+
+		$( document ).on( 'click', '.sellmo-mapper-map-btn', function () {
+			var $btn    = $( this );
+			var $row    = $btn.closest( 'tr' );
+			var rowType = String( $row.data( 'row-type' ) || 'sellmo' );
+
+			var sellmoId, sellmoCode, sellmoName, wcProduct;
+
+			if ( 'wc_only' === rowType ) {
+				var $sellmoSel = $row.find( '.sellmo-mapper-sellmo-select' );
+				sellmoId = String( $sellmoSel.val() || '' );
+				if ( ! sellmoId ) {
+					// eslint-disable-next-line no-alert
+					window.alert( i18n.mapperChooseSellmo || 'Select a Sellmo product first.' );
+					return;
+				}
+				sellmoCode = String( $row.data( 'sellmo-code' ) || '' );
+				sellmoName = String( $row.data( 'sellmo-name' ) || '' );
+				wcProduct  = parseInt( $row.data( 'wc-product-id' ) || 0, 10 );
+			} else {
+				wcProduct = parseInt( $row.find( '.sellmo-mapper-wc-select' ).val() || 0, 10 );
+				if ( ! wcProduct ) {
+					// eslint-disable-next-line no-alert
+					window.alert( i18n.mapperChooseWc || 'Select a WooCommerce product first.' );
+					return;
+				}
+				sellmoId   = String( $row.data( 'sellmo-id' ) || '' );
+				sellmoCode = String( $row.data( 'sellmo-code' ) || '' );
+				sellmoName = String( $row.data( 'sellmo-name' ) || '' );
+			}
+
+			$btn.prop( 'disabled', true );
+
+			$.post( ajaxUrl, {
+				action        : 'sellmo_wc_map_product',
+				nonce         : nonce,
+				sellmo_id     : sellmoId,
+				sellmo_code   : sellmoCode,
+				sellmo_name   : sellmoName,
+				wc_product_id : wcProduct
+			} )
+			.done( function ( res ) {
+				if ( res.success ) {
+					loadMapperList( mapperPage );
+				} else {
+					// eslint-disable-next-line no-alert
+					window.alert( ( res.data && res.data.message ) || ( i18n.mapperActionError || 'Mapping action failed.' ) );
+				}
+			} )
+			.fail( function () {
+				// eslint-disable-next-line no-alert
+				window.alert( i18n.mapperActionError || 'Mapping action failed. Please try again.' );
+			} )
+			.always( function () {
+				$btn.prop( 'disabled', false );
+			} );
+		} );
+
+		$( document ).on( 'click', '.sellmo-mapper-import-btn', function () {
+			var $btn = $( this );
+			var $row = $btn.closest( 'tr' );
+			var sellmoId   = String( $row.data( 'sellmo-id' ) || '' );
+			var sellmoCode = String( $row.data( 'sellmo-code' ) || '' );
+
+			if ( ! sellmoId && ! sellmoCode ) {
+				return;
+			}
+
+			var origLabel = $btn.text();
+			$btn.prop( 'disabled', true ).text( i18n.importing || 'Importing…' );
+
+			$.post( ajaxUrl, {
+				action      : 'sellmo_wc_mapper_import_map',
+				nonce       : nonce,
+				sellmo_id   : sellmoId,
+				sellmo_code : sellmoCode
+			} )
+			.done( function ( res ) {
+				if ( res && res.success ) {
+					// Row is rebuilt by the reload; it will now show as Mapped.
+					loadMapperList( mapperPage );
+				} else {
+					// eslint-disable-next-line no-alert
+					window.alert( ( res.data && res.data.message ) || ( i18n.importError || 'Import failed.' ) );
+					$btn.prop( 'disabled', false ).text( origLabel );
+				}
+			} )
+			.fail( function () {
+				// eslint-disable-next-line no-alert
+				window.alert( i18n.importError || 'Import failed. Please try again.' );
+				$btn.prop( 'disabled', false ).text( origLabel );
+			} );
+		} );
+
+		$( document ).on( 'click', '.sellmo-mapper-unmap-btn', function () {
+			var $btn = $( this );
+			var $row = $btn.closest( 'tr' );
+
+			$btn.prop( 'disabled', true );
+
+			$.post( ajaxUrl, {
+				action      : 'sellmo_wc_unmap_product',
+				nonce       : nonce,
+				sellmo_id   : String( $row.data( 'sellmo-id' ) || '' ),
+				sellmo_code : String( $row.data( 'sellmo-code' ) || '' ),
+				sellmo_name : String( $row.data( 'sellmo-name' ) || '' )
+			} )
+			.done( function ( res ) {
+				if ( res.success ) {
+					loadMapperList( mapperPage );
+				} else {
+					// eslint-disable-next-line no-alert
+					window.alert( ( res.data && res.data.message ) || ( i18n.mapperActionError || 'Mapping action failed.' ) );
+				}
+			} )
+			.fail( function () {
+				// eslint-disable-next-line no-alert
+				window.alert( i18n.mapperActionError || 'Mapping action failed. Please try again.' );
+			} )
+			.always( function () {
+				$btn.prop( 'disabled', false );
+			} );
+		} );
+
+		$( '#sellmo-mapper-bulk-apply' ).on( 'click', function () {
+			var bulkAction = String( $( '#sellmo-mapper-bulk-action' ).val() || '' );
+			var selected   = [];
+
+			if ( '' === bulkAction ) {
+				// eslint-disable-next-line no-alert
+				window.alert( i18n.mapperBulkHint || 'Please select a mapper bulk action.' );
+				return;
+			}
+
+			$( '.sellmo-mapper-checkbox:checked' ).each( function () {
+				var $row = $( this ).closest( 'tr' );
+				selected.push( {
+					sellmo_id   : String( $row.data( 'sellmo-id' ) || '' ),
+					sellmo_code : String( $row.data( 'sellmo-code' ) || '' ),
+					sellmo_name : String( $row.data( 'sellmo-name' ) || '' )
+				} );
+			} );
+
+			if ( 0 === selected.length ) {
+				// eslint-disable-next-line no-alert
+				window.alert( i18n.mapperSelectRows || 'Please select at least one row.' );
+				return;
+			}
+
+			$( '#sellmo-mapper-bulk-apply' ).prop( 'disabled', true );
+			$( '.sellmo-mapper-bulk-spinner' ).addClass( 'is-active' );
+			$( '#sellmo-mapper-bulk-result' ).text( '' ).removeClass( 'success error' );
+
+			$.post( ajaxUrl, {
+				action      : 'sellmo_wc_bulk_mapper',
+				nonce       : nonce,
+				bulk_action : bulkAction,
+				rows        : selected
+			} )
+			.done( function ( res ) {
+				if ( res.success ) {
+					$( '#sellmo-mapper-bulk-result' ).addClass( 'success' ).text( ( res.data && res.data.message ) || '' );
+					loadMapperList( mapperPage );
+				} else {
+					$( '#sellmo-mapper-bulk-result' )
+						.addClass( 'error' )
+						.text( ( res.data && res.data.message ) || ( i18n.mapperActionError || 'Mapping action failed.' ) );
+				}
+			} )
+			.fail( function () {
+				$( '#sellmo-mapper-bulk-result' )
+					.addClass( 'error' )
+					.text( i18n.mapperActionError || 'Mapping action failed. Please try again.' );
+			} )
+			.always( function () {
+				$( '#sellmo-mapper-bulk-apply' ).prop( 'disabled', false );
+				$( '.sellmo-mapper-bulk-spinner' ).removeClass( 'is-active' );
+			} );
+		} );
+
+		function loadMapperList( page ) {
+			if ( mapperLoading ) {
+				return;
+			}
+
+			mapperLoading = true;
+			mapperPage    = page;
+
+			$( '#sellmo-mapper-loading' ).show();
+			$( '#sellmo-mapper-table, #sellmo-mapper-pagination, #sellmo-mapper-top-pagination' ).hide();
+			$( '#sellmo-mapper-error' ).hide();
+
+			$.post( ajaxUrl, {
+				action : 'sellmo_wc_get_mapper_list',
+				nonce  : nonce,
+				page   : page,
+				search : mapperSearch,
+				status : mapperStatus
+			} )
+			.done( function ( res ) {
+				if ( ! res.success ) {
+					showMapperError( ( res.data && res.data.message ) || ( i18n.mapperLoadError || 'Failed to load mapper data.' ) );
+					return;
+				}
+
+				mapperWcProducts     = Array.isArray( res.data.wc_products )     ? res.data.wc_products     : [];
+				mapperSellmoProducts = Array.isArray( res.data.sellmo_products ) ? res.data.sellmo_products : [];
+				renderMapperRows( res.data );
+			} )
+			.fail( function () {
+				showMapperError( i18n.mapperLoadError || 'Failed to load mapper data.' );
+			} )
+			.always( function () {
+				mapperLoading = false;
+				$( '#sellmo-mapper-loading' ).hide();
+			} );
+		}
+
+		function renderMapperRows( data ) {
+			var rows    = data.rows || [];
+			var total   = parseInt( data.total || 0, 10 );
+			var pages   = parseInt( data.pages || 1, 10 );
+			var current = parseInt( data.current_page || 1, 10 );
+			var perPage = parseInt( data.per_page || 25, 10 );
+
+			// Update DOM Stats if provided by the backend
+			if ( data.stats ) {
+				$( '#stat-total-sellmo' ).text( data.stats.total_sellmo_products || 0 );
+				$( '#stat-mapped' ).text( data.stats.mapped_products || 0 );
+				$( '#stat-unmapped' ).text( data.stats.unmapped_products || 0 );
+				$( '#stat-wc-only' ).text( data.stats.woocommerce_only_products || 0 );
+			}
+
+			var $tbody = $( '#sellmo-mapper-tbody' ).empty();
+
+			if ( 0 === rows.length ) {
+				$tbody.append( '<tr><td colspan="8" style="text-align:center;padding:24px 0;">' + escHtml( i18n.mapperNoRows || 'No products found.' ) + '</td></tr>' );
+			} else {
+				$.each( rows, function ( _idx, row ) {
+					$tbody.append( buildMapperRow( row ) );
+				} );
+				$( document ).trigger( 'sellmo:mapper-rendered', [ mapperSellmoProducts ] );
+			}
+
+			var from = total > 0 ? ( ( current - 1 ) * perPage + 1 ) : 0;
+			var to   = Math.min( current * perPage, total );
+			var text = total > 0 ? ( from + '–' + to + ' ' + ( i18n.of || 'of' ) + ' ' + total ) : '0';
+
+			$( '#sellmo-mapper-count, #sellmo-mapper-page-info' ).text( text );
+			var pagination = buildMapperPagination( current, pages );
+			$( '#sellmo-mapper-pagination-top, #sellmo-mapper-pagination-bottom' ).html( pagination );
+
+			$( '#sellmo-mapper-table' ).show();
+			if ( total > perPage ) {
+				$( '#sellmo-mapper-pagination, #sellmo-mapper-top-pagination' ).show();
+			}
+
+			$( '#sellmo-mapper-select-all, .sellmo-mapper-select-all-foot' ).prop( 'checked', false );
+		}
+
+		function buildMapperRow( row ) {
+			var sellmoId      = escHtml( String( row.sellmo_id || '' ) );
+			var sellmoName    = escHtml( String( row.sellmo_name || '' ) );
+			var sellmoCode    = escHtml( String( row.sellmo_code || '' ) );
+			var category      = escHtml( String( row.category || '—' ) );
+			var price         = parseFloat( row.price || 0 );
+			var status        = String( row.status || 'not_mapped' );
+			var wcProductId   = parseInt( row.wc_product_id || 0, 10 );
+			var wcEditUrl     = String( row.wc_edit_url || '' );
+
+			// WC-only row: WooCommerce product with no Sellmo mapping yet.
+			if ( 'wc_only' === status ) {
+				var wcOnlyLabel = escHtml( String( row.wc_product_label || '' ) );
+				var wcOnlyEdit  = String( row.wc_edit_url || '' );
+
+var sellmoSel = '<select class="sellmo-sellmo-select2 sellmo-mapper-sellmo-select" style="width:100%"></select>';
+
+				var wcOnlyBadge   = '<span class="sellmo-result-badge wc-only">' + escHtml( i18n.woocommerceOnly || 'WC Only' ) + '</span>';
+				var wcOnlyActions = '<button type="button" class="button button-small sellmo-mapper-map-btn">' + escHtml( i18n.map || 'Map' ) + '</button>';
+				if ( wcOnlyEdit ) {
+					wcOnlyActions += ' <a class="button button-small" target="_blank" href="' + escHtml( wcOnlyEdit ) + '">' + escHtml( i18n.viewInWC || 'View in WC' ) + '</a>';
+				}
+
+				return '<tr data-row-type="wc_only" data-wc-product-id="' + wcProductId + '">'
+					+ '<th class="check-column"><input type="checkbox" class="sellmo-mapper-checkbox" disabled></th>'
+					+ '<td class="sellmo-mapper-product-cell">' + sellmoSel + '</td>'
+					+ '<td class="sellmo-mapper-code-cell">—</td>'
+					+ '<td class="sellmo-mapper-category-cell">' + category + '</td>'
+					+ '<td class="sellmo-mapper-price-cell">' + ( price > 0 ? escHtml( price.toFixed( 2 ) ) : '—' ) + '</td>'
+					+ '<td class="sellmo-mapper-wc-cell"><strong>' + wcOnlyLabel + '</strong></td>'
+					+ '<td class="sellmo-mapper-status-cell">' + wcOnlyBadge + '</td>'
+					+ '<td class="sellmo-mapper-actions-cell"><div class="sellmo-mapper-actions-wrap">' + wcOnlyActions + '</div></td>'
+					+ '</tr>';
+			}
+
+			// Build the WC product list for the custom searchable dropdown.
+			// Start with a blank "—" option.
+			var wcOptions = [ { id: 0, label: '—' } ];
+
+			// Add all unmapped WC products (mapped ones are filtered server-side).
+			$.each( mapperWcProducts, function ( _i, option ) {
+				wcOptions.push( { id: parseInt( option.id || 0, 10 ), label: String( option.label || '' ) } );
+			} );
+
+			// Determine the currently selected WC product.
+			// For a mapped row the server provides wc_product_id + wc_product_label so we
+			// can show the correct label even though the mapped product may not appear in
+			// the unmapped list.
+			var selectedWcId    = wcProductId > 0 ? wcProductId : 0;
+			var selectedWcLabel = '—';
+
+			if ( selectedWcId > 0 ) {
+				// Use the server-supplied label if available.
+				var serverLabel = String( row.wc_product_label || '' );
+				selectedWcLabel = serverLabel || ( '#' + selectedWcId );
+
+				// Also make sure the mapped product exists in the options list so
+				// the hidden <select> has a matching <option>.
+				var alreadyInList = false;
+				$.each( wcOptions, function ( _i, opt ) {
+					if ( opt.id === selectedWcId ) {
+						alreadyInList = true;
+						selectedWcLabel = opt.label; // prefer the list label if present
+						return false;
+					}
+				} );
+				if ( ! alreadyInList ) {
+					wcOptions.splice( 1, 0, { id: selectedWcId, label: selectedWcLabel } );
+				}
+			}
+
+var wcOption = selectedWcId > 0
+				? '<option value="' + selectedWcId + '" selected>' + escHtml( selectedWcLabel ) + '</option>'
+				: '';
+			var wcSelect = '<select class="sellmo-wc-select2 sellmo-mapper-wc-select" style="width:100%">' + wcOption + '</select>';
+
+			var statusBadge = 'mapped' === status
+				? '<span class="sellmo-result-badge success">' + escHtml( i18n.mapped || 'Mapped' ) + '</span>'
+				: '<span class="sellmo-result-badge skipped">' + escHtml( i18n.notMapped || 'Not Mapped' ) + '</span>';
+
+			var actionLabel = 'mapped' === status ? ( i18n.change || 'Change' ) : ( i18n.map || 'Map' );
+			var actions     = '<button type="button" class="button button-small sellmo-mapper-map-btn">' + escHtml( actionLabel ) + '</button>';
+			if ( 'mapped' === status ) {
+				actions += ' <button type="button" class="button button-small sellmo-mapper-unmap-btn">' + escHtml( i18n.unmap || 'Unmap' ) + '</button>';
+			} else {
+				// One-click: create the WooCommerce product and auto-map it.
+				actions += ' <button type="button" class="button button-small sellmo-mapper-import-btn">' + escHtml( i18n.importProduct || 'Import to WooCommerce' ) + '</button>';
+			}
+			if ( wcEditUrl ) {
+				actions += ' <a class="button button-small" target="_blank" href="' + escHtml( wcEditUrl ) + '">' + escHtml( i18n.viewInWC || 'View in WC' ) + '</a>';
+			}
+
+			return '<tr data-sellmo-id="' + sellmoId + '" data-sellmo-code="' + sellmoCode + '" data-sellmo-name="' + sellmoName + '">'
+				+ '<th class="check-column"><input type="checkbox" class="sellmo-mapper-checkbox"></th>'
+				+ '<td class="sellmo-mapper-product-cell"><strong>' + sellmoName + '</strong></td>'
+				+ '<td class="sellmo-mapper-code-cell"><code>' + sellmoCode + '</code></td>'
+				+ '<td class="sellmo-mapper-category-cell">' + category + '</td>'
+				+ '<td class="sellmo-mapper-price-cell">' + ( price > 0 ? escHtml( price.toFixed( 2 ) ) : '—' ) + '</td>'
+				+ '<td class="sellmo-mapper-wc-cell">' + wcSelect + '</td>'
+				+ '<td class="sellmo-mapper-status-cell">' + statusBadge + '</td>'
+				+ '<td class="sellmo-mapper-actions-cell"><div class="sellmo-mapper-actions-wrap">' + actions + '</div></td>'
+				+ '</tr>';
+		}
+
+		function buildMapperPagination( currentPage, totalPages ) {
+			if ( totalPages <= 1 ) {
+				return '';
+			}
+
+			var html = '';
+			var start = Math.max( 1, currentPage - 2 );
+			var end = Math.min( totalPages, currentPage + 2 );
+
+			if ( currentPage > 1 ) {
+				html += '<a class="button sellmo-mapper-page-link" data-page="' + ( currentPage - 1 ) + '">‹</a> ';
+			}
+
+			if ( start > 1 ) {
+				html += '<a class="button sellmo-mapper-page-link" data-page="1">1</a>';
+				html += start > 2 ? ' <span class="sellmo-pag-ellipsis">…</span> ' : ' ';
+			}
+
+			for ( var p = start; p <= end; p++ ) {
+				if ( p === currentPage ) {
+					html += '<span class="button button-primary sellmo-page-current">' + p + '</span> ';
+				} else {
+					html += '<a class="button sellmo-mapper-page-link" data-page="' + p + '">' + p + '</a> ';
+				}
+			}
+
+			if ( end < totalPages ) {
+				html += end < ( totalPages - 1 ) ? '<span class="sellmo-pag-ellipsis">…</span> ' : '';
+				html += '<a class="button sellmo-mapper-page-link" data-page="' + totalPages + '">' + totalPages + '</a>';
+			}
+
+			if ( currentPage < totalPages ) {
+				html += ' <a class="button sellmo-mapper-page-link" data-page="' + ( currentPage + 1 ) + '">›</a>';
+			}
+
+			return html;
+		}
+
+		function showMapperError( message ) {
+			$( '#sellmo-mapper-error-text' ).text( message );
+			$( '#sellmo-mapper-error' ).show();
+		}
+	}
 
 } )( jQuery );
