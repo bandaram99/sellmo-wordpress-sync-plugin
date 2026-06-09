@@ -901,6 +901,11 @@ class Sellmo_Admin {
 			] );
 		}
 
+		// Populate stock from /inventory so the imported product (and, for variable
+		// products, its variations) carries current stock immediately — the
+		// /products payload used by import has no stock data.
+		( new Sellmo_Stock_Sync() )->sync_stock_for_wc_product( $new_id );
+
 		Sellmo_Logger::log(
 			'product',
 			'sellmo_to_wc',

@@ -692,6 +692,27 @@ class Sellmo_Product_Mapping {
 	}
 
 	/**
+	 * Return the row id for a Sellmo product (mapped or staged), or 0 if absent.
+	 *
+	 * Used to resolve the parent foreign key for wp_sellmo_product_variants.
+	 *
+	 * @since  1.0.0
+	 * @param  string $sellmo_product_id   Sellmo product id.
+	 * @param  string $sellmo_product_code Sellmo product code (fallback).
+	 * @return int
+	 */
+	public static function get_id_by_sellmo( string $sellmo_product_id, string $sellmo_product_code = '' ): int {
+		self::ensure_table();
+
+		$row = self::find_row_by_sellmo_id( $sellmo_product_id );
+		if ( ! is_array( $row ) && '' !== trim( $sellmo_product_code ) ) {
+			$row = self::find_row_by_sellmo_code( $sellmo_product_code );
+		}
+
+		return is_array( $row ) ? (int) $row['id'] : 0;
+	}
+
+	/**
 	 * Return a set of all sellmo_product_id values present (any status).
 	 *
 	 * @since  1.0.0

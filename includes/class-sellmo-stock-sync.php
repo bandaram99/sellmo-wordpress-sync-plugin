@@ -77,6 +77,93 @@ class Sellmo_Stock_Sync {
 	}
 
 	/**
+	 * Populate WooCommerce stock for a single WC product (and, if variable, all
+	 * of its variations) from the Sellmo /inventory endpoint.
+	 *
+	 * Used right after importing a product so the new product/variations carry
+	 * their current stock immediately (the /products endpoint has no stock data).
+	 *
+	 * @since  1.1.0
+	 * @param  int $wc_product_id WooCommerce product ID.
+	 * @return int                Number of products/variations whose stock was set.
+	 */
+	public function sync_stock_for_wc_product( int $wc_product_id ): int {
+		$product = wc_get_product( $wc_product_id );
+		if ( ! $product ) {
+			return 0;
+		}
+
+		// One pass over /inventory, keyed by Sellmo id and by product code.
+		$api     = new Sellmo_API();
+		$by_id   = [];
+		$by_code = [];
+		$cursor  = '';
+		$page    = 0;
+
+		do {
+			$page++;
+			$response = $api->get_inventory( $cursor );
+			if ( is_wp_error( $response ) ) {
+				break;
+			}
+
+			$levels = $response['inventory_levels'] ?? $response['data'] ?? [];
+			if ( empty( $levels ) ) {
+				break;
+			}
+
+			foreach ( $levels as $level ) {
+				if ( ! is_array( $level ) || ! isset( $level['in_stock'] ) || ! is_numeric( $level['in_stock'] ) ) {
+					continue;
+				}
+				$stock = (int) $level['in_stock'];
+				$pid   = (string) ( $level['product_id'] ?? '' );
+				$code  = (string) ( $level['product_code'] ?? '' );
+				if ( '' !== $pid ) {
+					$by_id[ $pid ] = $stock;
+				}
+				if ( '' !== $code ) {
+					$by_code[ $code ] = $stock;
+				}
+			}
+
+			$cursor = $this->extract_next_cursor( $response );
+		} while ( '' !== $cursor && $page < 60 );
+
+		// Variations hold stock for variable products; the product itself otherwise.
+		$targets = $product->is_type( 'variable' ) ? $product->get_children() : [ $wc_product_id ];
+		$updated = 0;
+
+		foreach ( $targets as $target_id ) {
+			$target_id = (int) $target_id;
+
+			$variant_id = (string) get_post_meta( $target_id, '_salesplay_variant_id', true );
+			$pos_id     = (string) get_post_meta( $target_id, '_salesplay_pos_product_id', true );
+			$code       = (string) get_post_meta( $target_id, '_sellmo_product_code', true );
+
+			$stock = null;
+			if ( '' !== $variant_id && isset( $by_id[ $variant_id ] ) ) {
+				$stock = $by_id[ $variant_id ];
+			} elseif ( '' !== $pos_id && isset( $by_id[ $pos_id ] ) ) {
+				$stock = $by_id[ $pos_id ];
+			} elseif ( '' !== $code && isset( $by_code[ $code ] ) ) {
+				$stock = $by_code[ $code ];
+			}
+
+			if ( null === $stock ) {
+				continue;
+			}
+
+			$target_product = wc_get_product( $target_id );
+			if ( $target_product && false !== wc_update_product_stock( $target_product, max( 0, $stock ), 'set' ) ) {
+				$updated++;
+			}
+		}
+
+		return $updated;
+	}
+
+	/**
 	 * Webhook-triggered single-product sync.
 	 *
 	 * Pages through the Sellmo products API until the item with the given

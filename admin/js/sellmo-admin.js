@@ -1268,7 +1268,7 @@ var wcOption = selectedWcId > 0
 				actions += ' <button type="button" class="button button-small sellmo-mapper-unmap-btn">' + escHtml( i18n.unmap || 'Unmap' ) + '</button>';
 			} else {
 				// One-click: create the WooCommerce product and auto-map it.
-				actions += ' <button type="button" class="button button-small button-primary sellmo-mapper-import-btn">' + escHtml( i18n.importProduct || 'Import to WooCommerce' ) + '</button>';
+				actions += ' <button type="button" class="button button-small sellmo-mapper-import-btn">' + escHtml( i18n.importProduct || 'Import to WooCommerce' ) + '</button>';
 			}
 			if ( wcEditUrl ) {
 				actions += ' <a class="button button-small" target="_blank" href="' + escHtml( wcEditUrl ) + '">' + escHtml( i18n.viewInWC || 'View in WC' ) + '</a>';

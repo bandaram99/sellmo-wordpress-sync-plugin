@@ -60,14 +60,11 @@ class Sellmo_Product_Variant_Sync {
 		// Stock snapshot from /inventory, keyed by Sellmo id and by product code.
 		[ $stock_by_id, $stock_by_code ] = $this->build_stock_maps( $api );
 
-		// Confirmed Sellmo<->WC mappings, indexed by sellmo_product_id and code.
-		$mappings = Sellmo_Product_Mapping::get_all_mappings_indexed();
-
 		$cursor             = '';
 		$page               = 0;
 		$variants_stored    = 0;
 		$products_with_vars = 0;
-		$skipped_unmapped   = 0;
+		$skipped_no_row     = 0;
 
 		do {
 			$page++;
@@ -98,10 +95,15 @@ class Sellmo_Product_Variant_Sync {
 
 				$products_with_vars++;
 
-				// The variant row's foreign key is the mapping row id of the parent.
-				$mapping_id = $this->resolve_mapping_id( $product, $mappings );
+				// The variant row's foreign key is the parent product's row id in
+				// wp_sellmo_product_mapping. do_delta_sync stages every product before
+				// this runs, so a row exists whether the product is mapped or staged.
+				$mapping_id = Sellmo_Product_Mapping::get_id_by_sellmo(
+					(string) ( $product['id'] ?? '' ),
+					(string) ( $product['product_code'] ?? '' )
+				);
 				if ( $mapping_id <= 0 ) {
-					$skipped_unmapped++;
+					$skipped_no_row++;
 					continue;
 				}
 
@@ -150,10 +152,10 @@ class Sellmo_Product_Variant_Sync {
 			'sellmo_to_wc',
 			'success',
 			sprintf(
-				'Variant sync: %d variants stored across %d mapped product(s); %d product(s) with variants skipped (not mapped).',
+				'Variant sync: %d variants stored across %d product(s) with variants; %d skipped (no mapping row).',
 				$variants_stored,
-				$products_with_vars - $skipped_unmapped,
-				$skipped_unmapped
+				$products_with_vars - $skipped_no_row,
+				$skipped_no_row
 			)
 		);
 
@@ -162,7 +164,7 @@ class Sellmo_Product_Variant_Sync {
 			'count'   => $variants_stored,
 			'message' => sprintf(
 				/* translators: %d: number of variants stored */
-				__( '%d variant(s) stored for mapped products.', 'sellmo-woocommerce' ),
+				__( '%d variant(s) stored.', 'sellmo-woocommerce' ),
 				$variants_stored
 			),
 		];
@@ -216,28 +218,6 @@ class Sellmo_Product_Variant_Sync {
 		} while ( '' !== $cursor && $page < self::MAX_PAGES );
 
 		return [ $by_id, $by_code ];
-	}
-
-	/**
-	 * Resolve the wp_sellmo_product_mapping.id for a product payload.
-	 *
-	 * @since  1.1.0
-	 * @param  array<string, mixed> $product  Product payload.
-	 * @param  array{by_id: array<string, array<string, mixed>>, by_code: array<string, array<string, mixed>>} $mappings Indexed mappings.
-	 * @return int                            Mapping row id, or 0 when not mapped.
-	 */
-	private function resolve_mapping_id( array $product, array $mappings ): int {
-		$id = (string) ( $product['id'] ?? '' );
-		if ( '' !== $id && isset( $mappings['by_id'][ $id ] ) ) {
-			return (int) ( $mappings['by_id'][ $id ]['id'] ?? 0 );
-		}
-
-		$code = (string) ( $product['product_code'] ?? '' );
-		if ( '' !== $code && isset( $mappings['by_code'][ $code ] ) ) {
-			return (int) ( $mappings['by_code'][ $code ]['id'] ?? 0 );
-		}
-
-		return 0;
 	}
 
 	/**
