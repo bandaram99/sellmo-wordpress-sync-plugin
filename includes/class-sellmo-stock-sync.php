@@ -266,80 +266,7 @@ class Sellmo_Stock_Sync {
 			return;
 		}
 
-		Sellmo_Product_Mapper_Store::update_stock( $product_id, $variant_id, $product_code, $in_stock );
 		Sellmo_Product_Mapping::update_stock( $product_id, $variant_id, $product_code, $in_stock );
-	}
-
-	/**
-	 * Update WooCommerce stock for the product/variation matching $code.
-	 *
-	 * Returns 'success', 'skipped', or 'error'. Products with no WC match or
-	 * with _sellmo_sync_enabled !== 'yes' are silently skipped.
-	 *
-	 * @since  1.0.0
-	 * @param  string $code     Sellmo product_code.
-	 * @param  int    $quantity New stock quantity.
-	 * @return string           'success' | 'skipped' | 'error'
-	 */
-	private function update_stock_for_code( string $code, int $quantity ): string {
-		$product_id = $this->find_product_id_by_code( $code );
-
-		if ( 0 === $product_id ) {
-			// No linked WC product — normal for Sellmo products not imported yet.
-			return 'skipped';
-		}
-
-		if ( ! $this->is_sync_enabled( $product_id ) ) {
-			// Sync disabled on this product — skip silently.
-			return 'skipped';
-		}
-
-		$product = wc_get_product( $product_id );
-
-		if ( ! $product ) {
-			Sellmo_Logger::log(
-				'stock',
-				'sellmo_to_wc',
-				'error',
-				"Could not load WC product #{$product_id} (code: {$code}).",
-				$code
-			);
-			return 'error';
-		}
-
-		// Parent variable products do not hold stock themselves; only variations do.
-		if ( $product->is_type( 'variable' ) ) {
-			Sellmo_Logger::log(
-				'stock',
-				'sellmo_to_wc',
-				'skipped',
-				"Product #{$product_id} is a variable parent — update its variations instead.",
-				$code
-			);
-			return 'skipped';
-		}
-
-		$result = wc_update_product_stock( $product, $quantity, 'set' );
-
-		if ( false === $result ) {
-			Sellmo_Logger::log(
-				'stock',
-				'sellmo_to_wc',
-				'error',
-				"Failed to update stock to {$quantity} for product #{$product_id} (code: {$code}).",
-				$code
-			);
-			return 'error';
-		}
-
-		Sellmo_Logger::log(
-			'stock',
-			'sellmo_to_wc',
-			'success',
-			"Stock set to {$quantity} for product #{$product_id} (code: {$code}).",
-			(string) $product_id
-		);
-		return 'success';
 	}
 
 	/**
@@ -454,47 +381,6 @@ class Sellmo_Stock_Sync {
 		);
 
 		return 'success';
-	}
-
-	/**
-	 * Collect and flatten all items from the /products endpoint.
-	 *
-	 * @since  1.0.0
-	 * @return array<int, array<string, mixed>>
-	 */
-	private function collect_inventory_items_from_products(): array {
-		$api       = new Sellmo_API();
-		$cursor    = '';
-		$page      = 0;
-		$max_pages = 20;
-		$items     = [];
-
-		do {
-			$page++;
-			$response = $api->get_products( $cursor );
-
-			if ( is_wp_error( $response ) ) {
-				throw new \RuntimeException( $response->get_error_message() );
-			}
-
-			$products = $this->extract_products( $response );
-			if ( empty( $products ) ) {
-				break;
-			}
-
-			foreach ( $products as $product ) {
-				if ( is_array( $product ) ) {
-					$items = array_merge( $items, $this->flatten_product_stock_items( $product ) );
-				}
-			}
-
-			$cursor = $this->extract_next_cursor( $response );
-			if ( $page >= $max_pages ) {
-				break;
-			}
-		} while ( '' !== $cursor );
-
-		return $items;
 	}
 
 	/**
@@ -713,53 +599,6 @@ class Sellmo_Stock_Sync {
 		}
 
 		return [];
-	}
-
-	/**
-	 * Flatten a product payload into a stock item list.
-	 *
-	 * @since  1.0.0
-	 * @param  array<string, mixed> $product Product payload.
-	 * @return array<int, array<string, mixed>>
-	 */
-	private function flatten_product_stock_items( array $product ): array {
-		$variants = isset( $product['variants'] ) && is_array( $product['variants'] ) ? $product['variants'] : [];
-
-		if ( empty( $variants ) ) {
-			return [ $this->normalise_stock_item( $product, null ) ];
-		}
-
-		$items = [];
-		foreach ( $variants as $variant ) {
-			if ( is_array( $variant ) ) {
-				$items[] = $this->normalise_stock_item( $product, $variant );
-			}
-		}
-
-		return $items;
-	}
-
-	/**
-	 * Normalise a product or variant payload into a stock item.
-	 *
-	 * @since  1.0.0
-	 * @param  array<string, mixed>      $product Product payload.
-	 * @param  array<string, mixed>|null $variant Variant payload or null.
-	 * @return array<string, mixed>
-	 */
-	private function normalise_stock_item( array $product, ?array $variant ): array {
-		$source = null !== $variant ? $variant : $product;
-		$variant_id = '';
-		if ( null !== $variant ) {
-			$variant_id = (string) ( $variant['variant_id'] ?? $variant['id'] ?? '' );
-		}
-
-		return [
-			'product_id'   => (string) ( $product['id'] ?? '' ),
-			'variant_id'   => $variant_id,
-			'product_code' => (string) ( $source['product_code'] ?? '' ),
-			'in_stock'     => $this->extract_item_stock( $source ),
-		];
 	}
 
 	/**
@@ -1009,44 +848,6 @@ class Sellmo_Stock_Sync {
 	// -------------------------------------------------------------------------
 	// API response parsing helpers
 	// -------------------------------------------------------------------------
-
-	/**
-	 * Extract the items array from an inventory API response.
-	 *
-	 * Handles both `{ "data": [...] }` and `{ "inventory": [...] }` shapes.
-	 *
-	 * @since  1.0.0
-	 * @param  array<string, mixed> $response Decoded API response.
-	 * @return array<int, array<string, mixed>>
-	 */
-	private function extract_items( array $response ): array {
-		if ( isset( $response['data'] ) && is_array( $response['data'] ) ) {
-			return $response['data'];
-		}
-		if ( isset( $response['inventory'] ) && is_array( $response['inventory'] ) ) {
-			return $response['inventory'];
-		}
-		return [];
-	}
-
-	/**
-	 * Extract the stock quantity from an inventory item.
-	 *
-	 * Returns null if no recognisable quantity field is present. Clamps to 0
-	 * minimum so negative API values are never written to WooCommerce.
-	 *
-	 * @since  1.0.0
-	 * @param  array<string, mixed> $item Single inventory item from the API.
-	 * @return int|null
-	 */
-	private function extract_quantity( array $item ): ?int {
-		foreach ( [ 'quantity', 'available_quantity', 'stock_quantity', 'stock' ] as $field ) {
-			if ( isset( $item[ $field ] ) ) {
-				return max( 0, (int) $item[ $field ] );
-			}
-		}
-		return null;
-	}
 
 	/**
 	 * Extract the pagination cursor from an API response.

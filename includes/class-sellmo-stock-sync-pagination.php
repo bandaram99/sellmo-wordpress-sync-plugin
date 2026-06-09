@@ -280,7 +280,6 @@ class Sellmo_Stock_Sync_Pagination {
 			}
 		}
 
-		Sellmo_Product_Mapper_Store::update_stock( $match_product_id, $match_variant_id, $match_code, $in_stock );
 		Sellmo_Product_Mapping::update_stock( $match_product_id, $match_variant_id, $match_code, $in_stock );
 	}
 

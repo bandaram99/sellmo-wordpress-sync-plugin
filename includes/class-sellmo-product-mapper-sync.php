@@ -76,11 +76,11 @@ class Sellmo_Product_Mapper_Sync {
 			];
 		}
 
-		// All HTTP goes through Sellmo_API (GET with query-string params, not a body).
+		// All HTTP goes through Sellmo_API.
 		$api = new Sellmo_API();
 
 		// Snapshot of already-staged ids so membership is O(1), not a query per row.
-		$existing = Sellmo_Product_Mapper_Store::get_existing_id_set();
+		$existing = Sellmo_Product_Mapping::get_existing_id_set();
 
 		$cursor   = '';
 		$page     = 0;
@@ -133,7 +133,7 @@ class Sellmo_Product_Mapper_Sync {
 					continue;
 				}
 
-				$ok = Sellmo_Product_Mapper_Store::insert_new( [
+				$ok = Sellmo_Product_Mapping::insert_new( [
 					'sellmo_product_id'   => $sellmo_id,
 					'sellmo_product_code' => $code,
 					'sellmo_product_name' => (string) ( $product['product_name'] ?? '' ),

@@ -30,7 +30,10 @@ $variant_table = $wpdb->prefix . 'sellmo_product_variants';
 // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name constructed from trusted $wpdb->prefix.
 $wpdb->query( "DROP TABLE IF EXISTS `{$variant_table}`" );
 
-Sellmo_Product_Mapper_Store::drop_table();
+// Drop the legacy staging table (merged into sellmo_product_mapping) if any copy remains.
+$legacy_mapper_table = $wpdb->prefix . 'sellmo_product_mapper';
+// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name constructed from trusted $wpdb->prefix.
+$wpdb->query( "DROP TABLE IF EXISTS `{$legacy_mapper_table}`" );
 
 // 2. Delete all sellmo_wc_* options.
 // Underscores in the LIKE value are escaped with a backslash so they match

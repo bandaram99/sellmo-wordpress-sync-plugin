@@ -165,7 +165,7 @@ class Sellmo_Mapper_Ajax {
 		$search = sanitize_text_field( wp_unslash( $_REQUEST['q'] ?? $_REQUEST['search'] ?? '' ) );
 		$page   = max( 1, absint( $_REQUEST['page'] ?? 1 ) );
 
-		$data    = Sellmo_Product_Mapper_Store::search( $search, $page, self::PER_PAGE );
+		$data    = Sellmo_Product_Mapping::search( $search, $page, self::PER_PAGE );
 		$results = [];
 
 		foreach ( $data['items'] as $row ) {
