@@ -813,15 +813,19 @@
 		var mapperPage           = 1;
 		var mapperSearch         = '';
 		var mapperStatus         = '';
+		var mapperCategory       = '';
 		var mapperLoading        = false;
 		var mapperWcProducts     = [];
 		var mapperSellmoProducts = [];
 
+		// Populate the category filter, then load the first page of mapper data.
+		loadMapperCategories();
 		loadMapperList( 1 );
 
 		$( '#sellmo-mapper-search-btn, #sellmo-mapper-refresh' ).on( 'click', function () {
-			mapperSearch = String( $( '#sellmo-mapper-search' ).val() || '' );
-			mapperStatus = String( $( '#sellmo-mapper-status-filter' ).val() || '' );
+			mapperSearch   = String( $( '#sellmo-mapper-search' ).val() || '' );
+			mapperStatus   = String( $( '#sellmo-mapper-status-filter' ).val() || '' );
+			mapperCategory = String( $( '#sellmo-mapper-category-filter' ).val() || '' );
 			loadMapperList( 1 );
 		} );
 
@@ -829,6 +833,27 @@
 			mapperStatus = String( $( this ).val() || '' );
 			loadMapperList( 1 );
 		} );
+
+		$( '#sellmo-mapper-category-filter' ).on( 'change', function () {
+			mapperCategory = String( $( this ).val() || '' );
+			loadMapperList( 1 );
+		} );
+
+		/** Fetch categories and populate the mapper filter dropdown.
+		 *  Uses the category name as the option value because the products API
+		 *  returns category as a flat name string, not a category ID.
+		 */
+		function loadMapperCategories() {
+			$.post( ajaxUrl, { action: 'sellmo_wc_get_categories', nonce: nonce } )
+				.done( function ( res ) {
+					if ( ! res.success ) { return; }
+					var $sel = $( '#sellmo-mapper-category-filter' );
+					$.each( extractItems( res.data ), function ( _i, cat ) {
+						var name = cat.name || cat.category_name || String( cat.id || cat.category_id || '' );
+						$sel.append( $( '<option>' ).val( name ).text( name ) );
+					} );
+				} );
+		}
 
 		// ── Custom WC product searchable dropdown ─────────────────────────────────
 
@@ -1115,11 +1140,12 @@
 			$( '#sellmo-mapper-error' ).hide();
 
 			$.post( ajaxUrl, {
-				action : 'sellmo_wc_get_mapper_list',
-				nonce  : nonce,
-				page   : page,
-				search : mapperSearch,
-				status : mapperStatus
+				action   : 'sellmo_wc_get_mapper_list',
+				nonce    : nonce,
+				page     : page,
+				search   : mapperSearch,
+				status   : mapperStatus,
+				category : mapperCategory
 			} )
 			.done( function ( res ) {
 				if ( ! res.success ) {

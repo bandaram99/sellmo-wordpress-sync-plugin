@@ -66,6 +66,11 @@ $mapper_stats = Sellmo_Product_Mapping::get_dashboard_stats();
 				<option value="not_mapped"><?php esc_html_e( 'Not Mapped', 'sellmo-woocommerce' ); ?></option>
 			</select>
 
+			<label for="sellmo-mapper-category-filter" class="screen-reader-text"><?php esc_html_e( 'Filter by category', 'sellmo-woocommerce' ); ?></label>
+			<select id="sellmo-mapper-category-filter">
+				<option value=""><?php esc_html_e( '— All categories —', 'sellmo-woocommerce' ); ?></option>
+			</select>
+
 			<button type="button" id="sellmo-mapper-search-btn" class="button"><?php esc_html_e( 'Search', 'sellmo-woocommerce' ); ?></button>
 			<button type="button" id="sellmo-mapper-refresh" class="button"><?php esc_html_e( 'Refresh', 'sellmo-woocommerce' ); ?></button>
 		</div>

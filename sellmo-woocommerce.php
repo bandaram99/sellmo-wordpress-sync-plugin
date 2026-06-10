@@ -5,7 +5,7 @@ declare(strict_types=1);
  * Plugin Name:       Sellmo POS Integration
  * Plugin URI:        https://sellmo.com/
  * Description:       Integrates WooCommerce with Sellmo POS — product sync, stock sync, and order sync between the two platforms.
- * Version:           1.0.0
+ * Version:           1..0.0
  * Requires at least: 6.0
  * Requires PHP:      8.0
  * Author:            Sellmo

@@ -240,8 +240,8 @@ $webhook_url           = rest_url( 'sellmo-wc/v1/webhook' );
 
 		<?php /* ── E) Webhook Configuration ─────────────────────────────── */ ?>
 		<div class="sellmo-card">
-			<h2><?php esc_html_e( 'Webhook Configuration', 'sellmo-woocommerce' ); ?></h2>
-			<table class="form-table" role="presentation">
+			<h2><?php esc_html_e( 'Webhook Configuration - Under Development', 'sellmo-woocommerce' ); ?></h2>
+			<!-- <table class="form-table" role="presentation">
 				<tbody>
 
 					<tr>
@@ -297,7 +297,7 @@ $webhook_url           = rest_url( 'sellmo-wc/v1/webhook' );
 					</tr>
 
 				</tbody>
-			</table>
+			</table> -->
 		</div>
 
 		<?php submit_button( __( 'Save Settings', 'sellmo-woocommerce' ) ); ?>

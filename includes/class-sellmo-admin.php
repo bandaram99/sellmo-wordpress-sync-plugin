@@ -31,6 +31,7 @@ class Sellmo_Admin {
 	 */
 	public function __construct() {
 		add_action( 'admin_menu', [ $this, 'register_menus' ] );
+		add_action( 'admin_menu', [ $this, 'hide_submenu_items' ], 999 );
 		add_action( 'admin_post_sellmo_wc_save_settings', [ $this, 'handle_save_settings' ] );
 		add_action( 'admin_post_sellmo_wc_clear_logs',    [ $this, 'handle_clear_logs' ] );
 		add_action( 'admin_post_sellmo_wc_export_logs',   [ $this, 'handle_export_logs' ] );
@@ -124,6 +125,20 @@ class Sellmo_Admin {
 			'sellmo-sync-log',
 			[ $this, 'page_sync_log' ]
 		);
+	}
+
+	/**
+	 * Hide selected sub-pages from the sidebar without unregistering them.
+	 *
+	 * Runs on admin_menu at a late priority so it executes after register_menus().
+	 * remove_submenu_page() only removes the visible menu link — the page route
+	 * (admin.php?page=sellmo-products) and all its AJAX/functionality remain intact.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public function hide_submenu_items(): void {
+		remove_submenu_page( 'sellmo-pos', 'sellmo-products' );
 	}
 
 	// -------------------------------------------------------------------------
@@ -573,6 +588,7 @@ class Sellmo_Admin {
 		$search      = sanitize_text_field( wp_unslash( $_POST['search'] ?? '' ) );
 		$status      = sanitize_key( wp_unslash( $_POST['status'] ?? '' ) );
 		$status      = in_array( $status, [ 'mapped', 'not_mapped' ], true ) ? $status : '';
+		$cat_filter  = sanitize_text_field( wp_unslash( $_POST['category'] ?? '' ) );
 		$all_products = $this->get_all_sellmo_products();
 
 		if ( is_wp_error( $all_products ) ) {
@@ -658,6 +674,12 @@ class Sellmo_Admin {
 				continue;
 			}
 
+			// Category filter. The API returns category as a flat name string,
+			// matched exactly — same behaviour as the Products page.
+			if ( '' !== $cat_filter && (string) ( $row['category'] ?? '' ) !== $cat_filter ) {
+				continue;
+			}
+
 			if ( '' !== $search ) {
 				$haystack = mb_strtolower(
 					(string) ( $row['sellmo_name'] ?? '' ) . ' ' .
@@ -708,8 +730,15 @@ class Sellmo_Admin {
 
 				$wc_price    = (float) $wc_product->get_price();
 				$terms       = get_the_terms( $wc_id, 'product_cat' );
-				$wc_cats     = is_array( $terms ) ? implode( ', ', wp_list_pluck( $terms, 'name' ) ) : '';
+				$wc_cat_names = is_array( $terms ) ? wp_list_pluck( $terms, 'name' ) : [];
+				$wc_cats     = implode( ', ', $wc_cat_names );
 				$wc_edit_url = (string) get_edit_post_link( $wc_id, 'raw' );
+
+				// Category filter: keep WC-only rows only when the selected
+				// category is one of the product's WooCommerce categories.
+				if ( '' !== $cat_filter && ! in_array( $cat_filter, $wc_cat_names, true ) ) {
+					continue;
+				}
 
 				if ( '' !== $search ) {
 					$haystack = mb_strtolower( $wc_product->get_name() . ' ' . $wc_product->get_sku() . ' ' . $wc_cats );
