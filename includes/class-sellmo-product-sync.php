@@ -235,6 +235,52 @@ class Sellmo_Product_Sync {
 		return false;
 	}
 
+	/**
+	 * Push a Sellmo image URL onto an existing WooCommerce product.
+	 *
+	 * Used when a Sellmo product is mapped to a WooCommerce product so the
+	 * mapped product receives the catalogue image. The remote image is
+	 * sideloaded once (deduplicated by source URL) and set as the product's
+	 * featured image.
+	 *
+	 * By default an existing featured image is preserved so a merchant's
+	 * manually chosen image is never clobbered; pass $overwrite = true to
+	 * force the Sellmo image even when one is already set.
+	 *
+	 * @since  1.0.0
+	 * @param  int    $product_id WC product post ID to receive the image.
+	 * @param  string $image_url  Remote Sellmo image URL.
+	 * @param  bool   $overwrite  Replace an existing featured image when true.
+	 * @return bool               True if the featured image was set.
+	 */
+	public function set_product_image_from_url( int $product_id, string $image_url, bool $overwrite = false ): bool {
+		$image_url = trim( $image_url );
+
+		if ( $product_id <= 0 || '' === $image_url ) {
+			return false;
+		}
+
+		$product = wc_get_product( $product_id );
+		if ( ! $product instanceof WC_Product ) {
+			return false;
+		}
+
+		// Don't clobber an image the merchant already set unless asked to.
+		if ( ! $overwrite && $product->get_image_id() > 0 ) {
+			return false;
+		}
+
+		$image_id = $this->sideload_image( $image_url, $product_id );
+		if ( $image_id <= 0 ) {
+			return false;
+		}
+
+		$product->set_image_id( $image_id );
+		$product->save();
+
+		return true;
+	}
+
 	// =========================================================================
 	// Core sync logic
 	// =========================================================================

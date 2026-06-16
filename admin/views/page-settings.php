@@ -72,6 +72,14 @@ $webhook_url           = rest_url( 'sellmo-wc/v1/webhook' );
 							<p class="description">
 								<?php esc_html_e( 'Your Sellmo / SalesPlay API Bearer token. Leave blank to keep the existing token.', 'sellmo-woocommerce' ); ?>
 							</p>
+							<?php if ( $has_token ) : ?>
+								<p>
+									<label>
+										<input type="checkbox" name="sellmo_wc_remove_token" value="yes">
+										<?php esc_html_e( 'Remove the saved token. This deletes all imported products, mappings, and stored stock data.', 'sellmo-woocommerce' ); ?>
+									</label>
+								</p>
+							<?php endif; ?>
 						</td>
 					</tr>
 

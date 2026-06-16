@@ -231,21 +231,46 @@ class Sellmo_Admin {
 			wp_die( esc_html__( 'You do not have permission to save these settings.', 'sellmo-woocommerce' ) );
 		}
 
-		// API token — only update if a value was submitted.
+		// API token. A new token means a different SalesPlay account, so the
+		// previously synced catalogue and its stored stock snapshots are purged
+		// below. The same applies when the token is explicitly removed.
+		//   - Blank field + no "remove" checkbox  -> keep the existing token.
+		//   - "Remove saved token" checkbox ticked -> clear the token + purge.
+		//   - New value that differs               -> replace the token + purge.
+		$old_token    = (string) ( Sellmo_Settings::get( 'api_token' ) ?: '' );
+		$remove_token = isset( $_POST['sellmo_wc_remove_token'] );
 		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitized below.
 		$api_token     = sanitize_text_field( wp_unslash( $_POST['sellmo_wc_api_token'] ?? '' ) );
 		$token_changed = false;
-		if ( '' !== $api_token ) {
+		$purged_count  = -1;
+
+		if ( $remove_token && '' !== $old_token ) {
+			// Explicit removal: drop the token, reset account-scoped settings, and
+			// wipe everything synced from the old account.
+			Sellmo_Settings::set( 'api_token', '' );
+			Sellmo_Settings::set( 'shop_id', '' );
+			Sellmo_Settings::set( 'terminal_key', '' );
+			Sellmo_Settings::set( 'connection_status', [] );
+			$purged_count = $this->purge_sellmo_synced_data();
+		} elseif ( '' !== $api_token && $api_token !== $old_token ) {
 			Sellmo_Settings::set( 'api_token', $api_token );
 			$token_changed = true;
+
+			// Only purge when replacing an existing token, not on first-time setup.
+			if ( '' !== $old_token ) {
+				$purged_count = $this->purge_sellmo_synced_data();
+			}
 		}
 
-		// Shop ID — clear product cache when the selected shop changes.
-		$old_shop_id = (string) ( Sellmo_Settings::get( 'shop_id' ) ?: '' );
-		$new_shop_id = sanitize_text_field( wp_unslash( $_POST['sellmo_wc_shop_id'] ?? '' ) );
-		Sellmo_Settings::set( 'shop_id', $new_shop_id );
-		if ( $new_shop_id !== $old_shop_id ) {
-			$this->clear_products_cache();
+		// Shop ID — clear product cache when the selected shop changes. Skipped when
+		// the token was just removed (shop_id was already reset to empty above).
+		if ( -1 === $purged_count || ! $remove_token ) {
+			$old_shop_id = (string) ( Sellmo_Settings::get( 'shop_id' ) ?: '' );
+			$new_shop_id = sanitize_text_field( wp_unslash( $_POST['sellmo_wc_shop_id'] ?? '' ) );
+			Sellmo_Settings::set( 'shop_id', $new_shop_id );
+			if ( $new_shop_id !== $old_shop_id ) {
+				$this->clear_products_cache();
+			}
 		}
 
 		// Feature toggles — unchecked checkboxes are absent from POST, so default to 'no'.
@@ -270,7 +295,10 @@ class Sellmo_Admin {
 		Sellmo_Settings::set( 'sync_categories', $sync_cats );
 
 		// Terminal key — populated by JS from the selected shop's terminal list.
-		Sellmo_Settings::set( 'terminal_key', sanitize_text_field( wp_unslash( $_POST['sellmo_wc_terminal_key'] ?? '' ) ) );
+		// Skipped on token removal (terminal_key was already reset to empty above).
+		if ( ! $remove_token || -1 === $purged_count ) {
+			Sellmo_Settings::set( 'terminal_key', sanitize_text_field( wp_unslash( $_POST['sellmo_wc_terminal_key'] ?? '' ) ) );
+		}
 
 		// Webhook secret — only update if a value was submitted.
 		$webhook_secret = sanitize_text_field( wp_unslash( $_POST['sellmo_wc_webhook_secret'] ?? '' ) );
@@ -306,6 +334,9 @@ class Sellmo_Admin {
 		];
 		if ( '' !== $conn_status ) {
 			$redirect_args['sellmo_conn'] = $conn_status;
+		}
+		if ( $purged_count >= 0 ) {
+			$redirect_args['sellmo_purged'] = (string) $purged_count;
 		}
 
 		wp_safe_redirect( add_query_arg( $redirect_args, admin_url( 'admin.php' ) ) );
@@ -479,6 +510,24 @@ class Sellmo_Admin {
 			}
 		}
 
+		if ( isset( $_GET['sellmo_purged'] ) ) {
+			$purged = absint( $_GET['sellmo_purged'] );
+			echo '<div class="notice notice-warning is-dismissible"><p>';
+			printf(
+				/* translators: %d: number of WooCommerce products removed */
+				esc_html(
+					_n(
+						'API token changed. Removed %d Sellmo-linked product and cleared all stored stock counts and mappings.',
+						'API token changed. Removed %d Sellmo-linked products and cleared all stored stock counts and mappings.',
+						$purged,
+						'sellmo-woocommerce'
+					)
+				),
+				$purged
+			);
+			echo '</p></div>';
+		}
+
 		if ( '1' === sanitize_key( $_GET['sellmo_log_cleared'] ?? '' ) ) {
 			echo '<div class="notice notice-success is-dismissible"><p>' .
 				esc_html__( 'Sync log cleared.', 'sellmo-woocommerce' ) .
@@ -589,31 +638,20 @@ class Sellmo_Admin {
 		$status      = sanitize_key( wp_unslash( $_POST['status'] ?? '' ) );
 		$status      = in_array( $status, [ 'mapped', 'not_mapped' ], true ) ? $status : '';
 		$cat_filter  = sanitize_text_field( wp_unslash( $_POST['category'] ?? '' ) );
-		$all_products = $this->get_all_sellmo_products();
+		// Source the Sellmo product list from the local mapping table (staged by the
+		// dashboard "Sync Products Now" action) instead of the live API, so the list
+		// reflects stored data and is empty once that data is cleared.
+		$db_rows      = Sellmo_Product_Mapping::get_all_rows();
+		$deduped_rows = [];
 
-		if ( is_wp_error( $all_products ) ) {
-			wp_send_json_error( [ 'message' => $all_products->get_error_message() ] );
-		}
-
-		$all_mappings   = Sellmo_Product_Mapping::get_all_mappings_indexed();
-		$deduped_rows   = [];
-
-		foreach ( $all_products as $product ) {
-			$sellmo_id   = (string) ( $product['id'] ?? '' );
-			$sellmo_code = (string) ( $product['product_code'] ?? '' );
-			$name        = (string) ( $product['product_name'] ?? '' );
+		foreach ( $db_rows as $product ) {
+			$sellmo_id   = (string) ( $product['sellmo_product_id'] ?? '' );
+			$sellmo_code = (string) ( $product['sellmo_product_code'] ?? '' );
+			$name        = (string) ( $product['sellmo_product_name'] ?? '' );
 			$category    = (string) ( $product['category'] ?? '' );
 
-			$mapping = null;
-			if ( '' !== $sellmo_id && isset( $all_mappings['by_id'][ $sellmo_id ] ) ) {
-				$mapping = $all_mappings['by_id'][ $sellmo_id ];
-			} elseif ( '' !== $sellmo_code && isset( $all_mappings['by_code'][ $sellmo_code ] ) ) {
-				$mapping = $all_mappings['by_code'][ $sellmo_code ];
-			}
-
-			$is_mapped = is_array( $mapping );
-
-			$wc_product_id = $is_mapped ? absint( $mapping['wc_product_id'] ?? 0 ) : 0;
+			$is_mapped     = 1 === (int) ( $product['map_status'] ?? 0 );
+			$wc_product_id = $is_mapped ? absint( $product['wc_product_id'] ?? 0 ) : 0;
 			$wc_label      = '';
 			$wc_edit_url   = '';
 
@@ -626,13 +664,11 @@ class Sellmo_Admin {
 						$wc_product->get_name()
 					);
 					$wc_edit_url = (string) get_edit_post_link( $wc_product_id, 'raw' );
+				} else {
+					// The mapped WooCommerce product no longer exists — show as unmapped.
+					$is_mapped     = false;
+					$wc_product_id = 0;
 				}
-			}
-
-			$price = 0.0;
-			$shops = isset( $product['shops'] ) && is_array( $product['shops'] ) ? $product['shops'] : [];
-			if ( isset( $shops[0]['price'] ) && is_numeric( $shops[0]['price'] ) ) {
-				$price = (float) $shops[0]['price'];
 			}
 
 			$row = [
@@ -640,7 +676,7 @@ class Sellmo_Admin {
 				'sellmo_name'     => $name,
 				'sellmo_code'     => $sellmo_code,
 				'category'        => $category,
-				'price'           => $price,
+				'price'           => (float) ( $product['price'] ?? 0 ),
 				'wc_product_id'   => $wc_product_id,
 				'wc_product_label'=> $wc_label,
 				'wc_edit_url'     => $wc_edit_url,
@@ -835,6 +871,10 @@ class Sellmo_Admin {
 				'message' => __( 'Unable to save mapping. This WooCommerce product may already be mapped.', 'sellmo-woocommerce' ),
 			] );
 		}
+
+		// Push the Sellmo catalogue image onto the mapped WooCommerce product
+		// when one is available and the product has no featured image yet.
+		$this->push_sellmo_image_to_wc( $sellmo_id, $sellmo_code, $wc_product_id );
 
 		Sellmo_Logger::log(
 			'product',
@@ -1038,6 +1078,7 @@ class Sellmo_Admin {
 			}
 
 			if ( Sellmo_Product_Mapping::upsert_mapping( $sellmo_id, $sellmo_code, $sellmo_name, $wc_id ) ) {
+				$this->push_sellmo_image_to_wc( $sellmo_id, $sellmo_code, $wc_id );
 				$processed++;
 			} else {
 				$errors++;
@@ -1679,6 +1720,53 @@ class Sellmo_Admin {
 	// -------------------------------------------------------------------------
 
 	/**
+	 * Push a mapped Sellmo product's catalogue image onto its WooCommerce product.
+	 *
+	 * Looks up the Sellmo product in the cached catalogue by id (then code) to
+	 * read its image_url, then sideloads it as the WooCommerce product's featured
+	 * image via Sellmo_Product_Sync. An existing featured image is preserved so a
+	 * merchant's manually chosen image is never overwritten. Failures are silent —
+	 * mapping must still succeed even if the image cannot be fetched.
+	 *
+	 * @since  1.0.0
+	 * @param  string $sellmo_id     Sellmo product id.
+	 * @param  string $sellmo_code   Sellmo product code.
+	 * @param  int    $wc_product_id Mapped WooCommerce product ID.
+	 * @return void
+	 */
+	private function push_sellmo_image_to_wc( string $sellmo_id, string $sellmo_code, int $wc_product_id ): void {
+		if ( $wc_product_id <= 0 || ( '' === $sellmo_id && '' === $sellmo_code ) ) {
+			return;
+		}
+
+		$all_products = $this->get_all_sellmo_products();
+		if ( is_wp_error( $all_products ) ) {
+			return;
+		}
+
+		$image_url = '';
+		foreach ( $all_products as $p ) {
+			if ( ! is_array( $p ) ) {
+				continue;
+			}
+
+			$p_id   = (string) ( $p['id'] ?? '' );
+			$p_code = (string) ( $p['product_code'] ?? '' );
+
+			if ( ( '' !== $sellmo_id && $p_id === $sellmo_id ) || ( '' !== $sellmo_code && $p_code === $sellmo_code ) ) {
+				$image_url = (string) ( $p['image_url'] ?? $p['product_image_url'] ?? '' );
+				break;
+			}
+		}
+
+		if ( '' === $image_url ) {
+			return;
+		}
+
+		( new Sellmo_Product_Sync() )->set_product_image_from_url( $wc_product_id, $image_url );
+	}
+
+	/**
 	 * Fetch and cache the complete Sellmo product catalogue.
 	 *
 	 * Pages through Sellmo_API::get_products() until all products are collected
@@ -1833,6 +1921,83 @@ class Sellmo_Admin {
 		}
 
 		return $id;
+	}
+
+	/**
+	 * Remove every trace of the previously synced Sellmo catalogue.
+	 *
+	 * Called when the API token changes (a new token = a different SalesPlay
+	 * account). Deletes all WooCommerce products and variations created or linked
+	 * from Sellmo, empties the mapping/staging and variant tables (which hold the
+	 * stored stock counts and saved product details), clears the catalogue cache,
+	 * and resets the persisted sync summaries.
+	 *
+	 * @since  1.0.0
+	 * @return int Number of WooCommerce products removed.
+	 */
+	private function purge_sellmo_synced_data(): int {
+		global $wpdb;
+
+		// WooCommerce products linked to Sellmo carry one of these meta keys.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$product_ids = $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT DISTINCT p.ID
+				 FROM {$wpdb->posts} p
+				 INNER JOIN {$wpdb->postmeta} pm ON pm.post_id = p.ID
+				 WHERE p.post_type = 'product'
+				   AND pm.meta_key IN ( %s, %s )
+				   AND pm.meta_value <> ''",
+				'_sellmo_product_code',
+				'_salesplay_pos_product_id'
+			)
+		);
+
+		$removed = 0;
+
+		foreach ( (array) $product_ids as $product_id ) {
+			$product = wc_get_product( (int) $product_id );
+
+			if ( $product instanceof WC_Product ) {
+				// Force-delete variations first, then the parent product.
+				foreach ( $product->get_children() as $child_id ) {
+					wp_delete_post( (int) $child_id, true );
+				}
+				$product->delete( true );
+			} else {
+				wp_delete_post( (int) $product_id, true );
+			}
+
+			$removed++;
+		}
+
+		// Empty the mapping/staging and variant tables (stock counts + saved
+		// details). The staged Product Mapper rows live in sellmo_product_mapping
+		// as map_status = 0, so delete_all_rows() clears them too.
+		Sellmo_Product_Mapping::delete_all_rows();
+		Sellmo_Product_Variant_Store::delete_all_rows();
+
+		// Drop the pre-migration legacy mapper table if a copy still lingers.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name built from trusted prefix.
+		$wpdb->query( "DROP TABLE IF EXISTS `{$wpdb->prefix}sellmo_product_mapper`" );
+
+		// Clear cached catalogue and reset stored sync summaries.
+		$this->clear_products_cache();
+		delete_option( 'sellmo_wc_last_product_sync' );
+		delete_option( 'sellmo_wc_last_stock_sync' );
+		delete_option( 'sellmo_wc_last_order_sync' );
+
+		Sellmo_Logger::log(
+			'product',
+			'sellmo_to_wc',
+			'skipped',
+			sprintf(
+				'API token changed — removed %d Sellmo-linked product(s) and cleared all stored stock counts, mappings, and variant data.',
+				$removed
+			)
+		);
+
+		return $removed;
 	}
 
 	/**

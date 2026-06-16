@@ -822,11 +822,35 @@
 		loadMapperCategories();
 		loadMapperList( 1 );
 
-		$( '#sellmo-mapper-search-btn, #sellmo-mapper-refresh' ).on( 'click', function () {
+		$( '#sellmo-mapper-search-btn' ).on( 'click', function () {
 			mapperSearch   = String( $( '#sellmo-mapper-search' ).val() || '' );
 			mapperStatus   = String( $( '#sellmo-mapper-status-filter' ).val() || '' );
 			mapperCategory = String( $( '#sellmo-mapper-category-filter' ).val() || '' );
 			loadMapperList( 1 );
+		} );
+
+		// Refresh pulls the latest catalogue from Sellmo into the mapper table
+		// (the list is read from local storage, not the live API), then reloads.
+		$( '#sellmo-mapper-refresh' ).on( 'click', function () {
+			var $btn = $( this );
+			if ( $btn.prop( 'disabled' ) ) {
+				return;
+			}
+
+			mapperSearch   = String( $( '#sellmo-mapper-search' ).val() || '' );
+			mapperStatus   = String( $( '#sellmo-mapper-status-filter' ).val() || '' );
+			mapperCategory = String( $( '#sellmo-mapper-category-filter' ).val() || '' );
+
+			$btn.prop( 'disabled', true );
+			$( '#sellmo-mapper-loading' ).show();
+			$( '#sellmo-mapper-table, #sellmo-mapper-pagination, #sellmo-mapper-top-pagination' ).hide();
+			$( '#sellmo-mapper-error' ).hide();
+
+			$.post( ajaxUrl, { action: 'sellmo_wc_sync_products_now', nonce: nonce } )
+				.always( function () {
+					$btn.prop( 'disabled', false );
+					loadMapperList( 1 );
+				} );
 		} );
 
 		$( '#sellmo-mapper-status-filter' ).on( 'change', function () {

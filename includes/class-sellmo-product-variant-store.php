@@ -86,6 +86,25 @@ class Sellmo_Product_Variant_Store {
 	}
 
 	/**
+	 * Delete every variant row, keeping the table structure intact.
+	 *
+	 * Used when the API token changes and the previously synced catalogue is
+	 * discarded along with its stored variant stock snapshots.
+	 *
+	 * @since  1.1.0
+	 * @return void
+	 */
+	public static function delete_all_rows(): void {
+		self::ensure_table();
+
+		global $wpdb;
+
+		$table = self::table_name();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table from trusted prefix.
+		$wpdb->query( "TRUNCATE TABLE `{$table}`" );
+	}
+
+	/**
 	 * Drop the variant table. Called only on uninstall.
 	 *
 	 * @since  1.1.0

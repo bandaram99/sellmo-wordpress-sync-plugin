@@ -92,6 +92,25 @@ class Sellmo_Product_Mapping {
 	}
 
 	/**
+	 * Delete every row, keeping the table structure intact.
+	 *
+	 * Used when the API token changes and the previously synced catalogue —
+	 * including its mapping links and stored stock snapshots — is discarded.
+	 *
+	 * @since  1.0.0
+	 * @return void
+	 */
+	public static function delete_all_rows(): void {
+		self::ensure_table();
+
+		global $wpdb;
+
+		$table = self::table_name();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name built from trusted prefix.
+		$wpdb->query( "TRUNCATE TABLE `{$table}`" );
+	}
+
+	/**
 	 * Drop the table.
 	 *
 	 * @since  1.0.0
@@ -627,6 +646,27 @@ class Sellmo_Product_Mapping {
 	}
 
 	/**
+	 * Return every row (mapped and staged) ordered by product name.
+	 *
+	 * Backs the Product Mapper list, which reads its catalogue from this table
+	 * rather than the live API so the list reflects stored data.
+	 *
+	 * @since  1.0.0
+	 * @return array<int, array<string, mixed>>
+	 */
+	public static function get_all_rows(): array {
+		self::ensure_table();
+
+		global $wpdb;
+
+		$table = self::table_name();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$rows = $wpdb->get_results( "SELECT * FROM `{$table}` ORDER BY sellmo_product_name ASC", ARRAY_A );
+
+		return is_array( $rows ) ? $rows : [];
+	}
+
+	/**
 	 * Return all mapped rows as lookup arrays.
 	 *
 	 * @since  1.0.0
@@ -890,22 +930,18 @@ class Sellmo_Product_Mapping {
 	}
 
 	/**
-	 * Build dashboard mapping statistics.
+	 * Build dashboard mapping statistics from the stored mapping table.
+	 *
+	 * Counts come straight from this table (populated by the dashboard
+	 * "Sync Products Now" action) rather than the live API, so the figures
+	 * reflect stored data and drop to zero once that data is cleared.
 	 *
 	 * @since  1.0.0
 	 * @return array{ total_sellmo_products: int, mapped_products: int, unmapped_products: int, woocommerce_only_products: int }
 	 */
 	public static function get_dashboard_stats(): array {
-		$sellmo_products = self::dedupe_sellmo_products_by_code( self::fetch_all_sellmo_products() );
-
-		$total_sellmo = count( $sellmo_products );
-		$mapped       = 0;
-
-		foreach ( $sellmo_products as $product ) {
-			if ( self::is_sellmo_product_mapped( $product ) ) {
-				$mapped++;
-			}
-		}
+		$total_sellmo = self::count_all();
+		$mapped       = self::count_mapped_products();
 
 		return [
 			'total_sellmo_products'     => $total_sellmo,
@@ -913,94 +949,5 @@ class Sellmo_Product_Mapping {
 			'unmapped_products'         => max( 0, $total_sellmo - $mapped ),
 			'woocommerce_only_products' => self::count_woocommerce_only_products(),
 		];
-	}
-
-	/**
-	 * Collapse Sellmo product rows so each product code appears once.
-	 *
-	 * @since  1.0.0
-	 * @param  array<int, array<string, mixed>> $products Raw Sellmo products.
-	 * @return array<int, array<string, mixed>>
-	 */
-	private static function dedupe_sellmo_products_by_code( array $products ): array {
-		$deduped = [];
-
-		foreach ( $products as $product ) {
-			$code = (string) ( $product['product_code'] ?? '' );
-			$id   = (string) ( $product['id'] ?? '' );
-
-			$key = '' !== $code ? $code : $id;
-			if ( '' === $key ) {
-				continue;
-			}
-
-			if ( ! isset( $deduped[ $key ] ) ) {
-				$deduped[ $key ] = $product;
-			}
-		}
-
-		return array_values( $deduped );
-	}
-
-	/**
-	 * Fetch all Sellmo products for mapper statistics.
-	 *
-	 * @since  1.0.0
-	 * @return array<int, array<string, mixed>>
-	 */
-	private static function fetch_all_sellmo_products(): array {
-		$cached = get_transient( 'sellmo_wc_products_cache' );
-
-		if ( false !== $cached && is_array( $cached ) ) {
-			return $cached;
-		}
-
-		$api       = new Sellmo_API();
-		$cursor    = '';
-		$page      = 0;
-		$max_pages = 20;
-		$products  = [];
-
-		do {
-			$page++;
-			$response = $api->get_products( $cursor );
-
-			if ( is_wp_error( $response ) ) {
-				return [];
-			}
-
-			$items = [];
-			if ( isset( $response['products'] ) && is_array( $response['products'] ) ) {
-				$items = $response['products'];
-			} elseif ( isset( $response['data'] ) && is_array( $response['data'] ) ) {
-				$items = $response['data'];
-			}
-
-			if ( empty( $items ) ) {
-				break;
-			}
-
-			$products = array_merge( $products, $items );
-
-			$cursor = '';
-			foreach ( [ 'cursor', 'next_cursor', 'next_page_cursor' ] as $key ) {
-				if ( ! empty( $response[ $key ] ) && is_string( $response[ $key ] ) ) {
-					$cursor = $response[ $key ];
-					break;
-				}
-			}
-
-			if ( '' === $cursor && ! empty( $response['meta']['cursor'] ) && is_string( $response['meta']['cursor'] ) ) {
-				$cursor = $response['meta']['cursor'];
-			}
-
-			if ( '' === $cursor ) {
-				break;
-			}
-		} while ( $page < $max_pages );
-
-		set_transient( 'sellmo_wc_products_cache', $products, 5 * MINUTE_IN_SECONDS );
-
-		return $products;
 	}
 }

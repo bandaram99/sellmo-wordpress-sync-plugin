@@ -29,7 +29,9 @@ class Sellmo_Stock_Sync_Pagination {
 	 * Run the stock synchronization process.
 	 *
 	 * Loops through the Sellmo /inventory API endpoint, maps the items to
-	 * local WooCommerce products, and updates their stock quantities.
+	 * local WooCommerce products, and updates their stock quantities. After the
+	 * stock pass it also pushes each mapped product's catalogue image (image_url
+	 * from /products) onto its WooCommerce product.
 	 *
 	 * @since  1.0.0
 	 * @return array{ success: bool, count: int, message: string }
@@ -142,6 +144,11 @@ class Sellmo_Stock_Sync_Pagination {
 
 		} while ( '' !== $cursor && $page < self::MAX_PAGES );
 
+		// Push the Sellmo catalogue image onto each mapped WooCommerce product.
+		// Mapped products are handled here (not in the stock loop) so the manual
+		// "Sync Stock Now" action also keeps their featured images up to date.
+		$images_synced = $this->sync_mapped_product_images( $lookup );
+
 		// Determine the final status to log.
 		$status = ( $errors > 0 && 0 === $synced ) ? 'error' : 'success';
 
@@ -149,7 +156,13 @@ class Sellmo_Stock_Sync_Pagination {
 			'stock',
 			'sellmo_to_wc',
 			$status,
-			sprintf( 'Stock sync completed. %d items synced, %d skipped, %d errors.', $synced, $skipped, $errors )
+			sprintf(
+				'Stock sync completed. %d items synced, %d skipped, %d errors, %d mapped images updated.',
+				$synced,
+				$skipped,
+				$errors,
+				$images_synced
+			)
 		);
 
 		return [
@@ -210,6 +223,7 @@ class Sellmo_Stock_Sync_Pagination {
 				$entry        = [
 					'product_id'   => $product_id,
 					'product_code' => $product_code,
+					'image_url'    => (string) ( $product['image_url'] ?? $product['product_image_url'] ?? '' ),
 				];
 
 				if ( '' !== $product_id ) {
@@ -245,6 +259,57 @@ class Sellmo_Stock_Sync_Pagination {
 		} while ( '' !== $cursor && $page < $max_pages );
 
 		return $lookup;
+	}
+
+	/**
+	 * Push the Sellmo catalogue image onto every mapped WooCommerce product.
+	 *
+	 * For each mapped row, the product's image_url is resolved from the /products
+	 * lookup map (by Sellmo product id, then by code) and sideloaded as the
+	 * WooCommerce product's featured image. An existing featured image is
+	 * preserved so a merchant's manually chosen image is never overwritten.
+	 *
+	 * @since  1.0.0
+	 * @param  array{ products_by_id: array<string, array<string, mixed>>, products_by_code: array<string, array<string, mixed>> } $lookup Product lookup map.
+	 * @return int Number of mapped products whose image was set.
+	 */
+	private function sync_mapped_product_images( array $lookup ): int {
+		$mappings = Sellmo_Product_Mapping::get_all_mappings_indexed();
+		$rows     = $mappings['by_id'] ?? [];
+
+		if ( empty( $rows ) ) {
+			return 0;
+		}
+
+		$product_sync = new Sellmo_Product_Sync();
+		$updated      = 0;
+
+		foreach ( $rows as $row ) {
+			$wc_product_id = (int) ( $row['wc_product_id'] ?? 0 );
+			if ( $wc_product_id <= 0 ) {
+				continue;
+			}
+
+			$sellmo_id   = (string) ( $row['sellmo_product_id'] ?? '' );
+			$sellmo_code = (string) ( $row['sellmo_product_code'] ?? '' );
+
+			$image_url = '';
+			if ( '' !== $sellmo_id && isset( $lookup['products_by_id'][ $sellmo_id ]['image_url'] ) ) {
+				$image_url = (string) $lookup['products_by_id'][ $sellmo_id ]['image_url'];
+			} elseif ( '' !== $sellmo_code && isset( $lookup['products_by_code'][ $sellmo_code ]['image_url'] ) ) {
+				$image_url = (string) $lookup['products_by_code'][ $sellmo_code ]['image_url'];
+			}
+
+			if ( '' === $image_url ) {
+				continue;
+			}
+
+			if ( $product_sync->set_product_image_from_url( $wc_product_id, $image_url ) ) {
+				$updated++;
+			}
+		}
+
+		return $updated;
 	}
 
 	/**
