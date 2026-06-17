@@ -776,7 +776,7 @@ class Sellmo_Product_Sync {
 	 *
 	 * @since  1.0.0
 	 * @param  array<int, array<string, mixed>> $variants
-	 * @return array<string, array<string>>     attr_name => [option1, option2, ...]
+	 * @return array<string, array<string>>     option_key => [option1, option2, ...]
 	 */
 	private function collect_variant_attributes( array $variants, array $option_labels ): array {
 		$options = [];
@@ -789,14 +789,15 @@ class Sellmo_Product_Sync {
 					continue;
 				}
 
-				$attr_name = $option_labels[ $option_key ] ?? ( self::OPTION_ATTRIBUTE_LABELS[ $option_key ] ?? $option_key );
-
-				if ( ! isset( $options[ $attr_name ] ) ) {
-					$options[ $attr_name ] = [];
+				// Key by the raw option slot (option1_value, ...) so the slug map
+				// built in register_product_attributes() lines up with the option
+				// keys used by update_or_create_variation().
+				if ( ! isset( $options[ $option_key ] ) ) {
+					$options[ $option_key ] = [];
 				}
 
-				if ( ! in_array( $attr_value, $options[ $attr_name ], true ) ) {
-					$options[ $attr_name ][] = $attr_value;
+				if ( ! in_array( $attr_value, $options[ $option_key ], true ) ) {
+					$options[ $option_key ][] = $attr_value;
 				}
 			}
 		}
@@ -867,16 +868,16 @@ class Sellmo_Product_Sync {
 	 *
 	 * @since  1.0.0
 	 * @param  WC_Product_Variable         $product          Variable product to modify.
-	 * @param  array<string, array<string>> $attribute_options attr_name => [option, ...]
-	 * @return array<string, string>                          attr_name => slug map.
+	 * @param  array<string, array<string>> $attribute_options option_key => [option, ...]
+	 * @return array<string, string>                          option_key => slug map.
 	 */
 	private function register_product_attributes( WC_Product_Variable $product, array $attribute_options, array $option_labels ): array {
 		$existing  = $product->get_attributes();
 		$new_attrs = [];
 		$slug_map  = [];
 
-		foreach ( $attribute_options as $attr_name => $option_values ) {
-			$label = $option_labels[ $attr_name ] ?? $attr_name;
+		foreach ( $attribute_options as $option_key => $option_values ) {
+			$label = $option_labels[ $option_key ] ?? ( self::OPTION_ATTRIBUTE_LABELS[ $option_key ] ?? $option_key );
 			$slug  = sanitize_title( $label );
 
 			$attribute = $existing[ $slug ] ?? new WC_Product_Attribute();
@@ -888,7 +889,7 @@ class Sellmo_Product_Sync {
 			$attribute->set_variation( true );
 
 			$new_attrs[ $slug ] = $attribute;
-			$slug_map[ $attr_name ] = $slug;
+			$slug_map[ $option_key ] = $slug;
 		}
 
 		// Preserve existing attributes that Sellmo did not touch.
@@ -943,7 +944,7 @@ class Sellmo_Product_Sync {
 	 * @since  1.0.0
 	 * @param  WC_Product_Variable  $product       Parent variable product.
 	 * @param  array<string, mixed> $variant       Sellmo variant object.
-	 * @param  array<string, string> $slug_map     attr_name => local attribute slug.
+	 * @param  array<string, string> $slug_map     option_key => local attribute slug.
 	 */
 	private function update_or_create_variation(
 		WC_Product_Variable $product,
