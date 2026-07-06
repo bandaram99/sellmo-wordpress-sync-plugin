@@ -32,8 +32,6 @@ The plugin covers the full sync loop between WooCommerce and Sellmo:
 | [admin/](admin/) | Admin styles, scripts, and page templates. |
 | [languages/](languages/) | Translation files. |
 | [uninstall.php](uninstall.php) | Cleanup routine run when the plugin is deleted. |
-| [export_all_products.py](export_all_products.py) | Local helper script for exporting Sellmo products to JSON. |
-| [product.json](product.json) | Exported sample product payload used during testing. |
 
 ## Core Features
 
@@ -83,13 +81,6 @@ The WordPress admin area includes:
 4. Activate the plugin.
 5. Open Sellmo POS → Settings and configure the API token.
 
-### WP-CLI
-
-If you manage WordPress from the command line, install the plugin like this:
-
-```bash
-wp plugin install sellmo-woocommerce.zip --activate
-```
 
 ## Configuration
 
@@ -128,10 +119,10 @@ Recommended schedule settings:
 
 1. Open Sellmo POS → Products.
 2. Browse the Sellmo catalogue.
-3. Import one product at a time, or use the bulk action.
-4. Enable sync on the imported products you want kept in sync.
+3. Import products to Product Mapper, by clicking 'Sync Products'. In Product Mapper existing products can be mapped, for new products click 'Import to WooCommerce'. To sync images, stock count click ''Sync Stock Now' button.
+4. Map products on the imported products you want kept in sync.
 
-### 5. Configure the webhook
+### 5. Configure the webhook - Under development
 
 The webhook is optional, but recommended if you want near real-time updates.
 
@@ -152,7 +143,7 @@ POST https://your-site.com/wp-json/sellmo-wc/v1/webhook
 The plugin keeps a clear separation between data import and ongoing sync:
 
 1. Products are imported from Sellmo and linked to WooCommerce by Sellmo code.
-2. Each product can be toggled for sync individually.
+2. Each product can be mapped for sync individually.
 3. Product sync updates names, prices, images, and variations.
 4. Stock sync updates available quantity for linked products and variations.
 5. Webhooks can trigger immediate updates when Sellmo changes.
@@ -211,8 +202,4 @@ If you want to verify the sync end to end:
 - Admin dashboard, products browser, settings page, and sync log.
 - WP-Cron integration for automated sync scheduling.
 
-## Notes for Developers
 
-- Product and stock matching rely on Sellmo product code metadata.
-- Existing WooCommerce products can be linked through SKU compatibility during sync.
-- Generated exports such as [product.json](product.json) are useful for debugging the Sellmo payload shape.
