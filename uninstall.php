@@ -2,58 +2,54 @@
 declare(strict_types=1);
 
 /**
- * Uninstall routine for Sellmo POS Integration.
+ * Uninstall routine for the POS Integration plugin.
  *
  * Runs when the plugin is fully deleted via the WordPress admin.
- * Drops the sync log table and removes all sellmo_wc_* options.
- * This file is NOT loaded on deactivation — only on full uninstall.
+ * Drops the plugin's custom tables and removes all of its options and
+ * transients. This file is NOT loaded on deactivation — only on full uninstall.
+ *
+ * All identifiers are derived from the configured brand slug (POS_Brand) so
+ * uninstall targets the SAME keys the running plugin created, whatever brand
+ * it was configured as.
  *
  * @package Sellmo_WooCommerce
  */
 
 defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 
+// Plugin constants are not defined during uninstall — load the brand engine
+// directly so table/option/cron names resolve to the configured slug.
+require_once __DIR__ . '/includes/class-pos-brand.php';
+
 global $wpdb;
 
-// 1. Drop the sync log table.
-$table = $wpdb->prefix . 'sellmo_sync_log';
-// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name constructed from trusted $wpdb->prefix.
-$wpdb->query( "DROP TABLE IF EXISTS `{$table}`" );
+// 1. Drop the plugin's custom tables.
+foreach ( [ 'sync_log', 'product_mapping', 'product_variants', 'product_mapper' ] as $suffix ) {
+	$table = POS_Brand::table( $suffix );
+	// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name derived from sanitised brand slug and trusted $wpdb->prefix.
+	$wpdb->query( "DROP TABLE IF EXISTS `{$table}`" );
+}
 
-// Drop the product mapping table.
-$mapping_table = $wpdb->prefix . 'sellmo_product_mapping';
-// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name constructed from trusted $wpdb->prefix.
-$wpdb->query( "DROP TABLE IF EXISTS `{$mapping_table}`" );
-
-// Drop the variant table.
-$variant_table = $wpdb->prefix . 'sellmo_product_variants';
-// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name constructed from trusted $wpdb->prefix.
-$wpdb->query( "DROP TABLE IF EXISTS `{$variant_table}`" );
-
-// Drop the legacy staging table (merged into sellmo_product_mapping) if any copy remains.
-$legacy_mapper_table = $wpdb->prefix . 'sellmo_product_mapper';
-// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name constructed from trusted $wpdb->prefix.
-$wpdb->query( "DROP TABLE IF EXISTS `{$legacy_mapper_table}`" );
-
-// 2. Delete all sellmo_wc_* options.
-// Underscores in the LIKE value are escaped with a backslash so they match
-// literally rather than as single-character wildcards.
+// 2. Delete all {slug}_wc_* options. esc_like() keeps underscores literal
+// (including any in the slug itself) rather than treating them as wildcards.
+$option_like = $wpdb->esc_like( POS_Brand::option( '' ) ) . '%';
 $wpdb->query(
 	$wpdb->prepare(
 		"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s",
-		'sellmo\_wc\_%'
+		$option_like
 	)
 );
 
-// 3. Delete all plugin transients (products, inventory, and category page caches).
+// 3. Delete all plugin transients (products, inventory, and category caches).
+$transient_like = $wpdb->esc_like( POS_Brand::transient( '' ) );
 $wpdb->query(
 	$wpdb->prepare(
 		"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
-		$wpdb->esc_like( '_transient_sellmo_wc_' ) . '%',
-		$wpdb->esc_like( '_transient_timeout_sellmo_wc_' ) . '%'
+		$wpdb->esc_like( '_transient_' ) . $transient_like . '%',
+		$wpdb->esc_like( '_transient_timeout_' ) . $transient_like . '%'
 	)
 );
 
 // 4. Remove any remaining scheduled cron events.
-wp_clear_scheduled_hook( 'sellmo_wc_stock_sync' );
-wp_clear_scheduled_hook( 'sellmo_wc_product_sync' );
+wp_clear_scheduled_hook( POS_Brand::cron_hook( 'stock_sync' ) );
+wp_clear_scheduled_hook( POS_Brand::cron_hook( 'product_sync' ) );

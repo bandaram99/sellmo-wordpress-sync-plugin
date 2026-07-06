@@ -39,6 +39,8 @@ define( 'SELLMO_WC_BASENAME', plugin_basename( __FILE__ ) );
  * @since 1.0.0
  */
 function sellmo_wc_activate(): void {
+	require_once SELLMO_WC_PATH . 'includes/class-pos-brand.php';
+	require_once SELLMO_WC_PATH . 'includes/class-pos-brand-migrator.php';
 	require_once SELLMO_WC_PATH . 'includes/class-sellmo-logger.php';
 	require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-mapping.php';
 	require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-variant-store.php';
@@ -46,7 +48,11 @@ function sellmo_wc_activate(): void {
 	Sellmo_Product_Variant_Store::create_table();
 	Sellmo_Logger::create_table();
 	Sellmo_Product_Mapping::create_table();
-	update_option( 'sellmo_wc_db_version', SELLMO_WC_VERSION );
+	update_option( POS_Brand::option( 'db_version' ), SELLMO_WC_VERSION );
+
+	// Record the brand slug this install's data is stored under, so a later
+	// slug change is detected as a migration rather than a fresh install.
+	POS_Brand_Migrator::set_baseline();
 }
 register_activation_hook( __FILE__, 'sellmo_wc_activate' );
 
@@ -59,8 +65,9 @@ register_activation_hook( __FILE__, 'sellmo_wc_activate' );
  * @since 1.0.0
  */
 function sellmo_wc_deactivate(): void {
-	wp_clear_scheduled_hook( 'sellmo_wc_stock_sync' );
-	wp_clear_scheduled_hook( 'sellmo_wc_product_sync' );
+	require_once SELLMO_WC_PATH . 'includes/class-pos-brand.php';
+	wp_clear_scheduled_hook( POS_Brand::cron_hook( 'stock_sync' ) );
+	wp_clear_scheduled_hook( POS_Brand::cron_hook( 'product_sync' ) );
 }
 register_deactivation_hook( __FILE__, 'sellmo_wc_deactivate' );
 
@@ -129,7 +136,14 @@ add_action(
 		}
 
 		// Load all classes in dependency order.
-		require_once SELLMO_WC_PATH . 'includes/class-sellmo-settings.php';
+		require_once SELLMO_WC_PATH . 'includes/class-pos-brand.php';
+			require_once SELLMO_WC_PATH . 'includes/class-pos-brand-migrator.php';
+
+			// If the configured brand slug changed since data was last written,
+			// migrate tables/options/meta/cron in place before the app runs.
+			add_action( 'admin_init', [ 'POS_Brand_Migrator', 'maybe_migrate' ] );
+
+			require_once SELLMO_WC_PATH . 'includes/class-sellmo-settings.php';
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-logger.php';
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-mapping.php';
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-api.php';

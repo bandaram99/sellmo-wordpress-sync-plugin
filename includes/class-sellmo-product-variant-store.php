@@ -39,8 +39,7 @@ class Sellmo_Product_Variant_Store {
 	 * @return string
 	 */
 	public static function table_name(): string {
-		global $wpdb;
-		return $wpdb->prefix . 'sellmo_product_variants';
+		return POS_Brand::table( 'product_variants' );
 	}
 
 	/**

@@ -245,7 +245,7 @@ class Sellmo_API {
 	 * @return array<string, mixed>|WP_Error
 	 */
 	public function get_categories(): array|\WP_Error {
-		$transient_key = 'sellmo_wc_categories';
+		$transient_key = POS_Brand::transient( 'categories' );
 		$cached        = get_transient( $transient_key );
 
 		if ( false !== $cached ) {
@@ -276,7 +276,7 @@ class Sellmo_API {
 	 * @return array<string, mixed>|WP_Error
 	 */
 	public function get_products( string $cursor = '' ): array|\WP_Error {
-		$transient_key = 'sellmo_wc_products_' . md5( $cursor );
+		$transient_key = POS_Brand::transient( 'products_' . md5( $cursor ) );
 		$cached        = get_transient( $transient_key );
 
 		if ( false !== $cached ) {
@@ -318,7 +318,7 @@ class Sellmo_API {
 	 * @return array<string, mixed>|WP_Error
 	 */
 	public function get_inventory( string $cursor = '' ): array|\WP_Error {
-		$transient_key = 'sellmo_wc_inventory_' . md5( $cursor );
+		$transient_key = POS_Brand::transient( 'inventory_' . md5( $cursor ) );
 		$cached        = get_transient( $transient_key );
 
 		if ( false !== $cached ) {

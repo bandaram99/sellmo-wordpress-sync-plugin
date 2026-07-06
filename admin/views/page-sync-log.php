@@ -12,6 +12,8 @@ declare(strict_types=1);
 
 defined( 'ABSPATH' ) || exit;
 
+$brand_name = POS_Brand::name();
+
 // ── Active tab ────────────────────────────────────────────────────────────────
 $active_tab   = sanitize_key( wp_unslash( $_GET['tab'] ?? '' ) );
 $allowed_tabs = [ '', 'product', 'stock', 'errors' ];
@@ -88,8 +90,16 @@ $type_labels = [
 	'webhook' => __( 'Webhook', 'sellmo-woocommerce' ),
 ];
 $direction_labels = [
-	'sellmo_to_wc' => __( 'Sellmo → WC', 'sellmo-woocommerce' ),
-	'wc_to_sellmo' => __( 'WC → Sellmo', 'sellmo-woocommerce' ),
+	'sellmo_to_wc' => sprintf(
+		/* translators: %s: Brand display name. */
+		__( '%s → WC', 'sellmo-woocommerce' ),
+		$brand_name
+	),
+	'wc_to_sellmo' => sprintf(
+		/* translators: %s: Brand display name. */
+		__( 'WC → %s', 'sellmo-woocommerce' ),
+		$brand_name
+	),
 ];
 $status_labels = [
 	'success' => __( 'Success', 'sellmo-woocommerce' ),
@@ -128,7 +138,14 @@ $pagination_html = static function () use ( $paged, $total_pages, $paged_url ): 
 ?>
 <div class="wrap sellmo-log-wrap">
 
-	<h1><?php esc_html_e( 'Sellmo POS — Log', 'sellmo-woocommerce' ); ?></h1>
+	<h1>
+		<?php
+		printf(
+			esc_html__( '%s — Log', 'sellmo-woocommerce' ),
+			esc_html( $brand_name )
+		);
+		?>
+	</h1>
 
 	<?php /* ── Tabs ───────────────────────────────────────────────────────── */ ?>
 	<nav class="nav-tab-wrapper wp-clearfix" style="margin-bottom:0;">

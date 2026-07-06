@@ -70,9 +70,11 @@ class Sellmo_Admin {
 	 * @return void
 	 */
 	public function register_menus(): void {
+		$brand_name = POS_Brand::name();
+
 		add_menu_page(
-			__( 'Sellmo POS', 'sellmo-woocommerce' ),
-			__( 'Sellmo POS', 'sellmo-woocommerce' ),
+			esc_html( $brand_name ),
+			esc_html( $brand_name ),
 			'manage_woocommerce',
 			'sellmo-pos',
 			[ $this, 'page_dashboard' ],
@@ -83,7 +85,11 @@ class Sellmo_Admin {
 		// The first add_submenu_page renames the auto-created "Sellmo POS" entry.
 		add_submenu_page(
 			'sellmo-pos',
-			__( 'Dashboard — Sellmo POS', 'sellmo-woocommerce' ),
+			sprintf(
+				/* translators: %s: Brand display name. */
+				__( 'Dashboard — %s', 'sellmo-woocommerce' ),
+				$brand_name
+			),
 			__( 'Dashboard', 'sellmo-woocommerce' ),
 			'manage_woocommerce',
 			'sellmo-pos',
@@ -92,7 +98,11 @@ class Sellmo_Admin {
 
 		add_submenu_page(
 			'sellmo-pos',
-			__( 'Products — Sellmo POS', 'sellmo-woocommerce' ),
+			sprintf(
+				/* translators: %s: Brand display name. */
+				__( 'Products — %s', 'sellmo-woocommerce' ),
+				$brand_name
+			),
 			__( 'Products', 'sellmo-woocommerce' ),
 			'manage_woocommerce',
 			'sellmo-products',
@@ -101,7 +111,11 @@ class Sellmo_Admin {
 
 		add_submenu_page(
 			'sellmo-pos',
-			__( 'Product Mapper — Sellmo POS', 'sellmo-woocommerce' ),
+			sprintf(
+				/* translators: %s: Brand display name. */
+				__( 'Product Mapper — %s', 'sellmo-woocommerce' ),
+				$brand_name
+			),
 			__( 'Product Mapper', 'sellmo-woocommerce' ),
 			'manage_woocommerce',
 			'sellmo-product-mapper',
@@ -110,7 +124,11 @@ class Sellmo_Admin {
 
 		add_submenu_page(
 			'sellmo-pos',
-			__( 'Settings — Sellmo POS', 'sellmo-woocommerce' ),
+			sprintf(
+				/* translators: %s: Brand display name. */
+				__( 'Settings — %s', 'sellmo-woocommerce' ),
+				$brand_name
+			),
 			__( 'Settings', 'sellmo-woocommerce' ),
 			'manage_woocommerce',
 			'sellmo-settings',
@@ -119,7 +137,11 @@ class Sellmo_Admin {
 
 		add_submenu_page(
 			'sellmo-pos',
-			__( 'Log — Sellmo POS', 'sellmo-woocommerce' ),
+			sprintf(
+				/* translators: %s: Brand display name. */
+				__( 'Log — %s', 'sellmo-woocommerce' ),
+				$brand_name
+			),
 			__( 'Log', 'sellmo-woocommerce' ),
 			'manage_woocommerce',
 			'sellmo-sync-log',
@@ -455,11 +477,13 @@ class Sellmo_Admin {
 			return;
 		}
 
+		$brand_name = POS_Brand::name();
+
 		// DB error (e.g. sync log table creation failed due to MySQL strict mode).
-		$db_error = get_option( 'sellmo_wc_db_error' );
+		$db_error = get_option( POS_Brand::option( 'db_error' ) );
 		if ( $db_error ) {
 			echo '<div class="notice notice-error"><p>' .
-				'<strong>' . esc_html__( 'Sellmo POS — Database error:', 'sellmo-woocommerce' ) . '</strong> ' .
+				'<strong>' . esc_html( sprintf( __( '%s — Database error:', 'sellmo-woocommerce' ), $brand_name ) ) . '</strong> ' .
 				esc_html( (string) $db_error ) .
 				'</p></div>';
 		}
@@ -469,11 +493,12 @@ class Sellmo_Admin {
 			$settings_url = admin_url( 'admin.php?page=sellmo-settings' );
 			echo '<div class="notice notice-warning"><p>';
 			printf(
-				/* translators: %s: link to the Settings page */
+				/* translators: 1: Brand display name, 2: link to the Settings page */
 				wp_kses(
-					__( 'Sellmo POS: No API token configured. <a href="%s">Go to Settings</a> to add your token.', 'sellmo-woocommerce' ),
+					__( '%1$s: No API token configured. <a href="%2$s">Go to Settings</a> to add your token.', 'sellmo-woocommerce' ),
 					[ 'a' => [ 'href' => [] ] ]
 				),
+				esc_html( $brand_name ),
 				esc_url( $settings_url )
 			);
 			echo '</p></div>';
@@ -483,7 +508,7 @@ class Sellmo_Admin {
 		$wh_secret = (string) ( Sellmo_Settings::get( 'webhook_secret' ) ?: '' );
 		if ( '' !== $wh_secret && mb_strlen( $wh_secret ) < 32 ) {
 			echo '<div class="notice notice-warning is-dismissible"><p>' .
-				esc_html__( 'Sellmo POS: Your webhook secret is shorter than 32 characters. Use the Generate button on the Settings page to create a secure secret.', 'sellmo-woocommerce' ) .
+				esc_html( sprintf( __( '%s: Your webhook secret is shorter than 32 characters. Use the Generate button on the Settings page to create a secure secret.', 'sellmo-woocommerce' ), $brand_name ) ) .
 				'</p></div>';
 		}
 
@@ -554,6 +579,7 @@ class Sellmo_Admin {
 			return;
 		}
 
+		$brand_name = POS_Brand::name();
 		$saved_cats = (array) ( Sellmo_Settings::get( 'sync_categories' ) ?: [] );
 
 		wp_localize_script(
@@ -562,6 +588,7 @@ class Sellmo_Admin {
 			[
 				'ajaxUrl'         => admin_url( 'admin-ajax.php' ),
 				'nonce'           => wp_create_nonce( 'sellmo_wc_admin' ),
+				'brandName'       => $brand_name,
 				'hasToken'        => '' !== (string) Sellmo_Settings::get( 'api_token' ),
 				'savedShopId'     => (string) ( Sellmo_Settings::get( 'shop_id' ) ?: '' ),
 				'savedCategories' => array_map( 'strval', $saved_cats ),
@@ -578,6 +605,11 @@ class Sellmo_Admin {
 					'secretGenerated'   => __( 'New secret generated. Save settings to apply.', 'sellmo-woocommerce' ),
 					'loadingShops'      => __( 'Loading shops…', 'sellmo-woocommerce' ),
 					'loadingCats'       => __( 'Loading categories…', 'sellmo-woocommerce' ),
+					'selectShop'        => sprintf(
+						/* translators: %s: Brand display name. */
+						__( 'Select %s shop', 'sellmo-woocommerce' ),
+						$brand_name
+					),
 					'syncing'           => __( 'Syncing…', 'sellmo-woocommerce' ),
 					'syncProducts'      => __( 'Sync Products Now', 'sellmo-woocommerce' ),
 					'syncStock'         => __( 'Sync Stock Now', 'sellmo-woocommerce' ),
@@ -611,7 +643,11 @@ class Sellmo_Admin {
 					'mapperLoadError'   => __( 'Failed to load mapper data.', 'sellmo-woocommerce' ),
 					'mapperActionError' => __( 'Mapping action failed. Please try again.', 'sellmo-woocommerce' ),
 					'mapperChooseWc'     => __( 'Select a WooCommerce product first.', 'sellmo-woocommerce' ),
-					'mapperChooseSellmo' => __( 'Select a Sellmo product first.', 'sellmo-woocommerce' ),
+					'mapperChooseSellmo' => sprintf(
+						/* translators: %s: Brand display name. */
+						__( 'Select a %s product first.', 'sellmo-woocommerce' ),
+						$brand_name
+					),
 					'mapperBulkHint'     => __( 'Please select a mapper bulk action.', 'sellmo-woocommerce' ),
 					'mapperSelectRows'  => __( 'Please select at least one row.', 'sellmo-woocommerce' ),
 				],
@@ -1777,7 +1813,7 @@ class Sellmo_Admin {
 	 * @return array<int, array<string, mixed>>|WP_Error
 	 */
 	private function get_all_sellmo_products(): array|\WP_Error {
-		$cached = get_transient( 'sellmo_wc_products_cache' );
+		$cached = get_transient( POS_Brand::transient( 'products_cache' ) );
 
 		if ( false !== $cached && is_array( $cached ) ) {
 			return $cached;
@@ -1813,7 +1849,7 @@ class Sellmo_Admin {
 
 		} while ( $page < $max_pages );
 
-		set_transient( 'sellmo_wc_products_cache', $products, 5 * MINUTE_IN_SECONDS );
+		set_transient( POS_Brand::transient( 'products_cache' ), $products, 5 * MINUTE_IN_SECONDS );
 
 		return $products;
 	}
@@ -1979,13 +2015,14 @@ class Sellmo_Admin {
 
 		// Drop the pre-migration legacy mapper table if a copy still lingers.
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name built from trusted prefix.
-		$wpdb->query( "DROP TABLE IF EXISTS `{$wpdb->prefix}sellmo_product_mapper`" );
+		$legacy_mapper = POS_Brand::table( 'product_mapper' );
+		$wpdb->query( "DROP TABLE IF EXISTS `{$legacy_mapper}`" );
 
 		// Clear cached catalogue and reset stored sync summaries.
 		$this->clear_products_cache();
-		delete_option( 'sellmo_wc_last_product_sync' );
-		delete_option( 'sellmo_wc_last_stock_sync' );
-		delete_option( 'sellmo_wc_last_order_sync' );
+		delete_option( POS_Brand::option( 'last_product_sync' ) );
+		delete_option( POS_Brand::option( 'last_stock_sync' ) );
+		delete_option( POS_Brand::option( 'last_order_sync' ) );
 
 		Sellmo_Logger::log(
 			'product',
@@ -2012,7 +2049,7 @@ class Sellmo_Admin {
 	private function clear_products_cache(): void {
 		global $wpdb;
 
-		delete_transient( 'sellmo_wc_products_cache' );
+		delete_transient( POS_Brand::transient( 'products_cache' ) );
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$wpdb->query(

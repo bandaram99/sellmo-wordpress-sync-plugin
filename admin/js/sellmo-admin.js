@@ -14,6 +14,7 @@
 	var ajaxUrl = cfg.ajaxUrl || '';
 	var nonce   = cfg.nonce  || '';
 	var i18n    = cfg.i18n  || {};
+	var brand   = cfg.brandName || 'Sellmo';
 
 	// ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -984,7 +985,7 @@
 				sellmoId = String( $sellmoSel.val() || '' );
 				if ( ! sellmoId ) {
 					// eslint-disable-next-line no-alert
-					window.alert( i18n.mapperChooseSellmo || 'Select a Sellmo product first.' );
+					window.alert( i18n.mapperChooseSellmo || ( 'Select a ' + brand + ' product first.' ) );
 					return;
 				}
 				sellmoCode = String( $row.data( 'sellmo-code' ) || '' );

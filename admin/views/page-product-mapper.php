@@ -10,10 +10,18 @@ declare(strict_types=1);
 
 defined( 'ABSPATH' ) || exit;
 
+$brand_name   = POS_Brand::name();
 $mapper_stats = Sellmo_Product_Mapping::get_dashboard_stats();
 ?>
 <div class="wrap sellmo-mapper-wrap">
-	<h1 class="wp-heading-inline"><?php esc_html_e( 'Sellmo POS - Product Mapper', 'sellmo-woocommerce' ); ?></h1>
+	<h1 class="wp-heading-inline">
+		<?php
+		printf(
+			esc_html__( '%s - Product Mapper', 'sellmo-woocommerce' ),
+			esc_html( $brand_name )
+		);
+		?>
+	</h1>
 	<hr class="wp-header-end">
 
 	<!-- <div class="sellmo-dashboard-grid sellmo-mapper-stats-grid">
@@ -37,7 +45,14 @@ $mapper_stats = Sellmo_Product_Mapping::get_dashboard_stats();
 
 	<div class="sellmo-dashboard-grid sellmo-mapper-stats-grid">
 		<div class="sellmo-card">
-			<h2><?php esc_html_e( 'Total Sellmo Products', 'sellmo-woocommerce' ); ?></h2>
+			<h2>
+				<?php
+				printf(
+					esc_html__( 'Total %s Products', 'sellmo-woocommerce' ),
+					esc_html( $brand_name )
+				);
+				?>
+			</h2>
 			<div class="sellmo-card-body"><strong class="sellmo-mapper-stat" id="stat-total-sellmo"><?php echo absint( $mapper_stats['total_sellmo_products'] ?? 0 ); ?></strong></div>
 		</div>
 		<div class="sellmo-card">
@@ -56,8 +71,19 @@ $mapper_stats = Sellmo_Product_Mapping::get_dashboard_stats();
 
 	<div class="tablenav top">
 		<div class="alignleft actions">
-			<label for="sellmo-mapper-search" class="screen-reader-text"><?php esc_html_e( 'Search Sellmo products', 'sellmo-woocommerce' ); ?></label>
-			<input type="search" id="sellmo-mapper-search" placeholder="<?php esc_attr_e( 'Search Sellmo product, code, category...', 'sellmo-woocommerce' ); ?>" />
+			<label for="sellmo-mapper-search" class="screen-reader-text">
+				<?php
+				printf(
+					esc_html__( 'Search %s products', 'sellmo-woocommerce' ),
+					esc_html( $brand_name )
+				);
+				?>
+			</label>
+			<input
+				type="search"
+				id="sellmo-mapper-search"
+				placeholder="<?php echo esc_attr( sprintf( __( 'Search %s product, code, category...', 'sellmo-woocommerce' ), $brand_name ) ); ?>"
+			/>
 
 			<label for="sellmo-mapper-status-filter" class="screen-reader-text"><?php esc_html_e( 'Filter by mapping status', 'sellmo-woocommerce' ); ?></label>
 			<select id="sellmo-mapper-status-filter">
@@ -107,7 +133,14 @@ $mapper_stats = Sellmo_Product_Mapping::get_dashboard_stats();
 		<thead>
 			<tr>
 				<td class="manage-column check-column"><input id="sellmo-mapper-select-all" type="checkbox"></td>
-				<th class="manage-column column-sellmo-product" scope="col"><?php esc_html_e( 'Sellmo Product', 'sellmo-woocommerce' ); ?></th>
+				<th class="manage-column column-sellmo-product" scope="col">
+					<?php
+					printf(
+						esc_html__( '%s Product', 'sellmo-woocommerce' ),
+						esc_html( $brand_name )
+					);
+					?>
+				</th>
 				<th class="manage-column column-sellmo-code" scope="col"><?php esc_html_e( 'Code', 'sellmo-woocommerce' ); ?></th>
 				<th class="manage-column column-sellmo-category" scope="col"><?php esc_html_e( 'Category', 'sellmo-woocommerce' ); ?></th>
 				<th class="manage-column column-sellmo-price" scope="col"><?php esc_html_e( 'Price', 'sellmo-woocommerce' ); ?></th>

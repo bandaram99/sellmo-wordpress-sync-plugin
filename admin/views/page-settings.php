@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 defined( 'ABSPATH' ) || exit;
 
+$brand_name            = POS_Brand::name();
 $has_token             = '' !== (string) Sellmo_Settings::get( 'api_token' );
 $shop_id               = (string) ( Sellmo_Settings::get( 'shop_id' ) ?: '' );
 $product_sync_enabled  = 'yes' === (string) Sellmo_Settings::get( 'product_sync_enabled' );
@@ -25,7 +26,14 @@ $webhook_url           = rest_url( 'sellmo-wc/v1/webhook' );
 ?>
 <div class="wrap sellmo-settings-wrap">
 
-	<h1><?php esc_html_e( 'Sellmo POS — Settings', 'sellmo-woocommerce' ); ?></h1>
+	<h1>
+		<?php
+		printf(
+			esc_html__( '%s — Settings', 'sellmo-woocommerce' ),
+			esc_html( $brand_name )
+		);
+		?>
+	</h1>
 
 	<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 
@@ -55,7 +63,13 @@ $webhook_url           = rest_url( 'sellmo-wc/v1/webhook' );
 									autocomplete="new-password"
 									placeholder="<?php echo $has_token
 										? esc_attr__( 'Token saved — enter a new value to replace', 'sellmo-woocommerce' )
-										: esc_attr__( 'Enter your Sellmo API token', 'sellmo-woocommerce' ); ?>"
+										: esc_attr(
+											sprintf(
+												/* translators: %s: Brand display name. */
+												__( 'Enter your %s API token', 'sellmo-woocommerce' ),
+												$brand_name
+											)
+										); ?>"
 								>
 								<button type="button" id="sellmo-toggle-token" class="button">
 									<?php esc_html_e( 'Show', 'sellmo-woocommerce' ); ?>
@@ -70,7 +84,12 @@ $webhook_url           = rest_url( 'sellmo-wc/v1/webhook' );
 								style="<?php echo $has_token ? '' : ''; ?>"
 							></span>
 							<p class="description">
-								<?php esc_html_e( 'Your Sellmo / SalesPlay API Bearer token. Leave blank to keep the existing token.', 'sellmo-woocommerce' ); ?>
+								<?php
+								printf(
+									esc_html__( 'Your %s API Bearer token. Leave blank to keep the existing token.', 'sellmo-woocommerce' ),
+									esc_html( $brand_name )
+								);
+								?>
 							</p>
 							<?php if ( $has_token ) : ?>
 								<p>
@@ -102,7 +121,12 @@ $webhook_url           = rest_url( 'sellmo-wc/v1/webhook' );
 								</option>
 							</select>
 							<p class="description">
-								<?php esc_html_e( 'Select the Sellmo shop to sync with this WooCommerce store.', 'sellmo-woocommerce' ); ?>
+								<?php
+								printf(
+									esc_html__( 'Select the %s shop to sync with this WooCommerce store.', 'sellmo-woocommerce' ),
+									esc_html( $brand_name )
+								);
+								?>
 							</p>
 						</td>
 					</tr>
@@ -127,7 +151,12 @@ $webhook_url           = rest_url( 'sellmo-wc/v1/webhook' );
 									value="yes"
 									<?php checked( $product_sync_enabled ); ?>
 								>
-								<?php esc_html_e( 'Enable product sync (Sellmo → WooCommerce)', 'sellmo-woocommerce' ); ?>
+								<?php
+								printf(
+									esc_html__( 'Enable product sync (%s → WooCommerce)', 'sellmo-woocommerce' ),
+									esc_html( $brand_name )
+								);
+								?>
 							</label>
 						</td>
 					</tr>
@@ -142,7 +171,12 @@ $webhook_url           = rest_url( 'sellmo-wc/v1/webhook' );
 									value="yes"
 									<?php checked( $stock_sync_enabled ); ?>
 								>
-								<?php esc_html_e( 'Enable stock sync (Sellmo → WooCommerce)', 'sellmo-woocommerce' ); ?>
+								<?php
+								printf(
+									esc_html__( 'Enable stock sync (%s → WooCommerce)', 'sellmo-woocommerce' ),
+									esc_html( $brand_name )
+								);
+								?>
 							</label>
 						</td>
 					</tr>
@@ -157,7 +191,12 @@ $webhook_url           = rest_url( 'sellmo-wc/v1/webhook' );
 									value="yes"
 									<?php checked( $order_sync_enabled ); ?>
 								>
-								<?php esc_html_e( 'Enable order sync (WooCommerce → Sellmo)', 'sellmo-woocommerce' ); ?>
+								<?php
+								printf(
+									esc_html__( 'Enable order sync (WooCommerce → %s)', 'sellmo-woocommerce' ),
+									esc_html( $brand_name )
+								);
+								?>
 							</label>
 						</td>
 					</tr>

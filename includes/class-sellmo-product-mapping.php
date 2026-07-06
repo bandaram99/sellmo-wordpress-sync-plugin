@@ -40,9 +40,7 @@ class Sellmo_Product_Mapping {
 	 * @return string
 	 */
 	public static function table_name(): string {
-		global $wpdb;
-
-		return $wpdb->prefix . 'sellmo_product_mapping';
+		return POS_Brand::table( 'product_mapping' );
 	}
 
 	/**
@@ -204,17 +202,17 @@ class Sellmo_Product_Mapping {
 	 * @return void
 	 */
 	private static function maybe_migrate_legacy_mapper(): void {
-		if ( get_option( 'sellmo_wc_mapper_merged' ) ) {
+		if ( get_option( POS_Brand::option( 'mapper_merged' ) ) ) {
 			return;
 		}
 
 		global $wpdb;
-		$legacy = $wpdb->prefix . 'sellmo_product_mapper';
+		$legacy = POS_Brand::table( 'product_mapper' );
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$legacy_exists = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $legacy ) );
 
 		if ( $legacy !== $legacy_exists ) {
-			update_option( 'sellmo_wc_mapper_merged', '1' );
+			update_option( POS_Brand::option( 'mapper_merged' ), '1' );
 			return;
 		}
 
@@ -265,7 +263,7 @@ class Sellmo_Product_Mapping {
 
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$wpdb->query( "DROP TABLE IF EXISTS `{$legacy}`" );
-		update_option( 'sellmo_wc_mapper_merged', '1' );
+		update_option( POS_Brand::option( 'mapper_merged' ), '1' );
 	}
 
 	// =========================================================================

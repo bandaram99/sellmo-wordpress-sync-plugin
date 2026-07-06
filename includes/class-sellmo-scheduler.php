@@ -27,14 +27,18 @@ defined( 'ABSPATH' ) || exit;
 class Sellmo_Scheduler {
 
 	/**
-	 * WP-Cron hook name for stock sync.
+	 * WP-Cron hook name for stock sync (derived from the brand slug).
+	 *
+	 * @var string
 	 */
-	private const STOCK_HOOK = 'sellmo_wc_stock_sync';
+	private string $stock_hook;
 
 	/**
-	 * WP-Cron hook name for product sync.
+	 * WP-Cron hook name for product sync (derived from the brand slug).
+	 *
+	 * @var string
 	 */
-	private const PRODUCT_HOOK = 'sellmo_wc_product_sync';
+	private string $product_hook;
 
 	/**
 	 * Constructor.
@@ -45,15 +49,18 @@ class Sellmo_Scheduler {
 	 * @since 1.0.0
 	 */
 	public function __construct() {
+		$this->stock_hook   = POS_Brand::cron_hook( 'stock_sync' );
+		$this->product_hook = POS_Brand::cron_hook( 'product_sync' );
+
 		// Register the actual cron callbacks that WordPress will invoke.
-		add_action( self::STOCK_HOOK,   [ $this, 'run_stock_sync' ] );
-		add_action( self::PRODUCT_HOOK, [ $this, 'run_product_sync' ] );
+		add_action( $this->stock_hook,   [ $this, 'run_stock_sync' ] );
+		add_action( $this->product_hook, [ $this, 'run_product_sync' ] );
 
 		// Reschedule whenever the relevant settings options change.
-		add_action( 'update_option_sellmo_wc_stock_sync_enabled',   [ $this, 'reschedule_stock' ] );
-		add_action( 'update_option_sellmo_wc_stock_sync_interval',   [ $this, 'reschedule_stock' ] );
-		add_action( 'update_option_sellmo_wc_product_sync_enabled',  [ $this, 'reschedule_product' ] );
-		add_action( 'update_option_sellmo_wc_product_sync_interval', [ $this, 'reschedule_product' ] );
+		add_action( 'update_option_' . POS_Brand::option( 'stock_sync_enabled' ),    [ $this, 'reschedule_stock' ] );
+		add_action( 'update_option_' . POS_Brand::option( 'stock_sync_interval' ),   [ $this, 'reschedule_stock' ] );
+		add_action( 'update_option_' . POS_Brand::option( 'product_sync_enabled' ),  [ $this, 'reschedule_product' ] );
+		add_action( 'update_option_' . POS_Brand::option( 'product_sync_interval' ), [ $this, 'reschedule_product' ] );
 
 		// On every request, ensure events are scheduled if they should be but aren't.
 		// This recovers from deactivation/reactivation cycles and fresh installs.
@@ -88,8 +95,8 @@ class Sellmo_Scheduler {
 	 * @return void
 	 */
 	public function clear_sync_schedules(): void {
-		wp_clear_scheduled_hook( self::STOCK_HOOK );
-		wp_clear_scheduled_hook( self::PRODUCT_HOOK );
+		wp_clear_scheduled_hook( $this->stock_hook );
+		wp_clear_scheduled_hook( $this->product_hook );
 	}
 
 	// -------------------------------------------------------------------------
@@ -106,11 +113,11 @@ class Sellmo_Scheduler {
 	 * @return void
 	 */
 	public function reschedule_stock(): void {
-		wp_clear_scheduled_hook( self::STOCK_HOOK );
+		wp_clear_scheduled_hook( $this->stock_hook );
 
 		if ( 'yes' === (string) Sellmo_Settings::get( 'stock_sync_enabled' ) ) {
 			$interval = (string) ( Sellmo_Settings::get( 'stock_sync_interval' ) ?: 'hourly' );
-			wp_schedule_event( time() + 60, $interval, self::STOCK_HOOK );
+			wp_schedule_event( time() + 60, $interval, $this->stock_hook );
 		}
 	}
 
@@ -121,11 +128,11 @@ class Sellmo_Scheduler {
 	 * @return void
 	 */
 	public function reschedule_product(): void {
-		wp_clear_scheduled_hook( self::PRODUCT_HOOK );
+		wp_clear_scheduled_hook( $this->product_hook );
 
 		if ( 'yes' === (string) Sellmo_Settings::get( 'product_sync_enabled' ) ) {
 			$interval = (string) ( Sellmo_Settings::get( 'product_sync_interval' ) ?: 'twicedaily' );
-			wp_schedule_event( time() + 60, $interval, self::PRODUCT_HOOK );
+			wp_schedule_event( time() + 60, $interval, $this->product_hook );
 		}
 	}
 
@@ -176,13 +183,13 @@ class Sellmo_Scheduler {
 	 */
 	private function maybe_schedule_stock(): void {
 		$enabled    = 'yes' === (string) Sellmo_Settings::get( 'stock_sync_enabled' );
-		$scheduled  = (bool) wp_next_scheduled( self::STOCK_HOOK );
+		$scheduled  = (bool) wp_next_scheduled( $this->stock_hook );
 
 		if ( $enabled && ! $scheduled ) {
 			$interval = (string) ( Sellmo_Settings::get( 'stock_sync_interval' ) ?: 'hourly' );
-			wp_schedule_event( time() + 60, $interval, self::STOCK_HOOK );
+			wp_schedule_event( time() + 60, $interval, $this->stock_hook );
 		} elseif ( ! $enabled && $scheduled ) {
-			wp_clear_scheduled_hook( self::STOCK_HOOK );
+			wp_clear_scheduled_hook( $this->stock_hook );
 		}
 	}
 
@@ -194,13 +201,13 @@ class Sellmo_Scheduler {
 	 */
 	private function maybe_schedule_product(): void {
 		$enabled   = 'yes' === (string) Sellmo_Settings::get( 'product_sync_enabled' );
-		$scheduled = (bool) wp_next_scheduled( self::PRODUCT_HOOK );
+		$scheduled = (bool) wp_next_scheduled( $this->product_hook );
 
 		if ( $enabled && ! $scheduled ) {
 			$interval = (string) ( Sellmo_Settings::get( 'product_sync_interval' ) ?: 'twicedaily' );
-			wp_schedule_event( time() + 60, $interval, self::PRODUCT_HOOK );
+			wp_schedule_event( time() + 60, $interval, $this->product_hook );
 		} elseif ( ! $enabled && $scheduled ) {
-			wp_clear_scheduled_hook( self::PRODUCT_HOOK );
+			wp_clear_scheduled_hook( $this->product_hook );
 		}
 	}
 }

@@ -12,14 +12,26 @@ declare(strict_types=1);
  */
 
 defined( 'ABSPATH' ) || exit;
+
+$brand_name = POS_Brand::name();
 ?>
 <div class="wrap sellmo-products-wrap">
 
 	<h1 class="wp-heading-inline">
-		<?php esc_html_e( 'Sellmo POS — Products', 'sellmo-woocommerce' ); ?>
+		<?php
+		printf(
+			esc_html__( '%s — Products', 'sellmo-woocommerce' ),
+			esc_html( $brand_name )
+		);
+		?>
 	</h1>
 	<button type="button" id="sellmo-refresh-products" class="page-title-action">
-		<?php esc_html_e( 'Refresh from Sellmo', 'sellmo-woocommerce' ); ?>
+		<?php
+		printf(
+			esc_html__( 'Refresh from %s', 'sellmo-woocommerce' ),
+			esc_html( $brand_name )
+		);
+		?>
 	</button>
 	<hr class="wp-header-end">
 
@@ -60,7 +72,14 @@ defined( 'ABSPATH' ) || exit;
 	<!-- ── Loading indicator ────────────────────────────────────────────────── -->
 	<div id="sellmo-products-loading" class="sellmo-products-loading">
 		<span class="spinner is-active" style="float:none;margin:0;"></span>
-		<span><?php esc_html_e( 'Loading products from Sellmo…', 'sellmo-woocommerce' ); ?></span>
+		<span>
+			<?php
+			printf(
+				esc_html__( 'Loading products from %s…', 'sellmo-woocommerce' ),
+				esc_html( $brand_name )
+			);
+			?>
+		</span>
 	</div>
 
 	<!-- ── Error state ──────────────────────────────────────────────────────── -->

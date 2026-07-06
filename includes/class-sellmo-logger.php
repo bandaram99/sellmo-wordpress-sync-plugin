@@ -47,7 +47,7 @@ class Sellmo_Logger {
 
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
-		$table   = $wpdb->prefix . 'sellmo_sync_log';
+		$table   = POS_Brand::table( 'sync_log' );
 		$charset = $wpdb->get_charset_collate();
 
 		// Two spaces between column name and data type are required by dbDelta.
@@ -97,7 +97,7 @@ class Sellmo_Logger {
 		}
 
 		$wpdb->insert(
-			$wpdb->prefix . 'sellmo_sync_log',
+			POS_Brand::table( 'sync_log' ),
 			[
 				'sync_type'  => $sync_type,
 				'direction'  => $direction,
@@ -123,7 +123,7 @@ class Sellmo_Logger {
 	private static function ensure_table(): void {
 		global $wpdb;
 
-		$table = $wpdb->prefix . 'sellmo_sync_log';
+		$table = POS_Brand::table( 'sync_log' );
 
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from trusted $wpdb->prefix.
 		$exists = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) );
@@ -143,14 +143,14 @@ class Sellmo_Logger {
 		if ( $table !== $created ) {
 			// Store the MySQL error so the admin_notices handler can surface it.
 			update_option(
-				'sellmo_wc_db_error',
+				POS_Brand::option( 'db_error' ),
 				sprintf(
 					'Failed to create sellmo_sync_log. MySQL said: %s',
 					$wpdb->last_error ?: 'unknown error (check MySQL strict mode settings)'
 				)
 			);
 		} else {
-			delete_option( 'sellmo_wc_db_error' );
+			delete_option( POS_Brand::option( 'db_error' ) );
 		}
 	}
 
@@ -173,7 +173,7 @@ class Sellmo_Logger {
 	public static function get_logs( array $args = [] ): array {
 		global $wpdb;
 
-		$table    = $wpdb->prefix . 'sellmo_sync_log';
+		$table    = POS_Brand::table( 'sync_log' );
 		$per_page = isset( $args['per_page'] ) ? absint( $args['per_page'] ) : 20;
 		$per_page = max( 1, $per_page );
 		$paged    = isset( $args['paged'] ) ? absint( $args['paged'] ) : 1;
@@ -247,7 +247,7 @@ class Sellmo_Logger {
 	public static function clear_all(): void {
 		global $wpdb;
 
-		$table = $wpdb->prefix . 'sellmo_sync_log';
+		$table = POS_Brand::table( 'sync_log' );
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$wpdb->query( "TRUNCATE TABLE `{$table}`" );
 	}
@@ -263,7 +263,7 @@ class Sellmo_Logger {
 	public static function drop_table(): void {
 		global $wpdb;
 
-		$table = $wpdb->prefix . 'sellmo_sync_log';
+		$table = POS_Brand::table( 'sync_log' );
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from trusted $wpdb->prefix.
 		$wpdb->query( "DROP TABLE IF EXISTS `{$table}`" );
 	}

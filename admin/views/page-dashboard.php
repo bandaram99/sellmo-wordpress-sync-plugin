@@ -10,6 +10,8 @@ declare(strict_types=1);
 
 defined( 'ABSPATH' ) || exit;
 
+$brand_name = POS_Brand::name();
+
 // ── Connection status ─────────────────────────────────────────────────────────
 $api_token    = (string) ( Sellmo_Settings::get( 'api_token' ) ?: '' );
 $has_token    = '' !== $api_token;
@@ -28,7 +30,7 @@ $stock_enabled   = 'yes' === (string) Sellmo_Settings::get( 'stock_sync_enabled'
 $order_enabled   = 'yes' === (string) Sellmo_Settings::get( 'order_sync_enabled' );
 
 // ── Next scheduled stock sync ─────────────────────────────────────────────────
-$next_stock = wp_next_scheduled( 'sellmo_wc_stock_sync' );
+$next_stock = wp_next_scheduled( POS_Brand::cron_hook( 'stock_sync' ) );
 
 // ── Recent activity ───────────────────────────────────────────────────────────
 $log_data  = Sellmo_Logger::get_logs( [ 'per_page' => 10, 'paged' => 1 ] );
@@ -71,7 +73,14 @@ if ( ! function_exists( 'sellmo_dashboard_format_dt' ) ) {
 }
 ?>
 <div class="wrap sellmo-dashboard-wrap">
-	<h1><?php esc_html_e( 'Sellmo POS — Dashboard', 'sellmo-woocommerce' ); ?></h1>
+	<h1>
+		<?php
+		printf(
+			esc_html__( '%s — Dashboard', 'sellmo-woocommerce' ),
+			esc_html( $brand_name )
+		);
+		?>
+	</h1>
 
 	<!-- ── Connection Status Card ──────────────────────────────────────────── -->
 	<div class="sellmo-card">
@@ -112,7 +121,8 @@ if ( ! function_exists( 'sellmo_dashboard_format_dt' ) ) {
 					echo wp_kses(
 						sprintf(
 							/* translators: %s: settings page URL */
-							__( 'Connected to Sellmo POS. <a href="%s">Manage settings</a>.', 'sellmo-woocommerce' ),
+							__( 'Connected to %1$s. <a href="%2$s">Manage settings</a>.', 'sellmo-woocommerce' ),
+							esc_html( $brand_name ),
 							esc_url( admin_url( 'admin.php?page=sellmo-settings' ) )
 						),
 						[ 'a' => [ 'href' => [] ] ]
@@ -132,7 +142,14 @@ if ( ! function_exists( 'sellmo_dashboard_format_dt' ) ) {
 			<div class="sellmo-card-body">
 				<table class="sellmo-meta-table">
 					<tr>
-						<th><?php esc_html_e( 'Total Sellmo', 'sellmo-woocommerce' ); ?></th>
+						<th>
+							<?php
+							printf(
+								esc_html__( 'Total %s', 'sellmo-woocommerce' ),
+								esc_html( $brand_name )
+							);
+							?>
+						</th>
 						<td><?php echo absint( $mapper_stats['total_sellmo_products'] ?? 0 ); ?></td>
 					</tr>
 					<tr>
@@ -347,8 +364,16 @@ if ( ! function_exists( 'sellmo_dashboard_format_dt' ) ) {
 				<tbody>
 					<?php
 					$direction_labels = [
-						'sellmo_to_wc' => __( 'Sellmo → WC', 'sellmo-woocommerce' ),
-						'wc_to_sellmo' => __( 'WC → Sellmo', 'sellmo-woocommerce' ),
+						'sellmo_to_wc' => sprintf(
+							/* translators: %s: Brand display name. */
+							__( '%s → WC', 'sellmo-woocommerce' ),
+							$brand_name
+						),
+						'wc_to_sellmo' => sprintf(
+							/* translators: %s: Brand display name. */
+							__( 'WC → %s', 'sellmo-woocommerce' ),
+							$brand_name
+						),
 					];
 					foreach ( $log_items as $entry ) :
 						$dir_key = (string) ( $entry['direction'] ?? '' );

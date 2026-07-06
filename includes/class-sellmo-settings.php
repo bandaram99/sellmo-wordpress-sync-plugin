@@ -24,31 +24,29 @@ defined( 'ABSPATH' ) || exit;
 class Sellmo_Settings {
 
 	/**
-	 * Option name prefix applied to every key.
-	 */
-	private const PREFIX = 'sellmo_wc_';
-
-	/**
 	 * Retrieve a plugin option value.
 	 *
+	 * The stored option name is derived from the configured brand slug via
+	 * POS_Brand::option() (e.g. `{slug}_wc_{key}`).
+	 *
 	 * @since  1.0.0
-	 * @param  string $key The option key without the sellmo_wc_ prefix.
+	 * @param  string $key The option key without the brand prefix.
 	 * @return mixed       The stored value, or false if the option does not exist.
 	 */
 	public static function get( string $key ): mixed {
-		return get_option( self::PREFIX . $key );
+		return get_option( POS_Brand::option( $key ) );
 	}
 
 	/**
 	 * Update a plugin option value.
 	 *
 	 * @since  1.0.0
-	 * @param  string $key   The option key without the sellmo_wc_ prefix.
+	 * @param  string $key   The option key without the brand prefix.
 	 * @param  mixed  $value The value to store.
 	 * @return bool          True on success, false if the value is unchanged or on failure.
 	 */
 	public static function set( string $key, mixed $value ): bool {
-		return update_option( self::PREFIX . $key, $value );
+		return update_option( POS_Brand::option( $key ), $value );
 	}
 
 	/**
