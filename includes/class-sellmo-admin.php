@@ -39,6 +39,12 @@ class Sellmo_Admin {
 		add_action( 'admin_notices', [ $this, 'admin_notices' ] );
 		add_action( 'admin_enqueue_scripts', [ $this, 'localize_scripts' ], 20 );
 
+		// White-label the plugin's own row on the Plugins screen. The static
+		// header comment is parsed by WordPress before any PHP runs, so the brand
+		// name/author/URIs can only be applied to the displayed row via filters.
+		add_filter( 'all_plugins', [ $this, 'filter_plugins_list' ] );
+		add_filter( 'plugin_row_meta', [ $this, 'filter_plugin_row_meta' ], 10, 2 );
+
 		add_action( 'wp_ajax_sellmo_wc_test_connection',  [ $this, 'ajax_test_connection' ] );
 		add_action( 'wp_ajax_sellmo_wc_get_shops',        [ $this, 'ajax_get_shops' ] );
 		add_action( 'wp_ajax_sellmo_wc_get_categories',   [ $this, 'ajax_get_categories' ] );
@@ -207,6 +213,74 @@ class Sellmo_Admin {
 	 */
 	public function hide_submenu_items(): void {
 		remove_submenu_page( POS_Brand::page(), POS_Brand::page( 'products' ) );
+	}
+
+	/**
+	 * Rewrite this plugin's row on the admin Plugins screen with brand values.
+	 *
+	 * WordPress parses the static "Plugin Name:", "Author:", etc. header comment
+	 * in the main file before any PHP runs, so those literals cannot be read from
+	 * `.env`. This filter overrides the DISPLAYED name, author, and URIs for our
+	 * own row so the Plugins screen reflects the configured brand. The Text Domain
+	 * is intentionally NOT changed — it is a frozen i18n identifier (see README
+	 * "WordPress limitations").
+	 *
+	 * @since  1.1.0
+	 * @param  array<string, array<string, mixed>> $plugins Parsed plugin headers keyed by basename.
+	 * @return array<string, array<string, mixed>>
+	 */
+	public function filter_plugins_list( array $plugins ): array {
+		$basename = defined( 'SELLMO_WC_BASENAME' ) ? SELLMO_WC_BASENAME : '';
+		if ( '' === $basename || ! isset( $plugins[ $basename ] ) ) {
+			return $plugins;
+		}
+
+		$name    = POS_Brand::plugin_name();
+		$author  = POS_Brand::author();
+		$website = POS_Brand::url( 'website' );
+
+		$plugins[ $basename ]['Name']       = $name;
+		$plugins[ $basename ]['Title']      = $name;
+		$plugins[ $basename ]['Author']     = $author;
+		$plugins[ $basename ]['AuthorName'] = $author;
+
+		if ( '' !== $website ) {
+			$plugins[ $basename ]['PluginURI'] = $website;
+			$plugins[ $basename ]['AuthorURI'] = $website;
+		}
+
+		return $plugins;
+	}
+
+	/**
+	 * Rewrite the meta row (author/site links) under this plugin on the Plugins
+	 * screen so any brand URL replaces the packaged default.
+	 *
+	 * @since  1.1.0
+	 * @param  string[] $meta        Plugin meta links.
+	 * @param  string   $plugin_file Plugin basename for the current row.
+	 * @return string[]
+	 */
+	public function filter_plugin_row_meta( array $meta, string $plugin_file ): array {
+		$basename = defined( 'SELLMO_WC_BASENAME' ) ? SELLMO_WC_BASENAME : '';
+		if ( '' === $basename || $plugin_file !== $basename ) {
+			return $meta;
+		}
+
+		$website = POS_Brand::url( 'website' );
+		if ( '' === $website ) {
+			return $meta;
+		}
+
+		// Replace any packaged default URL (e.g. sellmo.com) shown in the meta row
+		// with the configured brand website.
+		foreach ( $meta as $i => $link ) {
+			if ( str_contains( $link, 'href=' ) && ( str_contains( $link, 'sellmo' ) || str_contains( $link, 'View details' ) ) ) {
+				$meta[ $i ] = preg_replace( '#href=(["\']).*?\1#', 'href="' . esc_url( $website ) . '"', $link, 1 ) ?? $link;
+			}
+		}
+
+		return $meta;
 	}
 
 	// -------------------------------------------------------------------------

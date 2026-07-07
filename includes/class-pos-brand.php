@@ -57,16 +57,22 @@ final class POS_Brand {
 	 * @var array<string, string>
 	 */
 	private const DEFAULTS = [
-		'name'        => 'Sellmo POS',
-		'slug'        => 'sellmo',
-		'namespace'   => 'Sellmo',
-		'text_domain' => 'sellmo-woocommerce',
-		'log_prefix'  => 'Sellmo',
+		'name'        => 'Salespay POS',
+		'slug'        => 'salespay',
+		'namespace'   => 'Salespay',
+		'text_domain' => 'salespay-woocommerce',
+		'log_prefix'  => 'Salespay',
 		'logo'        => '',
-		'website'     => 'https://sellmo.com/',
-		'support'     => 'https://sellmo.com/',
-		'docs'        => 'https://sellmo.com/',
+		'website'     => 'https://salespay.com/',
+		'support'     => 'https://salespay.com/',
+		'docs'        => 'https://salespay.com/',
 		'email'       => '',
+		// Plugins-screen display. Empty = derive from name()/website (see
+		// plugin_name() / author()). WordPress parses the static header comment
+		// in the main plugin file before any PHP runs, so these can only affect
+		// the DISPLAYED row on the Plugins screen, not the raw header.
+		'plugin_name' => '',
+		'author'      => '',
 	];
 
 	/**
@@ -222,6 +228,41 @@ final class POS_Brand {
 	 */
 	public static function email(): string {
 		return self::config()['email'];
+	}
+
+	/**
+	 * Plugin title shown on the admin Plugins screen, e.g. "SalesPay POS
+	 * Integration".
+	 *
+	 * Uses BRAND_PLUGIN_NAME when set; otherwise derives from name() by
+	 * appending " POS Integration" (or just " Integration" when the name
+	 * already contains "POS", to avoid "… POS POS Integration").
+	 *
+	 * NOTE: This only changes the DISPLAYED row on the Plugins screen (via an
+	 * all_plugins filter). WordPress reads the static "Plugin Name:" header
+	 * comment before any PHP executes, so that literal cannot be .env-driven.
+	 *
+	 * @return string
+	 */
+	public static function plugin_name(): string {
+		$explicit = self::config()['plugin_name'];
+		if ( '' !== $explicit ) {
+			return $explicit;
+		}
+		$name = self::name();
+		$suffix = ( false !== stripos( $name, 'pos' ) ) ? ' Integration' : ' POS Integration';
+		return $name . $suffix;
+	}
+
+	/**
+	 * Plugin author shown on the admin Plugins screen. Uses BRAND_AUTHOR when
+	 * set, else falls back to the brand name().
+	 *
+	 * @return string
+	 */
+	public static function author(): string {
+		$explicit = self::config()['author'];
+		return '' !== $explicit ? $explicit : self::name();
 	}
 
 	/* ---------------------------------------------------------------------
