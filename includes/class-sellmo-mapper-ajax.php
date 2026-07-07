@@ -55,7 +55,7 @@ class Sellmo_Mapper_Ajax {
 	 * @return void
 	 */
 	public function enqueue_assets( string $hook ): void {
-		if ( ! str_contains( $hook, 'sellmo-product-mapper' ) ) {
+		if ( ! str_contains( $hook, POS_Brand::page( 'product-mapper' ) ) ) {
 			return;
 		}
 

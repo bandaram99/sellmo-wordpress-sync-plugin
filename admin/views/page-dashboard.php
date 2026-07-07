@@ -100,7 +100,7 @@ if ( ! function_exists( 'sellmo_dashboard_format_dt' ) ) {
 						sprintf(
 							/* translators: %s: settings page URL */
 							__( 'No API token set. <a href="%s">Configure your settings</a> to connect.', 'sellmo-woocommerce' ),
-							esc_url( admin_url( 'admin.php?page=sellmo-settings' ) )
+							esc_url( admin_url( 'admin.php?page=' . POS_Brand::page( 'settings' ) ) )
 						),
 						[ 'a' => [ 'href' => [] ] ]
 					);
@@ -111,7 +111,7 @@ if ( ! function_exists( 'sellmo_dashboard_format_dt' ) ) {
 						sprintf(
 							/* translators: %s: settings page URL */
 							__( 'API token set but connection has not been tested or last test failed. <a href="%s">Test the connection</a>.', 'sellmo-woocommerce' ),
-							esc_url( admin_url( 'admin.php?page=sellmo-settings' ) )
+							esc_url( admin_url( 'admin.php?page=' . POS_Brand::page( 'settings' ) ) )
 						),
 						[ 'a' => [ 'href' => [] ] ]
 					);
@@ -123,7 +123,7 @@ if ( ! function_exists( 'sellmo_dashboard_format_dt' ) ) {
 							/* translators: %s: settings page URL */
 							__( 'Connected to %1$s. <a href="%2$s">Manage settings</a>.', 'sellmo-woocommerce' ),
 							esc_html( $brand_name ),
-							esc_url( admin_url( 'admin.php?page=sellmo-settings' ) )
+							esc_url( admin_url( 'admin.php?page=' . POS_Brand::page( 'settings' ) ) )
 						),
 						[ 'a' => [ 'href' => [] ] ]
 					);
@@ -178,7 +178,7 @@ if ( ! function_exists( 'sellmo_dashboard_format_dt' ) ) {
 					</tr>
 				</table>
 				<div class="sellmo-sync-actions">
-					<a href="<?php echo esc_url( admin_url( 'admin.php?page=sellmo-product-mapper' ) ); ?>" class="button button-secondary">
+					<a href="<?php echo esc_url( admin_url( 'admin.php?page=' . POS_Brand::page( 'product-mapper' ) ) ); ?>" class="button button-secondary">
 						<?php esc_html_e( 'Open Product Mapper', 'sellmo-woocommerce' ); ?>
 					</a>
 				</div>
@@ -401,7 +401,7 @@ if ( ! function_exists( 'sellmo_dashboard_format_dt' ) ) {
 				</tbody>
 			</table>
 			<div class="sellmo-card-footer">
-				<a href="<?php echo esc_url( admin_url( 'admin.php?page=sellmo-sync-log' ) ); ?>">
+				<a href="<?php echo esc_url( admin_url( 'admin.php?page=' . POS_Brand::page( 'sync-log' ) ) ); ?>">
 					<?php esc_html_e( 'View full sync log →', 'sellmo-woocommerce' ); ?>
 				</a>
 			</div>

@@ -77,15 +77,15 @@ class Sellmo_Admin {
 			esc_html( $brand_name ),
 			esc_html( $brand_name ),
 			'manage_woocommerce',
-			'sellmo-pos',
+			POS_Brand::page(),
 			[ $this, 'page_dashboard' ],
 			$this->menu_icon(),
 			56
 		);
 
-		// The first add_submenu_page renames the auto-created "Sellmo POS" entry.
+		// The first add_submenu_page renames the auto-created top-level entry.
 		add_submenu_page(
-			'sellmo-pos',
+			POS_Brand::page(),
 			sprintf(
 				/* translators: %s: Brand display name. */
 				__( 'Dashboard — %s', 'sellmo-woocommerce' ),
@@ -93,12 +93,12 @@ class Sellmo_Admin {
 			),
 			__( 'Dashboard', 'sellmo-woocommerce' ),
 			'manage_woocommerce',
-			'sellmo-pos',
+			POS_Brand::page(),
 			[ $this, 'page_dashboard' ]
 		);
 
 		add_submenu_page(
-			'sellmo-pos',
+			POS_Brand::page(),
 			sprintf(
 				/* translators: %s: Brand display name. */
 				__( 'Products — %s', 'sellmo-woocommerce' ),
@@ -106,12 +106,12 @@ class Sellmo_Admin {
 			),
 			__( 'Products', 'sellmo-woocommerce' ),
 			'manage_woocommerce',
-			'sellmo-products',
+			POS_Brand::page( 'products' ),
 			[ $this, 'page_products' ]
 		);
 
 		add_submenu_page(
-			'sellmo-pos',
+			POS_Brand::page(),
 			sprintf(
 				/* translators: %s: Brand display name. */
 				__( 'Product Mapper — %s', 'sellmo-woocommerce' ),
@@ -119,12 +119,12 @@ class Sellmo_Admin {
 			),
 			__( 'Product Mapper', 'sellmo-woocommerce' ),
 			'manage_woocommerce',
-			'sellmo-product-mapper',
+			POS_Brand::page( 'product-mapper' ),
 			[ $this, 'page_product_mapper' ]
 		);
 
 		add_submenu_page(
-			'sellmo-pos',
+			POS_Brand::page(),
 			sprintf(
 				/* translators: %s: Brand display name. */
 				__( 'Settings — %s', 'sellmo-woocommerce' ),
@@ -132,12 +132,12 @@ class Sellmo_Admin {
 			),
 			__( 'Settings', 'sellmo-woocommerce' ),
 			'manage_woocommerce',
-			'sellmo-settings',
+			POS_Brand::page( 'settings' ),
 			[ $this, 'page_settings' ]
 		);
 
 		add_submenu_page(
-			'sellmo-pos',
+			POS_Brand::page(),
 			sprintf(
 				/* translators: %s: Brand display name. */
 				__( 'Log — %s', 'sellmo-woocommerce' ),
@@ -145,7 +145,7 @@ class Sellmo_Admin {
 			),
 			__( 'Log', 'sellmo-woocommerce' ),
 			'manage_woocommerce',
-			'sellmo-sync-log',
+			POS_Brand::page( 'sync-log' ),
 			[ $this, 'page_sync_log' ]
 		);
 	}
@@ -190,7 +190,7 @@ class Sellmo_Admin {
 			return;
 		}
 		echo '<style id="sellmo-menu-icon">'
-			. '#adminmenu #toplevel_page_sellmo-pos .wp-menu-image img{'
+			. '#adminmenu #toplevel_page_' . esc_attr( POS_Brand::page() ) . ' .wp-menu-image img{'
 			. 'width:20px;height:20px;padding:7px 0;opacity:1;box-sizing:content-box;}'
 			. '</style>';
 	}
@@ -200,13 +200,13 @@ class Sellmo_Admin {
 	 *
 	 * Runs on admin_menu at a late priority so it executes after register_menus().
 	 * remove_submenu_page() only removes the visible menu link — the page route
-	 * (admin.php?page=sellmo-products) and all its AJAX/functionality remain intact.
+	 * (admin.php?page={slug}-products) and all its AJAX/functionality remain intact.
 	 *
 	 * @since  1.0.0
 	 * @return void
 	 */
 	public function hide_submenu_items(): void {
-		remove_submenu_page( 'sellmo-pos', 'sellmo-products' );
+		remove_submenu_page( POS_Brand::page(), POS_Brand::page( 'products' ) );
 	}
 
 	// -------------------------------------------------------------------------
@@ -397,7 +397,7 @@ class Sellmo_Admin {
 		}
 
 		$redirect_args = [
-			'page'         => 'sellmo-settings',
+			'page'         => POS_Brand::page( 'settings' ),
 			'sellmo_saved' => '1',
 		];
 		if ( '' !== $conn_status ) {
@@ -432,7 +432,7 @@ class Sellmo_Admin {
 		wp_safe_redirect(
 			add_query_arg(
 				[
-					'page'               => 'sellmo-sync-log',
+					'page'               => POS_Brand::page( 'sync-log' ),
 					'sellmo_log_cleared' => '1',
 				],
 				admin_url( 'admin.php' )
@@ -474,7 +474,7 @@ class Sellmo_Admin {
 			'paged'     => 1,
 		] );
 
-		$filename = 'sellmo-sync-log-' . gmdate( 'Y-m-d' ) . '.csv';
+		$filename = POS_Brand::page( 'sync-log' ) . '-' . gmdate( 'Y-m-d' ) . '.csv';
 
 		header( 'Content-Type: text/csv; charset=utf-8' );
 		header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
@@ -519,7 +519,7 @@ class Sellmo_Admin {
 	 */
 	public function admin_notices(): void {
 		$screen = get_current_screen();
-		if ( null === $screen || ! str_contains( $screen->id, 'sellmo' ) ) {
+		if ( null === $screen || ! str_contains( $screen->id, POS_Brand::page_base() ) ) {
 			return;
 		}
 
@@ -536,7 +536,7 @@ class Sellmo_Admin {
 
 		// Persistent warning: no API token configured.
 		if ( '' === (string) Sellmo_Settings::get( 'api_token' ) ) {
-			$settings_url = admin_url( 'admin.php?page=sellmo-settings' );
+			$settings_url = admin_url( 'admin.php?page=' . POS_Brand::page( 'settings' ) );
 			echo '<div class="notice notice-warning"><p>';
 			printf(
 				/* translators: 1: Brand display name, 2: link to the Settings page */
@@ -621,7 +621,7 @@ class Sellmo_Admin {
 	 * @return void
 	 */
 	public function localize_scripts( string $hook ): void {
-		if ( ! str_contains( $hook, 'sellmo' ) ) {
+		if ( ! str_contains( $hook, POS_Brand::page_base() ) ) {
 			return;
 		}
 

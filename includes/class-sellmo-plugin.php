@@ -137,15 +137,16 @@ class Sellmo_Plugin {
 	 * Enqueue admin CSS and JS on plugin pages only.
 	 *
 	 * The $hook parameter contains the full page suffix (e.g.
-	 * 'toplevel_page_sellmo-pos'). All plugin-registered pages include
-	 * 'sellmo' in their hook suffix, so a single str_contains check suffices.
+	 * 'toplevel_page_salespay-pos'). All plugin-registered pages include the
+	 * brand page-slug base (POS_Brand::page_base()) in their hook suffix, so a
+	 * single str_contains check suffices.
 	 *
 	 * @since  1.0.0
 	 * @param  string $hook Current admin page hook suffix.
 	 * @return void
 	 */
 	public function admin_assets( string $hook ): void {
-		if ( ! str_contains( $hook, 'sellmo' ) ) {
+		if ( ! str_contains( $hook, POS_Brand::page_base() ) ) {
 			return;
 		}
 

@@ -57,7 +57,7 @@ $from_row    = $total > 0 ? ( $paged - 1 ) * $per_page + 1 : 0;
 $to_row      = min( $total, $paged * $per_page );
 
 // ── URL helpers ───────────────────────────────────────────────────────────────
-$page_base = admin_url( 'admin.php?page=sellmo-sync-log' );
+$page_base = admin_url( 'admin.php?page=' . POS_Brand::page( 'sync-log' ) );
 
 $tab_url = static function ( string $tab ) use ( $page_base, $filter_from, $filter_to ): string {
 	$args = array_filter( [
@@ -171,7 +171,7 @@ $pagination_html = static function () use ( $paged, $total_pages, $paged_url ): 
 	<?php /* ── Date range filter ────────────────────────────────────────── */ ?>
 	<div class="sellmo-card" style="border-top-left-radius:0;margin-top:0;">
 		<form method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>" class="sellmo-log-filters">
-			<input type="hidden" name="page" value="sellmo-sync-log">
+			<input type="hidden" name="page" value="<?php echo esc_attr( POS_Brand::page( 'sync-log' ) ); ?>">
 			<?php if ( $active_tab ) : ?>
 				<input type="hidden" name="tab" value="<?php echo esc_attr( $active_tab ); ?>">
 			<?php endif; ?>

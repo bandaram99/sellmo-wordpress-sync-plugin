@@ -239,6 +239,38 @@ final class POS_Brand {
 	}
 
 	/**
+	 * Admin page-slug base: the identity slug with underscores converted to
+	 * hyphens (e.g. "salespay", or "sales-pay" for a slug "sales_pay").
+	 *
+	 * WordPress admin menu slugs conventionally use hyphens, while the data
+	 * identity slug uses [a-z0-9_]. This is the single source for both the
+	 * menu/URL slugs (see page()) and for detecting plugin admin screens by
+	 * hook suffix / screen id (every plugin page's hook contains this string).
+	 *
+	 * @return string
+	 */
+	public static function page_base(): string {
+		return str_replace( '_', '-', self::slug() );
+	}
+
+	/**
+	 * Admin menu / page slug used in admin.php?page=… URLs.
+	 *
+	 * Builds {page_base}-{suffix}. With no suffix it returns the top-level
+	 * dashboard slug, e.g. "salespay-pos". Examples:
+	 *   page()                  -> "salespay-pos"
+	 *   page( 'settings' )      -> "salespay-settings"
+	 *   page( 'sync-log' )      -> "salespay-sync-log"
+	 *   page( 'product-mapper' )-> "salespay-product-mapper"
+	 *
+	 * @param  string $suffix Page suffix; defaults to 'pos' (the top-level page).
+	 * @return string
+	 */
+	public static function page( string $suffix = 'pos' ): string {
+		return self::page_base() . '-' . $suffix;
+	}
+
+	/**
 	 * Fully-qualified custom table name: {wpdb->prefix}{slug}_{$suffix}.
 	 *
 	 * @param  string $suffix Table suffix, e.g. 'sync_log'.
