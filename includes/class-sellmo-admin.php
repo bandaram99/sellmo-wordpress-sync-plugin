@@ -32,6 +32,7 @@ class Sellmo_Admin {
 	public function __construct() {
 		add_action( 'admin_menu', [ $this, 'register_menus' ] );
 		add_action( 'admin_menu', [ $this, 'hide_submenu_items' ], 999 );
+		add_action( 'admin_head', [ $this, 'menu_icon_style' ] );
 		add_action( 'admin_post_sellmo_wc_save_settings', [ $this, 'handle_save_settings' ] );
 		add_action( 'admin_post_sellmo_wc_clear_logs',    [ $this, 'handle_clear_logs' ] );
 		add_action( 'admin_post_sellmo_wc_export_logs',   [ $this, 'handle_export_logs' ] );
@@ -78,7 +79,7 @@ class Sellmo_Admin {
 			'manage_woocommerce',
 			'sellmo-pos',
 			[ $this, 'page_dashboard' ],
-			'dashicons-store',
+			$this->menu_icon(),
 			56
 		);
 
@@ -147,6 +148,51 @@ class Sellmo_Admin {
 			'sellmo-sync-log',
 			[ $this, 'page_sync_log' ]
 		);
+	}
+
+	/**
+	 * Resolve the top-level menu icon.
+	 *
+	 * Uses the brand logo configured in `.env` (BRAND_LOGO) when set, resolving
+	 * a plugin-relative path to a full URL. Full URLs and data URIs are passed
+	 * through unchanged. Falls back to the "store" dashicon when no logo is set.
+	 *
+	 * @since  1.0.1
+	 * @return string A menu icon URL, data URI, or dashicons-* string.
+	 */
+	private function menu_icon(): string {
+		$logo = POS_Brand::logo();
+		if ( '' === $logo ) {
+			return 'dashicons-store';
+		}
+		// Full URL or data URI: use as-is.
+		if ( preg_match( '#^(https?:)?//#', $logo ) || str_starts_with( $logo, 'data:' ) ) {
+			return $logo;
+		}
+		// Otherwise treat it as a path relative to the plugin root.
+		return SELLMO_WC_URL . ltrim( $logo, '/' );
+	}
+
+	/**
+	 * Print CSS to size and un-dim the custom brand menu icon.
+	 *
+	 * WordPress renders a URL/PNG menu icon as an <img> with no size constraint
+	 * and a default 0.6 opacity, so a full-resolution logo would appear oversized
+	 * and dimmed. The top-level menu shows on every admin screen, so this runs on
+	 * admin_head globally (not just plugin pages). No-op for dashicon fallback.
+	 *
+	 * @since  1.0.1
+	 * @return void
+	 */
+	public function menu_icon_style(): void {
+		$logo = POS_Brand::logo();
+		if ( '' === $logo || str_starts_with( $logo, 'dashicons-' ) ) {
+			return;
+		}
+		echo '<style id="sellmo-menu-icon">'
+			. '#adminmenu #toplevel_page_sellmo-pos .wp-menu-image img{'
+			. 'width:20px;height:20px;padding:7px 0;opacity:1;box-sizing:content-box;}'
+			. '</style>';
 	}
 
 	/**
@@ -681,9 +727,9 @@ class Sellmo_Admin {
 		$deduped_rows = [];
 
 		foreach ( $db_rows as $product ) {
-			$sellmo_id   = (string) ( $product['sellmo_product_id'] ?? '' );
-			$sellmo_code = (string) ( $product['sellmo_product_code'] ?? '' );
-			$name        = (string) ( $product['sellmo_product_name'] ?? '' );
+			$sellmo_id   = (string) ( $product['pos_product_id'] ?? '' );
+			$sellmo_code = (string) ( $product['pos_product_code'] ?? '' );
+			$name        = (string) ( $product['pos_product_name'] ?? '' );
 			$category    = (string) ( $product['category'] ?? '' );
 
 			$is_mapped     = 1 === (int) ( $product['map_status'] ?? 0 );
@@ -914,7 +960,7 @@ class Sellmo_Admin {
 
 		Sellmo_Logger::log(
 			'product',
-			'sellmo_to_wc',
+			'pos_to_wc',
 			'skipped',
 			sprintf(
 				is_array( $was_mapped )
@@ -1013,7 +1059,7 @@ class Sellmo_Admin {
 
 		Sellmo_Logger::log(
 			'product',
-			'sellmo_to_wc',
+			'pos_to_wc',
 			'success',
 			sprintf( 'Imported and auto-mapped "%s" to WooCommerce product #%d', $map_name, $new_id ),
 			$map_code
@@ -1053,7 +1099,7 @@ class Sellmo_Admin {
 
 		Sellmo_Logger::log(
 			'product',
-			'sellmo_to_wc',
+			'pos_to_wc',
 			'skipped',
 			sprintf( 'Mapping removed: %s', $sellmo_name ),
 			$sellmo_code
@@ -1292,7 +1338,7 @@ class Sellmo_Admin {
 					if ( in_array( (int) $last_error['type'], $fatal_types, true ) ) {
 						Sellmo_Logger::log(
 							'product',
-							'sellmo_to_wc',
+							'pos_to_wc',
 							'error',
 							sprintf(
 								'Manual product sync terminated by fatal error after %ds: %s',
@@ -1307,7 +1353,7 @@ class Sellmo_Admin {
 
 		Sellmo_Logger::log(
 			'product',
-			'sellmo_to_wc',
+			'pos_to_wc',
 			'skipped',
 			'Manual product sync started from dashboard.'
 		);
@@ -1315,7 +1361,7 @@ class Sellmo_Admin {
 		if ( false === check_ajax_referer( 'sellmo_wc_admin', 'nonce', false ) ) {
 			Sellmo_Logger::log(
 				'product',
-				'sellmo_to_wc',
+				'pos_to_wc',
 				'error',
 				'Manual product sync blocked: invalid or expired AJAX nonce.'
 			);
@@ -1329,7 +1375,7 @@ class Sellmo_Admin {
 		if ( ! current_user_can( 'manage_woocommerce' ) ) {
 			Sellmo_Logger::log(
 				'product',
-				'sellmo_to_wc',
+				'pos_to_wc',
 				'error',
 				'Manual product sync blocked: permission denied for current user.'
 			);
@@ -1344,7 +1390,7 @@ class Sellmo_Admin {
 		} catch ( \Throwable $e ) {
 			Sellmo_Logger::log(
 				'product',
-				'sellmo_to_wc',
+				'pos_to_wc',
 				'error',
 				sprintf( 'Manual product sync crashed: %s', $e->getMessage() )
 			);
@@ -1381,7 +1427,7 @@ class Sellmo_Admin {
 
 		Sellmo_Logger::log(
 			'product',
-			'sellmo_to_wc',
+			'pos_to_wc',
 			'error',
 			'Manual product sync failed: ' . $failed_message
 		);
@@ -1619,7 +1665,7 @@ class Sellmo_Admin {
 	/**
 	 * AJAX: set or clear the _sellmo_sync_enabled meta on a linked WC product.
 	 *
-	 * Only operates on products that already have a matching _sellmo_product_code
+	 * Only operates on products that already have a matching _pos_product_code
 	 * meta value. Toggling a product that has not been imported returns an error.
 	 *
 	 * @since  1.0.0
@@ -1884,7 +1930,7 @@ class Sellmo_Admin {
 				 WHERE p.post_type = 'product'
 				   AND p.post_status IN ('publish', 'private')
 				   AND (pm.meta_value IS NOT NULL OR sku.meta_value IS NOT NULL)",
-				'_sellmo_product_code',
+				'_pos_product_code',
 				'_sku',
 				'_sellmo_sync_enabled'
 			),
@@ -1936,7 +1982,7 @@ class Sellmo_Admin {
 			'no_found_rows'  => true,
 			'meta_query'     => [ // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
 				[
-					'key'   => '_sellmo_product_code',
+					'key'   => '_pos_product_code',
 					'value' => $code,
 				],
 			],
@@ -1951,7 +1997,7 @@ class Sellmo_Admin {
 				$post_type = get_post_type( $sku_id );
 				if ( in_array( $post_type, [ 'product', 'product_variation' ], true ) ) {
 					$id = $sku_id;
-					update_post_meta( $id, '_sellmo_product_code', $code );
+					update_post_meta( $id, '_pos_product_code', $code );
 				}
 			}
 		}
@@ -1984,7 +2030,7 @@ class Sellmo_Admin {
 				 WHERE p.post_type = 'product'
 				   AND pm.meta_key IN ( %s, %s )
 				   AND pm.meta_value <> ''",
-				'_sellmo_product_code',
+				'_pos_product_code',
 				'_salesplay_pos_product_id'
 			)
 		);
@@ -2026,7 +2072,7 @@ class Sellmo_Admin {
 
 		Sellmo_Logger::log(
 			'product',
-			'sellmo_to_wc',
+			'pos_to_wc',
 			'skipped',
 			sprintf(
 				'API token changed — removed %d Sellmo-linked product(s) and cleared all stored stock counts, mappings, and variant data.',

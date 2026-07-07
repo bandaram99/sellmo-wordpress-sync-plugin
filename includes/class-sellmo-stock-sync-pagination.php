@@ -55,7 +55,7 @@ class Sellmo_Stock_Sync_Pagination {
 			];
 		}
 
-		Sellmo_Logger::log( 'stock', 'sellmo_to_wc', 'skipped', 'Manual stock sync started.' );
+		Sellmo_Logger::log( 'stock', 'pos_to_wc', 'skipped', 'Manual stock sync started.' );
 
 		// Step 1 — build the Sellmo product/variant lookup map from /products so
 		// each inventory row can be attributed to the corresponding product or
@@ -70,7 +70,7 @@ class Sellmo_Stock_Sync_Pagination {
 
 			if ( is_wp_error( $response ) ) {
 				$error_message = $response->get_error_message();
-				Sellmo_Logger::log( 'stock', 'sellmo_to_wc', 'error', 'API Error: ' . $error_message );
+				Sellmo_Logger::log( 'stock', 'pos_to_wc', 'error', 'API Error: ' . $error_message );
 
 				return [
 					'success' => false,
@@ -125,7 +125,7 @@ class Sellmo_Stock_Sync_Pagination {
 							$errors++;
 							Sellmo_Logger::log(
 								'stock',
-								'sellmo_to_wc',
+								'pos_to_wc',
 								'error',
 								sprintf( 'Failed to save stock for WC Product #%d: %s', $wc_product_id, $e->getMessage() ),
 								$product_code ?: $sellmo_id
@@ -154,7 +154,7 @@ class Sellmo_Stock_Sync_Pagination {
 
 		Sellmo_Logger::log(
 			'stock',
-			'sellmo_to_wc',
+			'pos_to_wc',
 			$status,
 			sprintf(
 				'Stock sync completed. %d items synced, %d skipped, %d errors, %d mapped images updated.',
@@ -201,7 +201,7 @@ class Sellmo_Stock_Sync_Pagination {
 			if ( is_wp_error( $response ) ) {
 				Sellmo_Logger::log(
 					'stock',
-					'sellmo_to_wc',
+					'pos_to_wc',
 					'error',
 					'Could not build product map for stock attribution: ' . $response->get_error_message()
 				);
@@ -290,8 +290,8 @@ class Sellmo_Stock_Sync_Pagination {
 				continue;
 			}
 
-			$sellmo_id   = (string) ( $row['sellmo_product_id'] ?? '' );
-			$sellmo_code = (string) ( $row['sellmo_product_code'] ?? '' );
+			$sellmo_id   = (string) ( $row['pos_product_id'] ?? '' );
+			$sellmo_code = (string) ( $row['pos_product_code'] ?? '' );
 
 			$image_url = '';
 			if ( '' !== $sellmo_id && isset( $lookup['products_by_id'][ $sellmo_id ]['image_url'] ) ) {
@@ -392,7 +392,7 @@ class Sellmo_Stock_Sync_Pagination {
 				'no_found_rows'  => true,
 				'meta_query'     => [
 					[
-						'key'   => '_sellmo_product_code',
+						'key'   => '_pos_product_code',
 						'value' => $product_code,
 					]
 				]

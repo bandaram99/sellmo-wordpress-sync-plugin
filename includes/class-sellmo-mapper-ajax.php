@@ -169,11 +169,11 @@ class Sellmo_Mapper_Ajax {
 		$results = [];
 
 		foreach ( $data['items'] as $row ) {
-			$code = (string) ( $row['sellmo_product_code'] ?? '' );
-			$name = (string) ( $row['sellmo_product_name'] ?? '' );
+			$code = (string) ( $row['pos_product_code'] ?? '' );
+			$name = (string) ( $row['pos_product_name'] ?? '' );
 
 			$results[] = [
-				'id'   => (string) ( $row['sellmo_product_id'] ?? '' ),
+				'id'   => (string) ( $row['pos_product_id'] ?? '' ),
 				'text' => $name . ( '' !== $code ? ' (' . $code . ')' : '' ),
 				'code' => $code,
 				'name' => $name,

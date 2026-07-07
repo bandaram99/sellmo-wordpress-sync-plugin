@@ -45,7 +45,7 @@ class Sellmo_Product_Mapper_Sync {
 		$result = Sellmo_Sync_Guard::run(
 			fn(): array => $this->do_delta_sync(),
 			'product',
-			'sellmo_to_wc',
+			'pos_to_wc',
 			'Incremental product mapper sync'
 		);
 
@@ -54,7 +54,7 @@ class Sellmo_Product_Mapper_Sync {
 		try {
 			( new Sellmo_Product_Variant_Sync() )->run();
 		} catch ( \Throwable $e ) {
-			Sellmo_Logger::log( 'product', 'sellmo_to_wc', 'error', 'Variant sync failed: ' . $e->getMessage() );
+			Sellmo_Logger::log( 'product', 'pos_to_wc', 'error', 'Variant sync failed: ' . $e->getMessage() );
 		}
 
 		return $result;
@@ -87,7 +87,7 @@ class Sellmo_Product_Mapper_Sync {
 		$inserted = 0;
 		$skipped  = 0;
 
-		Sellmo_Logger::log( 'product', 'sellmo_to_wc', 'skipped', 'Incremental mapper sync started from dashboard.' );
+		Sellmo_Logger::log( 'product', 'pos_to_wc', 'skipped', 'Incremental mapper sync started from dashboard.' );
 
 		do {
 			$page++;
@@ -134,9 +134,9 @@ class Sellmo_Product_Mapper_Sync {
 				}
 
 				$ok = Sellmo_Product_Mapping::insert_new( [
-					'sellmo_product_id'   => $sellmo_id,
-					'sellmo_product_code' => $code,
-					'sellmo_product_name' => (string) ( $product['product_name'] ?? '' ),
+					'pos_product_id'   => $sellmo_id,
+					'pos_product_code' => $code,
+					'pos_product_name' => (string) ( $product['product_name'] ?? '' ),
 					'category'            => $this->resolve_category( $product ),
 					'price'               => $this->resolve_price( $product ),
 					'variant_count'       => isset( $product['variants'] ) && is_array( $product['variants'] )
@@ -165,7 +165,7 @@ class Sellmo_Product_Mapper_Sync {
 
 		Sellmo_Logger::log(
 			'product',
-			'sellmo_to_wc',
+			'pos_to_wc',
 			'success',
 			sprintf( '%d new products staged in mapper, %d skipped.', $inserted, $skipped )
 		);

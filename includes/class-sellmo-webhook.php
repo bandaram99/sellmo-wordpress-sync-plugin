@@ -101,7 +101,7 @@ class Sellmo_Webhook {
 			if ( ! hash_equals( $expected, $signature ) ) {
 				Sellmo_Logger::log(
 					'webhook',
-					'sellmo_to_wc',
+					'pos_to_wc',
 					'error',
 					'Webhook rejected: invalid signature.'
 				);
@@ -115,7 +115,7 @@ class Sellmo_Webhook {
 		if ( ! is_array( $payload ) ) {
 			Sellmo_Logger::log(
 				'webhook',
-				'sellmo_to_wc',
+				'pos_to_wc',
 				'error',
 				'Webhook rejected: invalid JSON payload.'
 			);
@@ -160,7 +160,7 @@ class Sellmo_Webhook {
 					if ( '' === $product_code ) {
 						Sellmo_Logger::log(
 							'product',
-							'sellmo_to_wc',
+							'pos_to_wc',
 							'error',
 							'Webhook product.updated payload missing product_code.'
 						);
@@ -171,7 +171,7 @@ class Sellmo_Webhook {
 					$success = $sync->sync_single( $product_code );
 					Sellmo_Logger::log(
 						'product',
-						'sellmo_to_wc',
+						'pos_to_wc',
 						$success ? 'success' : 'error',
 						$success
 							? sprintf( 'Webhook: product %s synced.', $product_code )
@@ -184,7 +184,7 @@ class Sellmo_Webhook {
 					if ( '' === $product_code ) {
 						Sellmo_Logger::log(
 							'stock',
-							'sellmo_to_wc',
+							'pos_to_wc',
 							'error',
 							'Webhook inventory.updated payload missing product_code.'
 						);
@@ -195,7 +195,7 @@ class Sellmo_Webhook {
 					$success = $sync->sync_single_product( $product_code );
 					Sellmo_Logger::log(
 						'stock',
-						'sellmo_to_wc',
+						'pos_to_wc',
 						$success ? 'success' : 'error',
 						$success
 							? sprintf( 'Webhook: stock for %s updated.', $product_code )
@@ -207,7 +207,7 @@ class Sellmo_Webhook {
 				default:
 					Sellmo_Logger::log(
 						'webhook',
-						'sellmo_to_wc',
+						'pos_to_wc',
 						'skipped',
 						sprintf( 'Webhook: unhandled event "%s".', $event )
 					);
@@ -215,7 +215,7 @@ class Sellmo_Webhook {
 		} catch ( \Throwable $e ) {
 			Sellmo_Logger::log(
 				'webhook',
-				'sellmo_to_wc',
+				'pos_to_wc',
 				'error',
 				sprintf( 'Webhook processing exception for event "%s": %s', $event, $e->getMessage() ),
 				$product_code

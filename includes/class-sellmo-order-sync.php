@@ -295,7 +295,7 @@ class Sellmo_Order_Sync {
 
 			Sellmo_Logger::log(
 				'order',
-				'wc_to_sellmo',
+				'wc_to_pos',
 				'error',
 				$message,
 				(string) $order_id
@@ -316,7 +316,7 @@ class Sellmo_Order_Sync {
 
 		Sellmo_Logger::log(
 			'order',
-			'wc_to_sellmo',
+			'wc_to_pos',
 			'success',
 			sprintf( 'Order #%d pushed to Sellmo. Sellmo ID: %s', $order_id, $sellmo_id ?: 'n/a' ),
 			(string) $order_id
@@ -335,7 +335,7 @@ class Sellmo_Order_Sync {
 	 * Build the Sellmo API payload from a WooCommerce order.
 	 *
 	 * Maps WC billing fields and line items to the structure expected by the
-	 * POST /online_orders endpoint. Items missing _sellmo_product_code get a
+	 * POST /online_orders endpoint. Items missing _pos_product_code get a
 	 * warning order note but are still included (Sellmo may match by name).
 	 *
 	 * @since  1.0.0
@@ -359,7 +359,7 @@ class Sellmo_Order_Sync {
 
 			// Product code — prefer Sellmo meta, fall back to WC ID string.
 			$product_code = $lookup_id > 0
-				? (string) get_post_meta( $lookup_id, '_sellmo_product_code', true )
+				? (string) get_post_meta( $lookup_id, '_pos_product_code', true )
 				: '';
 
 			if ( '' === $product_code ) {

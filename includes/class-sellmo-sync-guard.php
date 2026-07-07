@@ -34,14 +34,14 @@ class Sellmo_Sync_Guard {
 	 * @since  1.1.0
 	 * @param  callable $callback  The sync routine. Should return an array or WP_Error.
 	 * @param  string   $sync_type Log sync_type: 'product', 'stock', 'order', 'webhook'.
-	 * @param  string   $direction Log direction: 'sellmo_to_wc' or 'wc_to_sellmo'.
+	 * @param  string   $direction Log direction: 'pos_to_wc' or 'wc_to_pos'.
 	 * @param  string   $context   Short human label used in the log message.
 	 * @return array{ success: bool, count: int, message: string }
 	 */
 	public static function run(
 		callable $callback,
 		string $sync_type = 'product',
-		string $direction = 'sellmo_to_wc',
+		string $direction = 'pos_to_wc',
 		string $context = 'sync'
 	): array {
 		try {
@@ -113,7 +113,7 @@ class Sellmo_Sync_Guard {
 		array|\WP_Error $response,
 		string $endpoint,
 		string $sync_type = 'product',
-		string $direction = 'sellmo_to_wc'
+		string $direction = 'pos_to_wc'
 	): bool {
 		// Transport failure: DNS, timeout, refused connection.
 		if ( is_wp_error( $response ) ) {

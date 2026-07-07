@@ -18,7 +18,7 @@ defined( 'ABSPATH' ) || exit;
  * Class Sellmo_Product_Sync
  *
  * Imports and updates WooCommerce products from Sellmo.
- * Products are matched via the _sellmo_product_code post meta key.
+ * Products are matched via the _pos_product_code post meta key.
  * Cron callbacks are registered in Sellmo_Scheduler, not here.
  *
  * @since 1.0.0
@@ -143,7 +143,7 @@ class Sellmo_Product_Sync {
 			$code = (string) ( $sellmo_product['product_code'] ?? '' );
 			Sellmo_Logger::log(
 				'product',
-				'sellmo_to_wc',
+				'pos_to_wc',
 				'skipped',
 				sprintf(
 					'Product skipped because mapped to WooCommerce product #%d',
@@ -183,7 +183,7 @@ class Sellmo_Product_Sync {
 			if ( is_wp_error( $page_result ) ) {
 				Sellmo_Logger::log(
 					'product',
-					'sellmo_to_wc',
+					'pos_to_wc',
 					'error',
 					$page_result->get_error_message(),
 					$sellmo_product_code
@@ -206,7 +206,7 @@ class Sellmo_Product_Sync {
 				if ( is_array( $mapping ) ) {
 					Sellmo_Logger::log(
 						'product',
-						'sellmo_to_wc',
+						'pos_to_wc',
 						'skipped',
 						sprintf(
 							'Product skipped because mapped to WooCommerce product #%d',
@@ -227,7 +227,7 @@ class Sellmo_Product_Sync {
 
 		Sellmo_Logger::log(
 			'product',
-			'sellmo_to_wc',
+			'pos_to_wc',
 			'skipped',
 			"No Sellmo product found for code '{$sellmo_product_code}'.",
 			$sellmo_product_code
@@ -289,7 +289,7 @@ class Sellmo_Product_Sync {
 	 * Fetch all product pages from Sellmo and update matched WC products.
 	 *
 	 * Only updates products that already have a matching WC product
-	 * (_sellmo_product_code meta) with _sellmo_sync_enabled = "yes".
+	 * (_pos_product_code meta) with _sellmo_sync_enabled = "yes".
 	 * Applies the sellmo_wc_sync_categories filter when set.
 	 *
 	 * @since  1.0.0
@@ -315,7 +315,7 @@ class Sellmo_Product_Sync {
 				$message = $page_result->get_error_message();
 				$error   = $page_result->get_error_data();
 
-				Sellmo_Logger::log( 'product', 'sellmo_to_wc', 'error', $message );
+				Sellmo_Logger::log( 'product', 'pos_to_wc', 'error', $message );
 
 				Sellmo_Settings::set( 'last_product_sync', [
 					'time'   => time(),
@@ -354,7 +354,7 @@ class Sellmo_Product_Sync {
 					$skipped++;
 					Sellmo_Logger::log(
 						'product',
-						'sellmo_to_wc',
+						'pos_to_wc',
 						'skipped',
 						sprintf(
 							'Product skipped because mapped to WooCommerce product #%d',
@@ -383,7 +383,7 @@ class Sellmo_Product_Sync {
 					$synced++;
 					Sellmo_Logger::log(
 						'product',
-						'sellmo_to_wc',
+						'pos_to_wc',
 						'success',
 						'Product synced because no mapping exists',
 						$code
@@ -409,7 +409,7 @@ class Sellmo_Product_Sync {
 		if ( $hit_limit ) {
 			Sellmo_Logger::log(
 				'product',
-				'sellmo_to_wc',
+				'pos_to_wc',
 				'skipped',
 				sprintf( 'Safety limit reached after %d pages. Run sync again to continue.', self::MAX_PAGES )
 			);
@@ -425,7 +425,7 @@ class Sellmo_Product_Sync {
 
 		Sellmo_Logger::log(
 			'product',
-			'sellmo_to_wc',
+			'pos_to_wc',
 			$status,
 			sprintf( '%d synced, %d skipped, %d errors.', $synced, $skipped, $errors )
 		);
@@ -493,7 +493,7 @@ class Sellmo_Product_Sync {
 
 					Sellmo_Logger::log(
 						'product',
-						'sellmo_to_wc',
+						'pos_to_wc',
 						'error',
 						"Sync failed for product '{$code}': could not load WooCommerce product #{$product_id}.",
 						$code
@@ -518,7 +518,7 @@ class Sellmo_Product_Sync {
 			}
 
 			if ( '' !== $code ) {
-				$product->update_meta_data( '_sellmo_product_code', $code );
+				$product->update_meta_data( '_pos_product_code', $code );
 			}
 
 			$product->update_meta_data( '_sellmo_sync_enabled', 'yes' );
@@ -534,7 +534,7 @@ class Sellmo_Product_Sync {
 
 				Sellmo_Logger::log(
 					'product',
-					'sellmo_to_wc',
+					'pos_to_wc',
 					'error',
 					"Sync failed for product '{$code}': WooCommerce refused to save the product.",
 					$code
@@ -558,7 +558,7 @@ class Sellmo_Product_Sync {
 
 			Sellmo_Logger::log(
 				'product',
-				'sellmo_to_wc',
+				'pos_to_wc',
 				'success',
 				"Synced SalesPlay product '{$code}' to WC product #{$product_id}.",
 				(string) $product_id
@@ -574,7 +574,7 @@ class Sellmo_Product_Sync {
 
 			Sellmo_Logger::log(
 				'product',
-				'sellmo_to_wc',
+				'pos_to_wc',
 				'error',
 				"Sync failed for product '{$code}': " . $e->getMessage(),
 				$code
@@ -629,7 +629,7 @@ class Sellmo_Product_Sync {
 				// SKU already used by another product — leave the existing SKU intact.
 				Sellmo_Logger::log(
 					'product',
-					'sellmo_to_wc',
+					'pos_to_wc',
 					'skipped',
 					"SKU '{$code}' already exists in WooCommerce. Keeping existing SKU.",
 					$code
@@ -714,7 +714,7 @@ class Sellmo_Product_Sync {
 			if ( is_wp_error( $inserted ) ) {
 				Sellmo_Logger::log(
 					'product',
-					'sellmo_to_wc',
+					'pos_to_wc',
 					'error',
 					sprintf( 'Failed to create product category "%s": %s', $category_name, $inserted->get_error_message() ),
 					$category_name
@@ -1045,7 +1045,7 @@ class Sellmo_Product_Sync {
 		}
 
 		if ( $saved_id && '' !== $variant_code ) {
-			update_post_meta( $saved_id, '_sellmo_product_code', $variant_code );
+			update_post_meta( $saved_id, '_pos_product_code', $variant_code );
 		}
 
 		if ( $saved_id > 0 ) {
@@ -1322,7 +1322,7 @@ class Sellmo_Product_Sync {
 			'no_found_rows'  => true,
 			'meta_query'     => [ // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
 				[
-					'key'   => '_sellmo_product_code',
+					'key'   => '_pos_product_code',
 					'value' => $code,
 				],
 			],
@@ -1408,7 +1408,7 @@ class Sellmo_Product_Sync {
 		$valid_lookup = array_fill_keys( array_map( 'strval', $valid_codes ), true );
 
 		foreach ( $children as $variation_id ) {
-			$code = (string) get_post_meta( (int) $variation_id, '_sellmo_product_code', true );
+			$code = (string) get_post_meta( (int) $variation_id, '_pos_product_code', true );
 			if ( '' === $code ) {
 				continue;
 			}
@@ -1542,7 +1542,7 @@ class Sellmo_Product_Sync {
 		if ( is_wp_error( $result ) ) {
 			Sellmo_Logger::log(
 				'product',
-				'sellmo_to_wc',
+				'pos_to_wc',
 				'error',
 				'Image sideload failed for product #' . $product_id . ': ' . $result->get_error_message(),
 				(string) $product_id
@@ -1631,7 +1631,7 @@ class Sellmo_Product_Sync {
 			'no_found_rows'  => true,
 			'meta_query'     => [ // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
 				[
-					'key'   => '_sellmo_product_code',
+					'key'   => '_pos_product_code',
 					'value' => $code,
 				],
 			],
@@ -1647,7 +1647,7 @@ class Sellmo_Product_Sync {
 				$post_type = get_post_type( $sku_id );
 				if ( in_array( $post_type, [ 'product', 'product_variation' ], true ) ) {
 					$id = $sku_id;
-					update_post_meta( $id, '_sellmo_product_code', $code );
+					update_post_meta( $id, '_pos_product_code', $code );
 				}
 			}
 		}

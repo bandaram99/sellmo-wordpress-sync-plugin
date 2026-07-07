@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * Plugin Name:       Sellmo POS Integration
  * Plugin URI:        https://sellmo.com/
- * Description:       Integrates WooCommerce with Sellmo POS — product sync, stock sync, and order sync between the two platforms.
+ * Description:       Integrates WooCommerce with POS — product sync, stock sync, and order sync between the two platforms.
  * Version:           1.0.1
  * Requires at least: 6.0
  * Requires PHP:      8.0
@@ -145,6 +145,9 @@ add_action(
 
 			require_once SELLMO_WC_PATH . 'includes/class-sellmo-settings.php';
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-logger.php';
+
+			// One-time rewrite of legacy brand-named sync-log direction values.
+			add_action( 'admin_init', [ 'Sellmo_Logger', 'maybe_migrate_directions' ] );
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-mapping.php';
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-api.php';
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-admin.php';

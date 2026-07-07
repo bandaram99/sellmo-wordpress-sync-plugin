@@ -63,9 +63,9 @@ class Sellmo_Product_Mapping {
 
 		$sql = "CREATE TABLE {$table} (
   id                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  sellmo_product_id   VARCHAR(100) NOT NULL DEFAULT '',
-  sellmo_product_code VARCHAR(191) NOT NULL DEFAULT '',
-  sellmo_product_name VARCHAR(255) NOT NULL DEFAULT '',
+  pos_product_id   VARCHAR(100) NOT NULL DEFAULT '',
+  pos_product_code VARCHAR(191) NOT NULL DEFAULT '',
+  pos_product_name VARCHAR(255) NOT NULL DEFAULT '',
   category            VARCHAR(191) NOT NULL DEFAULT '',
   price               DECIMAL(20,4) NOT NULL DEFAULT 0,
   variant_count       INT UNSIGNED NOT NULL DEFAULT 0,
@@ -78,10 +78,10 @@ class Sellmo_Product_Mapping {
   created_at          DATETIME NOT NULL DEFAULT '1970-01-01 00:00:00',
   updated_at          DATETIME NOT NULL DEFAULT '1970-01-01 00:00:00',
   PRIMARY KEY  (id),
-  UNIQUE KEY uniq_sellmo_product_id (sellmo_product_id),
+  UNIQUE KEY uniq_pos_product_id (pos_product_id),
   UNIQUE KEY uniq_wc_product_id (wc_product_id),
-  KEY sellmo_product_code (sellmo_product_code),
-  KEY sellmo_product_name (sellmo_product_name),
+  KEY pos_product_code (pos_product_code),
+  KEY pos_product_name (pos_product_name),
   KEY map_status (map_status),
   KEY updated_at (updated_at)
 ) {$charset};";
@@ -164,6 +164,39 @@ class Sellmo_Product_Mapping {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$columns = array_map( 'strval', (array) $wpdb->get_col( "SHOW COLUMNS FROM `{$table}`" ) );
 
+		// One-time rename of the legacy brand-named columns to neutral names.
+		// Older installs carry sellmo_product_* columns; the plugin now uses
+		// pos_product_* so the schema no longer embeds a specific brand.
+		$rename = [
+			'sellmo_product_id'   => "pos_product_id VARCHAR(100) NOT NULL DEFAULT ''",
+			'sellmo_product_code' => "pos_product_code VARCHAR(191) NOT NULL DEFAULT ''",
+			'sellmo_product_name' => "pos_product_name VARCHAR(255) NOT NULL DEFAULT ''",
+		];
+		foreach ( $rename as $old => $ddl ) {
+			if ( in_array( $old, $columns, true ) ) {
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table/column names are trusted literals.
+				$wpdb->query( "ALTER TABLE `{$table}` CHANGE COLUMN `{$old}` {$ddl}" );
+			}
+		}
+
+		// Rename the matching indexes so dbDelta does not later create duplicates.
+		// Guarded by the OLD index names (not the columns) so this self-heals even
+		// after the columns have already been renamed. DROP+ADD is used instead of
+		// "RENAME INDEX", which needs MySQL 5.7+ / MariaDB 10.5.2+.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$indexes = array_map( 'strval', (array) $wpdb->get_col( "SHOW INDEX FROM `{$table}`", 2 ) );
+		$rename_idx = [
+			'uniq_sellmo_product_id' => 'ADD UNIQUE KEY uniq_pos_product_id (pos_product_id)',
+			'sellmo_product_code'    => 'ADD KEY pos_product_code (pos_product_code)',
+			'sellmo_product_name'    => 'ADD KEY pos_product_name (pos_product_name)',
+		];
+		foreach ( $rename_idx as $old => $add_ddl ) {
+			if ( in_array( $old, $indexes, true ) ) {
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Trusted literal identifiers.
+				$wpdb->query( "ALTER TABLE `{$table}` DROP INDEX `{$old}`, {$add_ddl}" );
+			}
+		}
+
 		$add = static function ( string $name, string $ddl ) use ( $columns, $table, $wpdb ): void {
 			if ( ! in_array( $name, $columns, true ) ) {
 				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -221,7 +254,7 @@ class Sellmo_Product_Mapping {
 		$rows = $wpdb->get_results( "SELECT * FROM `{$legacy}`", ARRAY_A );
 
 		foreach ( (array) $rows as $r ) {
-			$sid = (string) ( $r['sellmo_product_id'] ?? '' );
+			$sid = (string) ( $r['pos_product_id'] ?? '' );
 			if ( '' === $sid ) {
 				continue;
 			}
@@ -247,9 +280,9 @@ class Sellmo_Product_Mapping {
 				array_merge(
 					$catalogue,
 					[
-						'sellmo_product_id'   => $sid,
-						'sellmo_product_code' => (string) ( $r['sellmo_product_code'] ?? '' ),
-						'sellmo_product_name' => (string) ( $r['sellmo_product_name'] ?? '' ),
+						'pos_product_id'   => $sid,
+						'pos_product_code' => (string) ( $r['pos_product_code'] ?? '' ),
+						'pos_product_name' => (string) ( $r['pos_product_name'] ?? '' ),
 						'stock_count'         => (int) ( $r['stock_count'] ?? 0 ),
 						'stock_status'        => (int) ( $r['stock_status'] ?? 0 ),
 						'wc_product_id'       => null,
@@ -288,7 +321,7 @@ class Sellmo_Product_Mapping {
 		$table = self::table_name();
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$row = $wpdb->get_row(
-			$wpdb->prepare( "SELECT * FROM `{$table}` WHERE sellmo_product_id = %s LIMIT 1", $sellmo_product_id ),
+			$wpdb->prepare( "SELECT * FROM `{$table}` WHERE pos_product_id = %s LIMIT 1", $sellmo_product_id ),
 			ARRAY_A
 		);
 
@@ -313,7 +346,7 @@ class Sellmo_Product_Mapping {
 		$table = self::table_name();
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$row = $wpdb->get_row(
-			$wpdb->prepare( "SELECT * FROM `{$table}` WHERE sellmo_product_code = %s LIMIT 1", $sellmo_product_code ),
+			$wpdb->prepare( "SELECT * FROM `{$table}` WHERE pos_product_code = %s LIMIT 1", $sellmo_product_code ),
 			ARRAY_A
 		);
 
@@ -346,17 +379,17 @@ class Sellmo_Product_Mapping {
 		$params     = [];
 
 		if ( '' !== $sellmo_product_id ) {
-			$conditions[] = 'sellmo_product_id = %s';
+			$conditions[] = 'pos_product_id = %s';
 			$params[]     = $sellmo_product_id;
 		}
 
 		if ( '' !== $variant_id && $variant_id !== $sellmo_product_id ) {
-			$conditions[] = 'sellmo_product_id = %s';
+			$conditions[] = 'pos_product_id = %s';
 			$params[]     = $variant_id;
 		}
 
 		if ( '' !== $product_code ) {
-			$conditions[] = 'sellmo_product_code = %s';
+			$conditions[] = 'pos_product_code = %s';
 			$params[]     = $product_code;
 		}
 
@@ -416,7 +449,7 @@ class Sellmo_Product_Mapping {
 
 		// Refuse if this WooCommerce product is already mapped to a different Sellmo product.
 		$existing_for_wc = self::get_mapping_by_wc_product_id( $wc_product_id );
-		if ( is_array( $existing_for_wc ) && (string) $existing_for_wc['sellmo_product_id'] !== $sellmo_product_id ) {
+		if ( is_array( $existing_for_wc ) && (string) $existing_for_wc['pos_product_id'] !== $sellmo_product_id ) {
 			return false;
 		}
 
@@ -431,8 +464,8 @@ class Sellmo_Product_Mapping {
 			return false !== $wpdb->update(
 				$table,
 				[
-					'sellmo_product_code' => $sellmo_code,
-					'sellmo_product_name' => $sellmo_name,
+					'pos_product_code' => $sellmo_code,
+					'pos_product_name' => $sellmo_name,
 					'wc_product_id'       => $wc_product_id,
 					'map_status'          => 1,
 					'updated_at'          => $now,
@@ -446,9 +479,9 @@ class Sellmo_Product_Mapping {
 		return false !== $wpdb->insert(
 			$table,
 			[
-				'sellmo_product_id'   => $sellmo_product_id,
-				'sellmo_product_code' => $sellmo_code,
-				'sellmo_product_name' => $sellmo_name,
+				'pos_product_id'   => $sellmo_product_id,
+				'pos_product_code' => $sellmo_code,
+				'pos_product_name' => $sellmo_name,
 				'wc_product_id'       => $wc_product_id,
 				'map_status'          => 1,
 				'created_at'          => $now,
@@ -515,7 +548,7 @@ class Sellmo_Product_Mapping {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$row = $wpdb->get_row(
 			$wpdb->prepare(
-				"SELECT * FROM `{$table}` WHERE sellmo_product_id = %s AND map_status = 1 LIMIT 1",
+				"SELECT * FROM `{$table}` WHERE pos_product_id = %s AND map_status = 1 LIMIT 1",
 				$sellmo_product_id
 			),
 			ARRAY_A
@@ -544,7 +577,7 @@ class Sellmo_Product_Mapping {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$row = $wpdb->get_row(
 			$wpdb->prepare(
-				"SELECT * FROM `{$table}` WHERE sellmo_product_code = %s AND map_status = 1 LIMIT 1",
+				"SELECT * FROM `{$table}` WHERE pos_product_code = %s AND map_status = 1 LIMIT 1",
 				$sellmo_product_code
 			),
 			ARRAY_A
@@ -659,7 +692,7 @@ class Sellmo_Product_Mapping {
 
 		$table = self::table_name();
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		$rows = $wpdb->get_results( "SELECT * FROM `{$table}` ORDER BY sellmo_product_name ASC", ARRAY_A );
+		$rows = $wpdb->get_results( "SELECT * FROM `{$table}` ORDER BY pos_product_name ASC", ARRAY_A );
 
 		return is_array( $rows ) ? $rows : [];
 	}
@@ -685,8 +718,8 @@ class Sellmo_Product_Mapping {
 		];
 
 		foreach ( (array) $rows as $row ) {
-			$sellmo_id   = (string) ( $row['sellmo_product_id'] ?? '' );
-			$sellmo_code = (string) ( $row['sellmo_product_code'] ?? '' );
+			$sellmo_id   = (string) ( $row['pos_product_id'] ?? '' );
+			$sellmo_code = (string) ( $row['pos_product_code'] ?? '' );
 
 			if ( '' !== $sellmo_id ) {
 				$indexed['by_id'][ $sellmo_id ] = $row;
@@ -723,7 +756,7 @@ class Sellmo_Product_Mapping {
 		$table = self::table_name();
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$found = $wpdb->get_var(
-			$wpdb->prepare( "SELECT id FROM `{$table}` WHERE sellmo_product_id = %s LIMIT 1", $sellmo_product_id )
+			$wpdb->prepare( "SELECT id FROM `{$table}` WHERE pos_product_id = %s LIMIT 1", $sellmo_product_id )
 		);
 
 		return null !== $found;
@@ -751,7 +784,7 @@ class Sellmo_Product_Mapping {
 	}
 
 	/**
-	 * Return a set of all sellmo_product_id values present (any status).
+	 * Return a set of all pos_product_id values present (any status).
 	 *
 	 * @since  1.0.0
 	 * @return array<string, true>
@@ -762,7 +795,7 @@ class Sellmo_Product_Mapping {
 
 		$table = self::table_name();
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		$ids = $wpdb->get_col( "SELECT sellmo_product_id FROM `{$table}`" );
+		$ids = $wpdb->get_col( "SELECT pos_product_id FROM `{$table}`" );
 
 		$set = [];
 		foreach ( (array) $ids as $id ) {
@@ -791,7 +824,7 @@ class Sellmo_Product_Mapping {
 		self::ensure_table();
 		global $wpdb;
 
-		$sellmo_product_id = trim( (string) ( $fields['sellmo_product_id'] ?? '' ) );
+		$sellmo_product_id = trim( (string) ( $fields['pos_product_id'] ?? '' ) );
 		if ( '' === $sellmo_product_id || self::exists( $sellmo_product_id ) ) {
 			return false;
 		}
@@ -801,9 +834,9 @@ class Sellmo_Product_Mapping {
 		return false !== $wpdb->insert(
 			self::table_name(),
 			[
-				'sellmo_product_id'   => $sellmo_product_id,
-				'sellmo_product_code' => (string) ( $fields['sellmo_product_code'] ?? '' ),
-				'sellmo_product_name' => (string) ( $fields['sellmo_product_name'] ?? '' ),
+				'pos_product_id'   => $sellmo_product_id,
+				'pos_product_code' => (string) ( $fields['pos_product_code'] ?? '' ),
+				'pos_product_name' => (string) ( $fields['pos_product_name'] ?? '' ),
 				'category'            => (string) ( $fields['category'] ?? '' ),
 				'price'               => (float) ( $fields['price'] ?? 0 ),
 				'variant_count'       => (int) ( $fields['variant_count'] ?? 0 ),
@@ -842,7 +875,7 @@ class Sellmo_Product_Mapping {
 		$search = trim( $search );
 		if ( '' !== $search ) {
 			$like    = '%' . $wpdb->esc_like( $search ) . '%';
-			$where  .= ' AND ( sellmo_product_name LIKE %s OR sellmo_product_code LIKE %s )';
+			$where  .= ' AND ( pos_product_name LIKE %s OR pos_product_code LIKE %s )';
 			$params  = [ $like, $like ];
 		}
 
@@ -860,8 +893,8 @@ class Sellmo_Product_Mapping {
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT sellmo_product_id, sellmo_product_code, sellmo_product_name, category, price
-				 FROM `{$table}`" . $where . ' ORDER BY sellmo_product_name ASC LIMIT %d OFFSET %d',
+				"SELECT pos_product_id, pos_product_code, pos_product_name, category, price
+				 FROM `{$table}`" . $where . ' ORDER BY pos_product_name ASC LIMIT %d OFFSET %d',
 				...$query_params
 			),
 			ARRAY_A
@@ -912,7 +945,7 @@ class Sellmo_Product_Mapping {
 		$query = "SELECT COUNT(DISTINCT p.ID)
 			FROM {$wpdb->posts} p
 			LEFT JOIN {$wpdb->postmeta} spc
-				ON spc.post_id = p.ID AND spc.meta_key = '_sellmo_product_code'
+				ON spc.post_id = p.ID AND spc.meta_key = '_pos_product_code'
 			LEFT JOIN {$wpdb->postmeta} spi
 				ON spi.post_id = p.ID AND spi.meta_key = '_salesplay_pos_product_id'
 			WHERE p.post_type = 'product'

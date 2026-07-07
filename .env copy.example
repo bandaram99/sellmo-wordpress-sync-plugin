@@ -37,6 +37,12 @@ BRAND_TEXT_DOMAIN=pos-integration
 # Log line prefix, e.g. "[SalesPay] Sync started". Change anytime.
 BRAND_LOG_PREFIX=SalesPay
 
+# Admin menu logo. Path is relative to the plugin root, or a full URL / data URI.
+# Falls back to the WordPress dashicon "store" if unset. Change anytime.
+#   Sellmo   -> admin/images/sellmo-icon.png
+#   SalesPay -> admin/images/salespay-icon.png
+BRAND_LOGO=admin/images/salespay-icon.png
+
 # Public URLs / contact. Change anytime.
 BRAND_WEBSITE=https://salespay.com
 BRAND_SUPPORT=https://salespay.com/support

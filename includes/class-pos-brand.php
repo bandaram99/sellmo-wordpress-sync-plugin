@@ -62,6 +62,7 @@ final class POS_Brand {
 		'namespace'   => 'Sellmo',
 		'text_domain' => 'sellmo-woocommerce',
 		'log_prefix'  => 'Sellmo',
+		'logo'        => '',
 		'website'     => 'https://sellmo.com/',
 		'support'     => 'https://sellmo.com/',
 		'docs'        => 'https://sellmo.com/',
@@ -188,6 +189,20 @@ final class POS_Brand {
 	 */
 	public static function log_prefix(): string {
 		return self::config()['log_prefix'];
+	}
+
+	/**
+	 * Admin menu logo, as configured in `.env` (BRAND_LOGO).
+	 *
+	 * May be a path relative to the plugin root, a full URL, or a data URI.
+	 * Returns '' when unset, in which case callers fall back to a dashicon.
+	 * Relative paths are resolved to a URL by the caller (this class is
+	 * brand-neutral and has no dependency on WordPress URL helpers).
+	 *
+	 * @return string
+	 */
+	public static function logo(): string {
+		return self::config()['logo'];
 	}
 
 	/**

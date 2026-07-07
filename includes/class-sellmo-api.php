@@ -74,7 +74,7 @@ class Sellmo_API {
 	private function make_request( string $method, string $endpoint, array $body = [] ): array|\WP_Error {
 		$url  = self::API_BASE . $endpoint;
 		$sync_type = $this->resolve_sync_type_from_endpoint( $endpoint );
-		$direction = 'POST' === $method ? 'wc_to_sellmo' : 'sellmo_to_wc';
+		$direction = 'POST' === $method ? 'wc_to_pos' : 'pos_to_wc';
 		$args = [
 			'headers' => [
 				'Authorization' => 'Bearer ' . $this->token,
@@ -379,7 +379,7 @@ class Sellmo_API {
 				// Connection-level failure — no retry.
 				Sellmo_Logger::log(
 					$sync_type,
-					'sellmo_to_wc',
+					'pos_to_wc',
 					'error',
 					sprintf( 'API transport error on GET %s: %s', $endpoint, $this->truncate_for_log( $e->getMessage() ) ),
 					$endpoint
@@ -401,7 +401,7 @@ class Sellmo_API {
 
 				Sellmo_Logger::log(
 					$sync_type,
-					'sellmo_to_wc',
+					'pos_to_wc',
 					'error',
 					sprintf( 'API GET %s failed with HTTP %d: %s', $endpoint, $code, $this->truncate_for_log( $message ) ),
 					$endpoint
@@ -420,7 +420,7 @@ class Sellmo_API {
 			if ( null === $decoded ) {
 				Sellmo_Logger::log(
 					$sync_type,
-					'sellmo_to_wc',
+					'pos_to_wc',
 					'error',
 					sprintf( 'API GET %s returned invalid JSON.', $endpoint ),
 					$endpoint
@@ -435,7 +435,7 @@ class Sellmo_API {
 		// Exhausted all retries on 429.
 		$message = sprintf( 'Sellmo API rate limit exceeded after %d retries on %s.', $this->max_retries, $endpoint );
 
-		Sellmo_Logger::log( $sync_type, 'sellmo_to_wc', 'error', $message, $endpoint );
+		Sellmo_Logger::log( $sync_type, 'pos_to_wc', 'error', $message, $endpoint );
 
 		return new \WP_Error( 'sellmo_rate_limited', $message );
 	}

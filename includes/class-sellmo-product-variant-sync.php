@@ -43,7 +43,7 @@ class Sellmo_Product_Variant_Sync {
 		return Sellmo_Sync_Guard::run(
 			fn(): array => $this->do_sync(),
 			'product',
-			'sellmo_to_wc',
+			'pos_to_wc',
 			'Variant sync'
 		);
 	}
@@ -149,7 +149,7 @@ class Sellmo_Product_Variant_Sync {
 
 		Sellmo_Logger::log(
 			'product',
-			'sellmo_to_wc',
+			'pos_to_wc',
 			'success',
 			sprintf(
 				'Variant sync: %d variants stored across %d product(s) with variants; %d skipped (no mapping row).',

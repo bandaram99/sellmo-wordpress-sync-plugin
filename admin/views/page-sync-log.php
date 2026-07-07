@@ -90,12 +90,12 @@ $type_labels = [
 	'webhook' => __( 'Webhook', 'sellmo-woocommerce' ),
 ];
 $direction_labels = [
-	'sellmo_to_wc' => sprintf(
+	'pos_to_wc' => sprintf(
 		/* translators: %s: Brand display name. */
 		__( '%s → WC', 'sellmo-woocommerce' ),
 		$brand_name
 	),
-	'wc_to_sellmo' => sprintf(
+	'wc_to_pos' => sprintf(
 		/* translators: %s: Brand display name. */
 		__( 'WC → %s', 'sellmo-woocommerce' ),
 		$brand_name

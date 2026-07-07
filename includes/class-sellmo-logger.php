@@ -69,11 +69,41 @@ class Sellmo_Logger {
 	}
 
 	/**
+	 * One-time migration of legacy brand-named direction values.
+	 *
+	 * Rows written before the neutral rename stored the sync direction as
+	 * 'sellmo_to_wc' / 'wc_to_sellmo'. Rewrite them to the neutral
+	 * 'pos_to_wc' / 'wc_to_pos'. Guarded by an option so it runs once.
+	 *
+	 * @since  1.0.1
+	 * @return void
+	 */
+	public static function maybe_migrate_directions(): void {
+		if ( get_option( POS_Brand::option( 'log_dir_migrated' ) ) ) {
+			return;
+		}
+
+		global $wpdb;
+		$table = POS_Brand::table( 'sync_log' );
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name from trusted $wpdb->prefix.
+		$exists = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) );
+		if ( $table === $exists ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$wpdb->query( "UPDATE `{$table}` SET direction = 'pos_to_wc' WHERE direction = 'sellmo_to_wc'" );
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$wpdb->query( "UPDATE `{$table}` SET direction = 'wc_to_pos' WHERE direction = 'wc_to_sellmo'" );
+		}
+
+		update_option( POS_Brand::option( 'log_dir_migrated' ), '1', false );
+	}
+
+	/**
 	 * Insert a log entry into the sync log table.
 	 *
 	 * @since  1.0.0
 	 * @param  string $sync_type  Type of sync operation: 'product', 'stock', 'order', 'webhook'.
-	 * @param  string $direction  Direction of the sync: 'sellmo_to_wc' or 'wc_to_sellmo'.
+	 * @param  string $direction  Direction of the sync: 'pos_to_wc' or 'wc_to_pos'.
 	 * @param  string $status     Outcome: 'success', 'error', or 'skipped'.
 	 * @param  string $message    Human-readable description of the outcome.
 	 * @param  string $item_id    Optional. WC product/order ID or Sellmo product code.

@@ -139,7 +139,7 @@ class Sellmo_Stock_Sync {
 
 			$variant_id = (string) get_post_meta( $target_id, '_salesplay_variant_id', true );
 			$pos_id     = (string) get_post_meta( $target_id, '_salesplay_pos_product_id', true );
-			$code       = (string) get_post_meta( $target_id, '_sellmo_product_code', true );
+			$code       = (string) get_post_meta( $target_id, '_pos_product_code', true );
 
 			$stock = null;
 			if ( '' !== $variant_id && isset( $by_id[ $variant_id ] ) ) {
@@ -183,7 +183,7 @@ class Sellmo_Stock_Sync {
 			$lookup           = $this->collect_product_lookup_map();
 			$inventory_records = $this->collect_inventory_records();
 		} catch ( \RuntimeException $e ) {
-			Sellmo_Logger::log( 'stock', 'sellmo_to_wc', 'error', $e->getMessage(), $sellmo_product_code );
+			Sellmo_Logger::log( 'stock', 'pos_to_wc', 'error', $e->getMessage(), $sellmo_product_code );
 			return false;
 		}
 
@@ -206,7 +206,7 @@ class Sellmo_Stock_Sync {
 			if ( is_array( $mapping ) ) {
 				Sellmo_Logger::log(
 					'stock',
-					'sellmo_to_wc',
+					'pos_to_wc',
 					'skipped',
 					sprintf(
 						'Product skipped because mapped to WooCommerce product #%d',
@@ -222,7 +222,7 @@ class Sellmo_Stock_Sync {
 
 		Sellmo_Logger::log(
 			'stock',
-			'sellmo_to_wc',
+			'pos_to_wc',
 			'skipped',
 			"No inventory record found in Sellmo for product code: {$sellmo_product_code}",
 			$sellmo_product_code
@@ -253,7 +253,7 @@ class Sellmo_Stock_Sync {
 		} catch ( \RuntimeException $e ) {
 			$message = $e->getMessage();
 
-			Sellmo_Logger::log( 'stock', 'sellmo_to_wc', 'error', $message );
+			Sellmo_Logger::log( 'stock', 'pos_to_wc', 'error', $message );
 
 			Sellmo_Settings::set( 'last_stock_sync', [
 				'time'   => time(),
@@ -281,7 +281,7 @@ class Sellmo_Stock_Sync {
 				$skipped++;
 				Sellmo_Logger::log(
 					'stock',
-					'sellmo_to_wc',
+					'pos_to_wc',
 					'skipped',
 					sprintf(
 						'Product skipped because mapped to WooCommerce product #%d',
@@ -312,7 +312,7 @@ class Sellmo_Stock_Sync {
 
 		Sellmo_Logger::log(
 			'stock',
-			'sellmo_to_wc',
+			'pos_to_wc',
 			$status,
 			sprintf( '%d synced, %d skipped, %d errors.', $synced, $skipped, $errors )
 		);
@@ -379,7 +379,7 @@ class Sellmo_Stock_Sync {
 		if ( 0 === $product_id ) {
 			Sellmo_Logger::log(
 				'stock',
-				'sellmo_to_wc',
+				'pos_to_wc',
 				'skipped',
 				sprintf(
 					'No WooCommerce product found for Sellmo item %s. product_id=%s variant_id=%s product_code=%s in_stock=%s',
@@ -397,7 +397,7 @@ class Sellmo_Stock_Sync {
 		if ( ! $this->is_sync_enabled( $product_id ) ) {
 			Sellmo_Logger::log(
 				'stock',
-				'sellmo_to_wc',
+				'pos_to_wc',
 				'skipped',
 				sprintf(
 					'Sync disabled for product #%d. product_id=%s variant_id=%s product_code=%s in_stock=%s',
@@ -416,7 +416,7 @@ class Sellmo_Stock_Sync {
 		if ( ! $product ) {
 			Sellmo_Logger::log(
 				'stock',
-				'sellmo_to_wc',
+				'pos_to_wc',
 				'error',
 				sprintf(
 					'Could not load WC product #%d for Sellmo item %s. product_id=%s variant_id=%s product_code=%s in_stock=%s',
@@ -437,7 +437,7 @@ class Sellmo_Stock_Sync {
 		if ( false === $result ) {
 			Sellmo_Logger::log(
 				'stock',
-				'sellmo_to_wc',
+				'pos_to_wc',
 				'error',
 				sprintf(
 					'Failed to update stock to in_stock=%d for product #%d. product_id=%s variant_id=%s product_code=%s',
@@ -454,7 +454,7 @@ class Sellmo_Stock_Sync {
 
 		Sellmo_Logger::log(
 			'stock',
-			'sellmo_to_wc',
+			'pos_to_wc',
 			'success',
 			sprintf(
 				'Stock set to in_stock=%d for product #%d. product_id=%s variant_id=%s product_code=%s',
@@ -820,7 +820,7 @@ class Sellmo_Stock_Sync {
 			'no_found_rows'  => true,
 			'meta_query'     => [ // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
 				[
-					'key'   => '_sellmo_product_code',
+					'key'   => '_pos_product_code',
 					'value' => $code,
 				],
 			],
@@ -836,7 +836,7 @@ class Sellmo_Stock_Sync {
 				$post_type = get_post_type( $sku_id );
 				if ( in_array( $post_type, [ 'product', 'product_variation' ], true ) ) {
 					$id = $sku_id;
-					update_post_meta( $id, '_sellmo_product_code', $code );
+					update_post_meta( $id, '_pos_product_code', $code );
 				}
 			}
 		}
