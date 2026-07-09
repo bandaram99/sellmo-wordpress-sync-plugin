@@ -33,7 +33,7 @@ class Sellmo_Product_Sync {
 	/**
 	 * SalesPlay products endpoint.
 	 */
-	private const PRODUCTS_ENDPOINT = 'https://api.salesplaypos.com/v1.0/products';
+	private const PRODUCTS_ENDPOINT = '{{API_BASE}}/products';
 
 	/**
 	 * API page size.

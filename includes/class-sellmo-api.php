@@ -28,7 +28,7 @@ class Sellmo_API {
 	/**
 	 * Base URL for all API calls.
 	 */
-	private const API_BASE = 'https://api.salesplaypos.com/v1.0';
+	private const API_BASE = '{{API_BASE}}';
 
 	/**
 	 * Bearer token read from options. Never exposed in logs or output.
