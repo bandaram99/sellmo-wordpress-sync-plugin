@@ -2,22 +2,22 @@
 declare(strict_types=1);
 
 /**
- * Plugin Name:       POS Integration
- * Plugin URI:        https://salesplay.com/
- * Description:       Integrates WooCommerce with POS — product sync, stock sync, and order sync between the two platforms.
- * Version:           1.0.1
- * Requires at least: 6.0
- * Requires PHP:      8.0
- * Author:            SalesPay
- * Author URI:        https://salesplay.com/
+ * Plugin Name:       {{PLUGIN_NAME}}
+ * Plugin URI:        {{PLUGIN_URI}}
+ * Description:       {{PLUGIN_DESCRIPTION}}
+ * Version:           {{VERSION}}
+ * Requires at least: {{WP_VERSION}}
+ * Requires PHP:      {{PHP_VERSION}}
+ * Author:            {{AUTHOR}}
+ * Author URI:        {{AUTHOR_URI}}
  * License:           GPLv2 or later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
- * Text Domain:       salespay-woocommerce
+ * Text Domain:       {{TEXT_DOMAIN}}
  * Domain Path:       /languages
- * WC requires at least: 7.0
- * WC tested up to:   9.0
+ * WC requires at least: {{WC_MIN_VERSION}}
+ * WC tested up to:   {{WC_TESTED_VERSION}}
  *
- * @package Sellmo_WooCommerce
+ * @package {{PACKAGE_NAME}}
  */
 
 defined( 'ABSPATH' ) || exit;
