@@ -109,6 +109,81 @@ class Sellmo_Product_Mapping {
 	}
 
 	/**
+	 * Reconcile the table against the live POS catalogue: for every row whose
+	 * pos_product_id is NOT in $live_pos_ids (i.e. the product was deleted in the
+	 * backoffice), remove it.
+	 *
+	 *   - Mapped row   -> delete the linked WooCommerce product (and its
+	 *                     variations), then delete the mapper row.
+	 *   - Unmapped row -> delete the mapper row only.
+	 *
+	 * Rows without a pos_product_id (code-only staged rows) are never pruned;
+	 * they can't be reconciled by id.
+	 *
+	 * Callers MUST pass a COMPLETE catalogue snapshot (all API pages fetched) —
+	 * reconciling against a partial list would delete valid products. An empty
+	 * snapshot is treated as "unknown" and changes nothing, so an anomalous empty
+	 * API response never wipes the table.
+	 *
+	 * @since  1.2.0
+	 * @param  array<int, string> $live_pos_ids POS ids currently present upstream.
+	 * @return int Number of rows removed.
+	 */
+	public static function reconcile_absent( array $live_pos_ids ): int {
+		self::ensure_table();
+
+		global $wpdb;
+
+		$live = array_values( array_unique( array_filter(
+			array_map( 'strval', $live_pos_ids ),
+			static fn( string $v ): bool => '' !== $v
+		) ) );
+
+		if ( empty( $live ) ) {
+			return 0; // Nothing to reconcile against — refuse to prune.
+		}
+
+		$table        = self::table_name();
+		$placeholders = implode( ',', array_fill( 0, count( $live ), '%s' ) );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table name from trusted prefix; ids are prepared.
+		$absent = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT id, wc_product_id FROM `{$table}` WHERE pos_product_id <> '' AND pos_product_id NOT IN ( {$placeholders} )",
+				...$live
+			),
+			ARRAY_A
+		);
+
+		if ( empty( $absent ) ) {
+			return 0;
+		}
+
+		$removed = 0;
+		foreach ( $absent as $row ) {
+			$wc_id = (int) ( $row['wc_product_id'] ?? 0 );
+
+			// Mapped row: delete the linked WooCommerce product (variations first).
+			if ( $wc_id > 0 ) {
+				$product = function_exists( 'wc_get_product' ) ? wc_get_product( $wc_id ) : null;
+				if ( $product instanceof WC_Product ) {
+					foreach ( $product->get_children() as $child_id ) {
+						wp_delete_post( (int) $child_id, true );
+					}
+					$product->delete( true );
+				} else {
+					wp_delete_post( $wc_id, true );
+				}
+			}
+
+			$wpdb->delete( $table, [ 'id' => (int) $row['id'] ], [ '%d' ] );
+			$removed++;
+		}
+
+		return $removed;
+	}
+
+	/**
 	 * Drop the table.
 	 *
 	 * @since  1.0.0

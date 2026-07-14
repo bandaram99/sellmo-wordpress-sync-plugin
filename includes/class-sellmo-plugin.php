@@ -126,7 +126,12 @@ class Sellmo_Plugin {
 		$this->product_sync = new Sellmo_Product_Sync();
 		$this->stock_sync   = new Sellmo_Stock_Sync();
 		$this->order_sync   = new Sellmo_Order_Sync();
-		$this->webhook      = new Sellmo_Webhook();
+		// ponytail: webhook feature is under development. NOT instantiated on
+		// purpose so its public REST route (POST /wp-json/sellmo-wc/v1/webhook,
+		// permission_callback __return_true) is never registered — a live
+		// unsecured endpoint would fail wp.org review. Re-enable once the
+		// admin secret UI is restored and the handler rejects an empty secret.
+		// $this->webhook   = new Sellmo_Webhook();
 		$this->scheduler    = new Sellmo_Scheduler();
 		$this->mapper_ajax  = new Sellmo_Mapper_Ajax();
 

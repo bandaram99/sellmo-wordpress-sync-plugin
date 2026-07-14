@@ -86,6 +86,7 @@ class Sellmo_Product_Mapper_Sync {
 		$page     = 0;
 		$inserted = 0;
 		$skipped  = 0;
+		$seen_ids = []; // Every POS id returned this run — used to reconcile deletions.
 
 		Sellmo_Logger::log( 'product', 'pos_to_wc', 'skipped', 'Incremental mapper sync started from dashboard.' );
 
@@ -114,6 +115,12 @@ class Sellmo_Product_Mapper_Sync {
 
 				$sellmo_id = (string) ( $product['id'] ?? '' );
 				$code      = (string) ( $product['product_code'] ?? '' );
+
+				// Record every returned id (before any skip) so deletions can be
+				// reconciled against the full catalogue after paging completes.
+				if ( '' !== $sellmo_id ) {
+					$seen_ids[ $sellmo_id ] = true;
+				}
 
 				// Validation: a product with neither an id nor a code cannot be mapped.
 				if ( '' === $sellmo_id && '' === $code ) {
@@ -157,6 +164,15 @@ class Sellmo_Product_Mapper_Sync {
 
 		} while ( '' !== $cursor && $page < self::MAX_PAGES );
 
+		// Reconcile deletions — but only when the FULL catalogue was fetched. If
+		// the page cap stopped us mid-catalogue ($cursor still set), skip it:
+		// reconciling a partial snapshot would unlink still-valid products.
+		$removed   = 0;
+		$truncated = ( '' !== $cursor && $page >= self::MAX_PAGES );
+		if ( ! $truncated ) {
+			$removed = Sellmo_Product_Mapping::reconcile_absent( array_keys( $seen_ids ) );
+		}
+
 		Sellmo_Settings::set( 'last_product_sync', [
 			'time'   => time(),
 			'status' => 'success',
@@ -167,17 +183,18 @@ class Sellmo_Product_Mapper_Sync {
 			'product',
 			'pos_to_wc',
 			'success',
-			sprintf( '%d new products staged in mapper, %d skipped.', $inserted, $skipped )
+			sprintf( '%d new products staged in mapper, %d skipped, %d removed (deleted in POS).', $inserted, $skipped, $removed )
 		);
 
 		return [
 			'success' => true,
 			'count'   => $inserted,
 			'message' => sprintf(
-				/* translators: 1: inserted count, 2: skipped count */
-				__( '%1$d new products added to the Product Mapper. %2$d already present.', 'sellmo-woocommerce' ),
+				/* translators: 1: inserted count, 2: skipped count, 3: removed count */
+				__( '%1$d new products added to the Product Mapper. %2$d already present. %3$d removed (deleted in POS).', 'sellmo-woocommerce' ),
 				$inserted,
-				$skipped
+				$skipped,
+				$removed
 			),
 		];
 	}

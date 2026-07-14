@@ -41,32 +41,32 @@ final class POS_Brand {
 	private static ?array $config = null;
 
 	/**
-	 * Fallbacks used when a key is absent from BOTH .env and wp-config.
+	 * Brand values baked in at build time.
 	 *
-	 * These deliberately mirror the plugin's HISTORICAL (pre-white-label)
-	 * identity — slug `sellmo`, name `Sellmo POS`, etc. Rationale: an existing
-	 * install that upgrades to the white-label build WITHOUT yet creating a
-	 * `.env` must behave identically to before — same table/option/meta keys,
-	 * same UI — so nothing breaks and the migrator performs no work. Dropping a
-	 * `.env` in place is then the single, deliberate act that rebrands the
-	 * plugin (and triggers a one-time data migration; see POS_Brand_Migrator).
+	 * The `{{BRAND_*}}` tokens are filled by build.php from the selected
+	 * `.env.<brand>` profile (same placeholder mechanism as the plugin header
+	 * and README). The shipped package therefore carries its identity in the
+	 * PHP itself and needs NO runtime `.env`. A `.env` file or `BRAND_*`
+	 * wp-config constant, if present, still overrides these (see config()) —
+	 * that is the deliberate act that rebrands a live install and triggers the
+	 * one-time data migration (see POS_Brand_Migrator).
 	 *
-	 * This is the ONE place the legacy brand is named, and only as a safety
-	 * fallback — never referenced by business logic.
+	 * `plugin_name` / `author` stay empty on purpose: they derive from name()
+	 * (see plugin_name() / author()).
 	 *
 	 * @var array<string, string>
 	 */
 	private const DEFAULTS = [
-		'name'        => 'Salespay POS',
-		'slug'        => 'salespay',
-		'namespace'   => 'Salespay',
-		'text_domain' => 'salespay-woocommerce',
-		'log_prefix'  => 'Salespay',
-		'logo'        => '',
-		'website'     => 'https://salespay.com/',
-		'support'     => 'https://salespay.com/',
-		'docs'        => 'https://salespay.com/',
-		'email'       => '',
+		'name'        => '{{BRAND_NAME}}',
+		'slug'        => '{{BRAND_SLUG}}',
+		'namespace'   => '{{BRAND_NAMESPACE}}',
+		'text_domain' => '{{BRAND_TEXT_DOMAIN}}',
+		'log_prefix'  => '{{BRAND_LOG_PREFIX}}',
+		'logo'        => '{{BRAND_LOGO}}',
+		'website'     => '{{BRAND_WEBSITE}}',
+		'support'     => '{{BRAND_SUPPORT}}',
+		'docs'        => '{{BRAND_DOCS}}',
+		'email'       => '{{BRAND_EMAIL}}',
 		// Plugins-screen display. Empty = derive from name()/website (see
 		// plugin_name() / author()). WordPress parses the static header comment
 		// in the main plugin file before any PHP runs, so these can only affect
@@ -88,7 +88,8 @@ final class POS_Brand {
 	/**
 	 * Lazily load and cache the merged configuration.
 	 *
-	 * Precedence (highest first): .env file, wp-config constant, default.
+	 * Precedence (highest first): .env file, wp-config constant, then the
+	 * build-time baked default (DEFAULTS). The last needs no runtime .env.
 	 *
 	 * @return array<string, string>
 	 */

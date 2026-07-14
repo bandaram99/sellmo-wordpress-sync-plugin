@@ -1459,6 +1459,12 @@ class Sellmo_Admin {
 		}
 
 		try {
+			// Manual sync is user-initiated: drop the 5-minute /products transient
+			// cache first so it always fetches a fresh catalogue. Otherwise a product
+			// just created in the POS stays hidden until the cache expires. The cron
+			// paths keep their cache (rate-limit protection); only this button bypasses.
+			$this->clear_products_cache();
+
 			$sync   = new Sellmo_Product_Mapper_Sync();
 			$result = $sync->run_incremental_sync();
 		} catch ( \Throwable $e ) {
