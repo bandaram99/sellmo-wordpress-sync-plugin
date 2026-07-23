@@ -262,6 +262,30 @@ class Sellmo_API {
 	}
 
 	/**
+	 * When true, GET-endpoint reads skip the transient cache and hit the API.
+	 *
+	 * @var bool
+	 */
+	private static bool $force_fresh = false;
+
+	/**
+	 * Force /products and /inventory to bypass their read cache for this request.
+	 *
+	 * The per-cursor transients exist to respect the API rate limit, but they
+	 * make a manual "pull latest" action read stale data — e.g. a price or
+	 * category changed in the POS seconds ago. A manual sync calls this so it
+	 * fetches the current catalogue. Fresh responses are still written back to
+	 * the cache for the benefit of later, non-forced reads.
+	 *
+	 * @since  1.2.0
+	 * @param  bool $force Whether to bypass the read cache.
+	 * @return void
+	 */
+	public static function set_force_fresh( bool $force ): void {
+		self::$force_fresh = $force;
+	}
+
+	/**
 	 * Fetch a page of products, optionally starting from a cursor position.
 	 *
 	 * Requests 250 products per page (API maximum) to minimise request count.
@@ -277,10 +301,12 @@ class Sellmo_API {
 	 */
 	public function get_products( string $cursor = '' ): array|\WP_Error {
 		$transient_key = POS_Brand::transient( 'products_' . md5( $cursor ) );
-		$cached        = get_transient( $transient_key );
 
-		if ( false !== $cached ) {
-			return $cached;
+		if ( ! self::$force_fresh ) {
+			$cached = get_transient( $transient_key );
+			if ( false !== $cached ) {
+				return $cached;
+			}
 		}
 
 		$result = $this->request_get_with_body(
@@ -319,10 +345,12 @@ class Sellmo_API {
 	 */
 	public function get_inventory( string $cursor = '' ): array|\WP_Error {
 		$transient_key = POS_Brand::transient( 'inventory_' . md5( $cursor ) );
-		$cached        = get_transient( $transient_key );
 
-		if ( false !== $cached ) {
-			return $cached;
+		if ( ! self::$force_fresh ) {
+			$cached = get_transient( $transient_key );
+			if ( false !== $cached ) {
+				return $cached;
+			}
 		}
 
 		$result = $this->request_get_with_body(

@@ -2150,38 +2150,10 @@ class Sellmo_Admin {
 	private function purge_sellmo_synced_data(): int {
 		global $wpdb;
 
-		// WooCommerce products linked to Sellmo carry one of these meta keys.
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-		$product_ids = $wpdb->get_col(
-			$wpdb->prepare(
-				"SELECT DISTINCT p.ID
-				 FROM {$wpdb->posts} p
-				 INNER JOIN {$wpdb->postmeta} pm ON pm.post_id = p.ID
-				 WHERE p.post_type = 'product'
-				   AND pm.meta_key IN ( %s, %s )
-				   AND pm.meta_value <> ''",
-				'_pos_product_code',
-				'_salesplay_pos_product_id'
-			)
-		);
-
-		$removed = 0;
-
-		foreach ( (array) $product_ids as $product_id ) {
-			$product = wc_get_product( (int) $product_id );
-
-			if ( $product instanceof WC_Product ) {
-				// Force-delete variations first, then the parent product.
-				foreach ( $product->get_children() as $child_id ) {
-					wp_delete_post( (int) $child_id, true );
-				}
-				$product->delete( true );
-			} else {
-				wp_delete_post( (int) $product_id, true );
-			}
-
-			$removed++;
-		}
+		// Delete plugin-created products (with their variations, images, and
+		// created categories) and unlink any merchant products that were only
+		// mapped. Merchant-owned products are never deleted.
+		$removed = Sellmo_Cleanup::purge_catalogue();
 
 		// Empty the mapping/staging and variant tables (stock counts + saved
 		// details). The staged Product Mapper rows live in sellmo_product_mapping
@@ -2205,7 +2177,7 @@ class Sellmo_Admin {
 			'pos_to_wc',
 			'skipped',
 			sprintf(
-				'API token changed — removed %d Sellmo-linked product(s) and cleared all stored stock counts, mappings, and variant data.',
+				'API token changed — deleted %d plugin-created product(s) with images and categories, unlinked mapped merchant products, and cleared all stored stock counts, mappings, and variant data.',
 				$removed
 			)
 		);

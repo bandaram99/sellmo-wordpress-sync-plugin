@@ -20,8 +20,14 @@ defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 // Plugin constants are not defined during uninstall — load the brand engine
 // directly so table/option/cron names resolve to the configured slug.
 require_once __DIR__ . '/includes/class-pos-brand.php';
+require_once __DIR__ . '/includes/class-sellmo-cleanup.php';
 
 global $wpdb;
+
+// 0. Delete every product the plugin created (with variations, imported images,
+// and created categories) and unlink any merchant products it only mapped.
+// Runs before the tables are dropped — it reads post/term meta, not the tables.
+Sellmo_Cleanup::purge_catalogue();
 
 // 1. Drop the plugin's custom tables.
 foreach ( [ 'sync_log', 'product_mapping', 'product_variants', 'product_mapper' ] as $suffix ) {

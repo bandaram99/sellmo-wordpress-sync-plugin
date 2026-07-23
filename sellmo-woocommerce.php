@@ -149,6 +149,7 @@ add_action(
 			// One-time rewrite of legacy brand-named sync-log direction values.
 			add_action( 'admin_init', [ 'Sellmo_Logger', 'maybe_migrate_directions' ] );
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-mapping.php';
+		require_once SELLMO_WC_PATH . 'includes/class-sellmo-cleanup.php';
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-api.php';
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-admin.php';
 		require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-sync.php';

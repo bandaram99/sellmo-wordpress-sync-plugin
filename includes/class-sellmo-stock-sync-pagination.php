@@ -57,6 +57,12 @@ class Sellmo_Stock_Sync_Pagination {
 
 		Sellmo_Logger::log( 'stock', 'pos_to_wc', 'skipped', 'Manual stock sync started.' );
 
+		// A manual sync is an explicit "pull the latest" action, so bypass the
+		// cached /products and /inventory responses — otherwise a price or
+		// category changed in the POS moments ago is read from a stale transient
+		// and written straight back unchanged.
+		Sellmo_API::set_force_fresh( true );
+
 		// Step 1 — build the Sellmo product/variant lookup map from /products so
 		// each inventory row can be attributed to the corresponding product or
 		// (for variants) its parent product when writing the stock snapshot.

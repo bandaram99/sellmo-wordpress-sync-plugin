@@ -284,14 +284,25 @@ class Sellmo_Product_Sync {
 			$this->apply_product_category( $product, $sellmo_product );
 			$product->save();
 
+			// Update each existing variation's price from its Sellmo variant.
+			// Variant stock flows through the stock loop; this covers price.
+			$this->update_mapped_variation_prices( $product, $sellmo_product );
+
 			$variant_count = isset( $sellmo_product['variants'] ) && is_array( $sellmo_product['variants'] )
 				? count( $sellmo_product['variants'] )
 				: 0;
 
+			// For a variable product the parent carries no price of its own — use the
+			// first variant's price as the representative value for the mapper list.
+			$mapper_price = $price;
+			if ( null === $mapper_price && $variant_count > 0 ) {
+				$mapper_price = $this->first_variant_price( $sellmo_product );
+			}
+
 			Sellmo_Product_Mapping::update_catalogue_fields(
 				(string) ( $sellmo_product['id'] ?? '' ),
 				(string) ( $sellmo_product['product_code'] ?? '' ),
-				null !== $price ? (float) $price : null,
+				null !== $mapper_price ? (float) $mapper_price : null,
 				$this->resolve_sellmo_category_name( $sellmo_product ),
 				$variant_count
 			);
@@ -307,6 +318,120 @@ class Sellmo_Product_Sync {
 			);
 			return 'error';
 		}
+	}
+
+	/**
+	 * Update the price of each existing variation on a mapped variable product.
+	 *
+	 * Matches each WooCommerce variation to its Sellmo variant by the stamped
+	 * _salesplay_variant_id, then by _pos_product_code, then by SKU. Only prices
+	 * are written — variations are never created or deleted here (that would
+	 * rebuild a merchant's product), and stock is handled by the stock sync.
+	 *
+	 * @since  1.2.0
+	 * @param  WC_Product           $product        Parent product (any type; no-op unless variable).
+	 * @param  array<string, mixed> $sellmo_product Sellmo product payload.
+	 * @return void
+	 */
+	private function update_mapped_variation_prices( WC_Product $product, array $sellmo_product ): void {
+		if ( ! $product instanceof WC_Product_Variable ) {
+			return;
+		}
+
+		$variants = isset( $sellmo_product['variants'] ) && is_array( $sellmo_product['variants'] )
+			? $sellmo_product['variants']
+			: [];
+		if ( empty( $variants ) ) {
+			return;
+		}
+
+		// Index Sellmo variants by their id and by their product_code.
+		$by_variant_id = [];
+		$by_code       = [];
+		foreach ( $variants as $variant ) {
+			if ( ! is_array( $variant ) ) {
+				continue;
+			}
+			$vid   = (string) ( $variant['variant_id'] ?? '' );
+			$vcode = (string) ( $variant['product_code'] ?? '' );
+			if ( '' !== $vid ) {
+				$by_variant_id[ $vid ] = $variant;
+			}
+			if ( '' !== $vcode ) {
+				$by_code[ $vcode ] = $variant;
+			}
+		}
+
+		$changed = false;
+
+		foreach ( $product->get_children() as $variation_id ) {
+			$variation = wc_get_product( (int) $variation_id );
+			if ( ! $variation instanceof WC_Product_Variation ) {
+				continue;
+			}
+
+			$svid  = (string) get_post_meta( (int) $variation_id, '_salesplay_variant_id', true );
+			$scode = (string) get_post_meta( (int) $variation_id, '_pos_product_code', true );
+			$sku   = (string) $variation->get_sku();
+
+			$variant = $by_variant_id[ $svid ] ?? $by_code[ $scode ] ?? $by_code[ $sku ] ?? null;
+			if ( ! is_array( $variant ) ) {
+				continue;
+			}
+
+			$price = $this->extract_shop_price( $variant );
+			if ( null === $price && isset( $variant['selling_price'] ) ) {
+				$price = (float) $variant['selling_price'];
+			}
+			if ( null === $price ) {
+				continue;
+			}
+
+			$variation->set_regular_price( (string) $price );
+
+			if ( isset( $variant['discounted_price'] ) && (float) $variant['discounted_price'] > 0 ) {
+				$variation->set_sale_price( (string) $variant['discounted_price'] );
+			} else {
+				$variation->set_sale_price( '' );
+			}
+
+			$variation->save();
+			$changed = true;
+		}
+
+		// Refresh the parent's cached price range / lookup tables so the storefront
+		// reflects the new variation prices.
+		if ( $changed ) {
+			WC_Product_Variable::sync( $product->get_id() );
+		}
+	}
+
+	/**
+	 * Return the price of the first Sellmo variant that carries one.
+	 *
+	 * @since  1.2.0
+	 * @param  array<string, mixed> $sellmo_product Sellmo product payload.
+	 * @return float|null
+	 */
+	private function first_variant_price( array $sellmo_product ): ?float {
+		$variants = isset( $sellmo_product['variants'] ) && is_array( $sellmo_product['variants'] )
+			? $sellmo_product['variants']
+			: [];
+
+		foreach ( $variants as $variant ) {
+			if ( ! is_array( $variant ) ) {
+				continue;
+			}
+			$price = $this->extract_shop_price( $variant );
+			if ( null === $price && isset( $variant['selling_price'] ) ) {
+				$price = (float) $variant['selling_price'];
+			}
+			if ( null !== $price ) {
+				return $price;
+			}
+		}
+
+		return null;
 	}
 
 	/**
@@ -675,6 +800,14 @@ class Sellmo_Product_Sync {
 			$product->update_meta_data( '_sellmo_sync_enabled', 'yes' );
 			$product->update_meta_data( '_sellmo_last_synced', (string) time() );
 
+			// Flag products the plugin itself created (not merely linked), so the
+			// cleanup routine can delete them while leaving merchant-owned products
+			// that were only mapped in place. $product_id is still the pre-save
+			// lookup result here: 0 means this is a fresh create.
+			if ( 0 === $product_id ) {
+				$product->update_meta_data( '_sellmo_created', 'yes' );
+			}
+
 			$product_id = $product->save();
 			if ( $product_id <= 0 ) {
 				$this->last_error = [
@@ -874,7 +1007,15 @@ class Sellmo_Product_Sync {
 				return 0;
 			}
 
-			return (int) ( $inserted['term_id'] ?? 0 );
+			$new_term_id = (int) ( $inserted['term_id'] ?? 0 );
+
+			// Flag categories the plugin created so cleanup can remove them without
+			// touching categories the merchant made.
+			if ( $new_term_id > 0 ) {
+				add_term_meta( $new_term_id, '_sellmo_created', 'yes', true );
+			}
+
+			return $new_term_id;
 		}
 
 		if ( is_array( $existing ) ) {
