@@ -1032,6 +1032,13 @@ class Sellmo_Admin {
 		// when one is available and the product has no featured image yet.
 		$this->push_sellmo_image_to_wc( $sellmo_id, $sellmo_code, $wc_product_id );
 
+		// Stamp Sellmo join-key meta so the mapped product (and its variations)
+		// can be matched back to the catalogue by the stock/field sync passes.
+		$payload = $this->resolve_sellmo_payload( $sellmo_id, $sellmo_code );
+		if ( is_array( $payload ) ) {
+			( new Sellmo_Product_Sync() )->link_wc_product_meta( $wc_product_id, $payload );
+		}
+
 		Sellmo_Logger::log(
 			'product',
 			'pos_to_wc',
@@ -1926,6 +1933,49 @@ class Sellmo_Admin {
 		}
 
 		( new Sellmo_Product_Sync() )->set_product_image_from_url( $wc_product_id, $image_url );
+	}
+
+	/**
+	 * Resolve a Sellmo product payload by id or code.
+	 *
+	 * Prefers the staged mapper row's cached raw_payload (no API call); falls back
+	 * to the live catalogue when the row has no stored payload.
+	 *
+	 * @since  1.2.0
+	 * @param  string $sellmo_id   Sellmo product id.
+	 * @param  string $sellmo_code Sellmo product code (fallback lookup).
+	 * @return array<string, mixed>|null
+	 */
+	private function resolve_sellmo_payload( string $sellmo_id, string $sellmo_code ): ?array {
+		$row = '' !== $sellmo_id ? Sellmo_Product_Mapping::get_mapping_by_sellmo_id( $sellmo_id ) : null;
+		if ( null === $row && '' !== $sellmo_code ) {
+			$row = Sellmo_Product_Mapping::get_mapping_by_sellmo_code( $sellmo_code );
+		}
+
+		if ( is_array( $row ) && ! empty( $row['raw_payload'] ) ) {
+			$decoded = json_decode( (string) $row['raw_payload'], true );
+			if ( is_array( $decoded ) ) {
+				return $decoded;
+			}
+		}
+
+		$all_products = $this->get_all_sellmo_products();
+		if ( is_wp_error( $all_products ) ) {
+			return null;
+		}
+
+		foreach ( $all_products as $p ) {
+			if ( ! is_array( $p ) ) {
+				continue;
+			}
+			$p_id   = (string) ( $p['id'] ?? '' );
+			$p_code = (string) ( $p['product_code'] ?? '' );
+			if ( ( '' !== $sellmo_id && $p_id === $sellmo_id ) || ( '' !== $sellmo_code && $p_code === $sellmo_code ) ) {
+				return $p;
+			}
+		}
+
+		return null;
 	}
 
 	/**

@@ -144,6 +144,11 @@ class Sellmo_Stock_Sync_Pagination {
 
 		} while ( '' !== $cursor && $page < self::MAX_PAGES );
 
+		// Push price/category (and mapper-table columns) onto each mapped product,
+		// and backfill Sellmo join-key meta. Done here so "Sync Stock Now" also
+		// keeps mapped products' price and category in step with the POS catalogue.
+		$fields_synced = $this->apply_mapped_product_fields( $lookup['payloads'] ?? [] );
+
 		// Push the Sellmo catalogue image onto each mapped WooCommerce product.
 		// Mapped products are handled here (not in the stock loop) so the manual
 		// "Sync Stock Now" action also keeps their featured images up to date.
@@ -157,10 +162,11 @@ class Sellmo_Stock_Sync_Pagination {
 			'pos_to_wc',
 			$status,
 			sprintf(
-				'Stock sync completed. %d items synced, %d skipped, %d errors, %d mapped images updated.',
+				'Stock sync completed. %d items synced, %d skipped, %d errors, %d mapped fields updated, %d mapped images updated.',
 				$synced,
 				$skipped,
 				$errors,
+				$fields_synced,
 				$images_synced
 			)
 		);
@@ -192,6 +198,7 @@ class Sellmo_Stock_Sync_Pagination {
 			'products_by_id'   => [],
 			'variants_by_id'   => [],
 			'products_by_code' => [],
+			'payloads'         => [],
 		];
 
 		do {
@@ -234,6 +241,10 @@ class Sellmo_Stock_Sync_Pagination {
 					$lookup['products_by_code'][ $product_code ] = $entry;
 				}
 
+				// Retain the full payload so the mapped-product field pass can read
+				// price, category, and variant data without re-fetching /products.
+				$lookup['payloads'][] = $product;
+
 				$variants = isset( $product['variants'] ) && is_array( $product['variants'] ) ? $product['variants'] : [];
 				foreach ( $variants as $variant ) {
 					if ( ! is_array( $variant ) ) {
@@ -259,6 +270,34 @@ class Sellmo_Stock_Sync_Pagination {
 		} while ( '' !== $cursor && $page < $max_pages );
 
 		return $lookup;
+	}
+
+	/**
+	 * Push price/category/variant_count onto mapped products from the catalogue.
+	 *
+	 * Delegates each product to Sellmo_Product_Sync::sync_mapped_product_fields(),
+	 * which updates the live WooCommerce product and mirrors the values into the
+	 * mapper table. Non-mapped products are ignored.
+	 *
+	 * @since  1.2.0
+	 * @param  array<int, array<string, mixed>> $payloads Full /products payloads.
+	 * @return int Number of mapped products updated.
+	 */
+	private function apply_mapped_product_fields( array $payloads ): int {
+		if ( empty( $payloads ) ) {
+			return 0;
+		}
+
+		$product_sync = new Sellmo_Product_Sync();
+		$updated      = 0;
+
+		foreach ( $payloads as $payload ) {
+			if ( is_array( $payload ) && 'success' === $product_sync->sync_mapped_product_fields( $payload ) ) {
+				$updated++;
+			}
+		}
+
+		return $updated;
 	}
 
 	/**

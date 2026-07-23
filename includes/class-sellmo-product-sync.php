@@ -159,6 +159,157 @@ class Sellmo_Product_Sync {
 	}
 
 	/**
+	 * Stamp Sellmo join-key meta onto an existing WooCommerce product.
+	 *
+	 * Called when a Sellmo product is mapped to a pre-existing WooCommerce product
+	 * (the "map to existing" flow), which otherwise carries none of the meta the
+	 * stock/product sync relies on. Without these keys the sync cannot match the
+	 * product — or its variations — back to the Sellmo catalogue.
+	 *
+	 * Product name/description/price are intentionally NOT touched here: mapping to
+	 * an existing product must never clobber content the merchant already owns.
+	 * Variation join keys are matched by SKU == Sellmo variant product_code.
+	 *
+	 * @since  1.2.0
+	 * @param  int                  $wc_product_id  Target WooCommerce product ID.
+	 * @param  array<string, mixed> $sellmo_product Decoded Sellmo product payload.
+	 * @return void
+	 */
+	public function link_wc_product_meta( int $wc_product_id, array $sellmo_product ): void {
+		if ( $wc_product_id <= 0 ) {
+			return;
+		}
+
+		$product = wc_get_product( $wc_product_id );
+		if ( ! $product instanceof WC_Product ) {
+			return;
+		}
+
+		$salesplay_id = (string) ( $sellmo_product['id'] ?? '' );
+		$code         = (string) ( $sellmo_product['product_code'] ?? '' );
+
+		if ( '' !== $salesplay_id ) {
+			update_post_meta( $wc_product_id, '_salesplay_pos_product_id', $salesplay_id );
+		}
+		if ( '' !== $code ) {
+			update_post_meta( $wc_product_id, '_pos_product_code', $code );
+		}
+		// Opt the mapped product into sync so the stock/field passes act on it.
+		update_post_meta( $wc_product_id, '_sellmo_sync_enabled', 'yes' );
+
+		// Best-effort variation join keys: match each Sellmo variant to a WC
+		// variation by SKU == variant product_code.
+		$variants = isset( $sellmo_product['variants'] ) && is_array( $sellmo_product['variants'] )
+			? $sellmo_product['variants']
+			: [];
+
+		if ( empty( $variants ) || ! $product instanceof WC_Product_Variable ) {
+			return;
+		}
+
+		$variant_by_code = [];
+		foreach ( $variants as $variant ) {
+			if ( is_array( $variant ) && '' !== (string) ( $variant['product_code'] ?? '' ) ) {
+				$variant_by_code[ (string) $variant['product_code'] ] = $variant;
+			}
+		}
+
+		foreach ( $product->get_children() as $variation_id ) {
+			$variation = wc_get_product( (int) $variation_id );
+			if ( ! $variation instanceof WC_Product_Variation ) {
+				continue;
+			}
+
+			$sku = (string) $variation->get_sku();
+			if ( '' === $sku || ! isset( $variant_by_code[ $sku ] ) ) {
+				continue;
+			}
+
+			$variant = $variant_by_code[ $sku ];
+			update_post_meta( (int) $variation_id, '_salesplay_variant_id', (string) ( $variant['variant_id'] ?? '' ) );
+			update_post_meta( (int) $variation_id, '_pos_product_code', $sku );
+		}
+	}
+
+	/**
+	 * Push price + category from a Sellmo payload onto a MAPPED WooCommerce product.
+	 *
+	 * Used by the stock sync so "Sync Stock Now" also refreshes the price and
+	 * category of mapped products (stock itself flows through the stock sync's own
+	 * loop). Product name/description are left untouched. The mapper table's
+	 * cached price/category/variant_count columns are mirrored so the Product
+	 * Mapper list stays in step with the live product.
+	 *
+	 * @since  1.2.0
+	 * @param  array<string, mixed> $sellmo_product Decoded Sellmo product payload.
+	 * @return string 'success' | 'skipped' | 'error'
+	 */
+	public function sync_mapped_product_fields( array $sellmo_product ): string {
+		$mapping = Sellmo_Product_Mapping::get_mapping_for_sellmo_product( $sellmo_product );
+		if ( ! is_array( $mapping ) ) {
+			return 'skipped';
+		}
+
+		$wc_product_id = (int) ( $mapping['wc_product_id'] ?? 0 );
+		if ( $wc_product_id <= 0 ) {
+			return 'skipped';
+		}
+
+		$product = wc_get_product( $wc_product_id );
+		if ( ! $product instanceof WC_Product ) {
+			return 'error';
+		}
+
+		// Ensure join-key meta exists (backfills mappings made before meta stamping,
+		// so the stock pass can match this product and its variations this run).
+		$this->link_wc_product_meta( $wc_product_id, $sellmo_product );
+
+		try {
+			// Regular price: prefer the configured shop's price, fall back to selling_price.
+			$price = $this->extract_shop_price( $sellmo_product );
+			if ( null === $price && isset( $sellmo_product['selling_price'] ) ) {
+				$price = (float) $sellmo_product['selling_price'];
+			}
+			if ( null !== $price ) {
+				$product->set_regular_price( (string) $price );
+			}
+
+			// Sale price only when a discount is explicitly set.
+			if ( isset( $sellmo_product['discounted_price'] ) && (float) $sellmo_product['discounted_price'] > 0 ) {
+				$product->set_sale_price( (string) $sellmo_product['discounted_price'] );
+			} else {
+				$product->set_sale_price( '' );
+			}
+
+			$this->apply_product_category( $product, $sellmo_product );
+			$product->save();
+
+			$variant_count = isset( $sellmo_product['variants'] ) && is_array( $sellmo_product['variants'] )
+				? count( $sellmo_product['variants'] )
+				: 0;
+
+			Sellmo_Product_Mapping::update_catalogue_fields(
+				(string) ( $sellmo_product['id'] ?? '' ),
+				(string) ( $sellmo_product['product_code'] ?? '' ),
+				null !== $price ? (float) $price : null,
+				$this->resolve_sellmo_category_name( $sellmo_product ),
+				$variant_count
+			);
+
+			return 'success';
+		} catch ( \Throwable $e ) {
+			Sellmo_Logger::log(
+				'product',
+				'pos_to_wc',
+				'error',
+				"Mapped field update failed for WC product #{$wc_product_id}: " . $e->getMessage(),
+				(string) ( $sellmo_product['product_code'] ?? '' )
+			);
+			return 'error';
+		}
+	}
+
+	/**
 	 * Webhook-triggered single-product sync.
 	 *
 	 * Pages through the Sellmo products API until the item with the given

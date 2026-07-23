@@ -429,6 +429,70 @@ class Sellmo_Product_Mapping {
 	}
 
 	// =========================================================================
+	// Catalogue fields (price / category / variant_count)
+	// =========================================================================
+
+	/**
+	 * Refresh the cached catalogue columns on any row matching the Sellmo product.
+	 *
+	 * Keeps the Product Mapper list in step with the live product after a sync.
+	 * Matches by pos_product_id first, then pos_product_code. A null price leaves
+	 * the stored price untouched.
+	 *
+	 * @since  1.2.0
+	 * @param  string     $sellmo_product_id Sellmo master product id.
+	 * @param  string     $product_code      Sellmo product code (fallback match).
+	 * @param  float|null $price             New price, or null to leave unchanged.
+	 * @param  string     $category          New category name.
+	 * @param  int        $variant_count     New variant count.
+	 * @return int                           Number of rows updated.
+	 */
+	public static function update_catalogue_fields( string $sellmo_product_id, string $product_code, ?float $price, string $category, int $variant_count ): int {
+		self::ensure_table();
+		global $wpdb;
+
+		$sellmo_product_id = trim( $sellmo_product_id );
+		$product_code      = trim( $product_code );
+
+		$conditions = [];
+		$params     = [];
+
+		if ( '' !== $sellmo_product_id ) {
+			$conditions[] = 'pos_product_id = %s';
+			$params[]     = $sellmo_product_id;
+		}
+		if ( '' !== $product_code ) {
+			$conditions[] = 'pos_product_code = %s';
+			$params[]     = $product_code;
+		}
+
+		if ( empty( $conditions ) ) {
+			return 0;
+		}
+
+		$set    = [ 'category = %s', 'variant_count = %d', 'updated_at = %s' ];
+		$values = [ $category, $variant_count, current_time( 'mysql', true ) ];
+
+		if ( null !== $price ) {
+			array_unshift( $set, 'price = %f' );
+			array_unshift( $values, $price );
+		}
+
+		$table = self::table_name();
+		$where = implode( ' OR ', $conditions );
+		$set_sql = implode( ', ', $set );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return (int) $wpdb->query(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				"UPDATE `{$table}` SET {$set_sql} WHERE {$where}",
+				...array_merge( $values, $params )
+			)
+		);
+	}
+
+	// =========================================================================
 	// Stock
 	// =========================================================================
 

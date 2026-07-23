@@ -264,6 +264,11 @@ class Sellmo_Stock_Sync {
 			return [ 'success' => false, 'count' => 0, 'message' => $message ];
 		}
 
+		// Refresh price/category (and mapper-table columns) on mapped products, and
+		// backfill their Sellmo join-key meta, BEFORE the stock loop so the loop can
+		// match those products and their variations this same run.
+		$this->apply_mapped_product_fields( $lookup['payloads'] ?? [] );
+
 		foreach ( $inventory_records as $record ) {
 			$target = $this->resolve_inventory_target( $record, $lookup );
 
@@ -273,22 +278,6 @@ class Sellmo_Stock_Sync {
 
 			if ( null === $target ) {
 				// Inventory row not represented in /products IDs; ignore silently.
-				continue;
-			}
-
-			$mapping = $this->get_mapping_for_stock_item( $target );
-			if ( is_array( $mapping ) ) {
-				$skipped++;
-				Sellmo_Logger::log(
-					'stock',
-					'pos_to_wc',
-					'skipped',
-					sprintf(
-						'Product skipped because mapped to WooCommerce product #%d',
-						absint( $mapping['wc_product_id'] ?? 0 )
-					),
-					(string) ( $target['product_code'] ?? '' )
-				);
 				continue;
 			}
 
@@ -322,6 +311,34 @@ class Sellmo_Stock_Sync {
 			'count'   => $synced,
 			'message' => '',
 		];
+	}
+
+	/**
+	 * Push price/category/variant_count onto mapped products from the catalogue.
+	 *
+	 * Delegates each mapped product to Sellmo_Product_Sync, which updates the live
+	 * WooCommerce product and mirrors the values into the mapper table. Non-mapped
+	 * products are ignored (they are handled by the product sync, not this pass).
+	 *
+	 * @since  1.2.0
+	 * @param  array<int, array<string, mixed>> $payloads Full /products payloads.
+	 * @return int Number of mapped products updated.
+	 */
+	private function apply_mapped_product_fields( array $payloads ): int {
+		if ( empty( $payloads ) ) {
+			return 0;
+		}
+
+		$product_sync = new Sellmo_Product_Sync();
+		$updated      = 0;
+
+		foreach ( $payloads as $payload ) {
+			if ( is_array( $payload ) && 'success' === $product_sync->sync_mapped_product_fields( $payload ) ) {
+				$updated++;
+			}
+		}
+
+		return $updated;
 	}
 
 	/**
@@ -485,6 +502,7 @@ class Sellmo_Stock_Sync {
 			'products_by_id'   => [],
 			'variants_by_id'   => [],
 			'products_by_code' => [],
+			'payloads'         => [],
 		];
 
 		do {
@@ -542,6 +560,10 @@ class Sellmo_Stock_Sync {
 		if ( '' !== $product_code ) {
 			$lookup['products_by_code'][ $product_code ] = $product_entry;
 		}
+
+		// Retain the full payload so the mapped-product field pass can read price,
+		// category, and variant data without re-fetching /products.
+		$lookup['payloads'][] = $product;
 
 		$variants = $product_entry['variants'];
 		foreach ( $variants as $variant ) {
