@@ -126,6 +126,8 @@ class Sellmo_Product_Mapping {
   pos_product_code VARCHAR(191) NOT NULL DEFAULT '',
   pos_product_name VARCHAR(255) NOT NULL DEFAULT '',
   category            VARCHAR(191) NOT NULL DEFAULT '',
+  shop_id             VARCHAR(2048) NOT NULL DEFAULT '',
+  shop_name           VARCHAR(2048) NOT NULL DEFAULT '',
   price               DECIMAL(20,4) NOT NULL DEFAULT 0,
   variant_count       INT UNSIGNED NOT NULL DEFAULT 0,
   wc_product_id       BIGINT UNSIGNED NULL DEFAULT NULL,
@@ -214,32 +216,68 @@ class Sellmo_Product_Mapping {
 			ARRAY_A
 		);
 
-		if ( empty( $absent ) ) {
-			return 0;
-		}
-
 		$removed = 0;
-		foreach ( $absent as $row ) {
+
+		foreach ( (array) $absent as $row ) {
 			$wc_id = (int) ( $row['wc_product_id'] ?? 0 );
 
 			// Mapped row: delete the linked WooCommerce product (variations first).
 			if ( $wc_id > 0 ) {
-				$product = function_exists( 'wc_get_product' ) ? wc_get_product( $wc_id ) : null;
-				if ( $product instanceof WC_Product ) {
-					foreach ( $product->get_children() as $child_id ) {
-						wp_delete_post( (int) $child_id, true );
-					}
-					$product->delete( true );
-				} else {
-					wp_delete_post( $wc_id, true );
-				}
+				self::delete_wc_product( $wc_id );
 			}
 
 			$wpdb->delete( $table, [ 'id' => (int) $row['id'] ], [ '%d' ] );
 			$removed++;
 		}
 
+		// Second pass: sweep plugin-created WooCommerce products orphaned upstream.
+		// These carry the _salesplay_pos_product_id join key but have no live mapper
+		// row to reach them (deleted-and-recreated under the same code, left after a
+		// token change, or unmapped), so the row pass above misses them. Any such
+		// product whose POS id is no longer in the live catalogue is deleted.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- ids are prepared.
+		$orphan_ids = $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT pm.post_id
+				 FROM `{$wpdb->postmeta}` pm
+				 INNER JOIN `{$wpdb->posts}` p ON p.ID = pm.post_id AND p.post_type = 'product'
+				 WHERE pm.meta_key = '_salesplay_pos_product_id'
+				   AND pm.meta_value <> ''
+				   AND pm.meta_value NOT IN ( {$placeholders} )",
+				...$live
+			)
+		);
+
+		foreach ( (array) $orphan_ids as $wc_id ) {
+			self::delete_wc_product( (int) $wc_id );
+			$removed++;
+		}
+
 		return $removed;
+	}
+
+	/**
+	 * Delete a WooCommerce product and its variations by id.
+	 *
+	 * @since  1.2.0
+	 * @param  int $wc_id WooCommerce product id.
+	 * @return void
+	 */
+	private static function delete_wc_product( int $wc_id ): void {
+		if ( $wc_id <= 0 ) {
+			return;
+		}
+
+		$product = function_exists( 'wc_get_product' ) ? wc_get_product( $wc_id ) : null;
+		if ( $product instanceof WC_Product ) {
+			foreach ( $product->get_children() as $child_id ) {
+				wp_delete_post( (int) $child_id, true );
+			}
+			$product->delete( true );
+			return;
+		}
+
+		wp_delete_post( $wc_id, true );
 	}
 
 	/**
@@ -341,6 +379,24 @@ class Sellmo_Product_Mapping {
 		$add( 'stock_count', "stock_count INT NOT NULL DEFAULT 0" );
 		$add( 'stock_status', "stock_status TINYINT(1) NOT NULL DEFAULT 0" );
 		$add( 'category', "category VARCHAR(191) NOT NULL DEFAULT ''" );
+		$add( 'shop_id', "shop_id VARCHAR(2048) NOT NULL DEFAULT ''" );
+		$add( 'shop_name', "shop_name VARCHAR(2048) NOT NULL DEFAULT ''" );
+
+		// A product can be in many shops (stored comma-joined); widen the early
+		// VARCHAR(191) shop columns so multi-shop lists are never truncated.
+		foreach ( [ 'shop_id', 'shop_name' ] as $shop_col ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$type = (string) $wpdb->get_var( $wpdb->prepare(
+				"SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+				 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = %s",
+				$table,
+				$shop_col
+			) );
+			if ( false !== stripos( $type, 'varchar(191)' ) ) {
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				$wpdb->query( "ALTER TABLE `{$table}` MODIFY `{$shop_col}` VARCHAR(2048) NOT NULL DEFAULT ''" );
+			}
+		}
 		$add( 'price', "price DECIMAL(20,4) NOT NULL DEFAULT 0" );
 		$add( 'variant_count', "variant_count INT UNSIGNED NOT NULL DEFAULT 0" );
 		$add( 'raw_payload', "raw_payload LONGTEXT NULL" );
@@ -1036,6 +1092,8 @@ class Sellmo_Product_Mapping {
 				'pos_product_code' => (string) ( $fields['pos_product_code'] ?? '' ),
 				'pos_product_name' => self::clean_name( (string) ( $fields['pos_product_name'] ?? '' ) ),
 				'category'            => (string) ( $fields['category'] ?? '' ),
+				'shop_id'             => (string) ( $fields['shop_id'] ?? '' ),
+				'shop_name'           => (string) ( $fields['shop_name'] ?? '' ),
 				'price'               => (float) ( $fields['price'] ?? 0 ),
 				'variant_count'       => (int) ( $fields['variant_count'] ?? 0 ),
 				'wc_product_id'       => null,
@@ -1045,7 +1103,7 @@ class Sellmo_Product_Mapping {
 				'created_at'          => $now,
 				'updated_at'          => $now,
 			],
-			[ '%s', '%s', '%s', '%s', '%f', '%d', '%d', '%d', '%s', '%s', '%s', '%s' ]
+			[ '%s', '%s', '%s', '%s', '%s', '%s', '%f', '%d', '%d', '%d', '%s', '%s', '%s', '%s' ]
 		);
 	}
 
