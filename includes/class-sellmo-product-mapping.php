@@ -44,6 +44,65 @@ class Sellmo_Product_Mapping {
 	}
 
 	/**
+	 * Normalise a product name for storage.
+	 *
+	 * Product names never legitimately contain backslashes, but a historical
+	 * missing wp_unslash on the bulk mapper let a backslash accumulate before
+	 * every apostrophe on each run (Men's -> Men\'s -> Men\\\'s ...). Collapse
+	 * any such accrued escaping and trim.
+	 *
+	 * @since  1.2.0
+	 * @param  string $name Raw name.
+	 * @return string
+	 */
+	public static function clean_name( string $name ): string {
+		// Repeatedly strip slashes until stable — each pass removes one escaping level.
+		while ( false !== strpos( $name, '\\' ) ) {
+			$stripped = stripslashes( $name );
+			if ( $stripped === $name ) {
+				break;
+			}
+			$name = $stripped;
+		}
+
+		return trim( $name );
+	}
+
+	/**
+	 * One-time cleanup of names corrupted by the pre-fix bulk mapper.
+	 *
+	 * Runs once (guarded by an option flag) to repair rows already stored with
+	 * accumulated backslashes. Safe to call repeatedly.
+	 *
+	 * @since  1.2.0
+	 * @return void
+	 */
+	public static function maybe_clean_names(): void {
+		$flag = POS_Brand::option( 'names_cleaned_v1' );
+		if ( 'yes' === (string) get_option( $flag ) ) {
+			return;
+		}
+
+		self::ensure_table();
+
+		global $wpdb;
+		$table = self::table_name();
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$rows = $wpdb->get_results( "SELECT id, pos_product_name FROM `{$table}`", ARRAY_A );
+
+		foreach ( (array) $rows as $row ) {
+			$orig  = (string) ( $row['pos_product_name'] ?? '' );
+			$clean = self::clean_name( $orig );
+			if ( $clean !== $orig ) {
+				$wpdb->update( $table, [ 'pos_product_name' => $clean ], [ 'id' => (int) $row['id'] ], [ '%s' ], [ '%d' ] );
+			}
+		}
+
+		update_option( $flag, 'yes', false );
+	}
+
+	/**
 	 * Create the table if it does not exist.
 	 *
 	 * wc_product_id is nullable so staged (unmapped) rows can exist while the
@@ -580,7 +639,7 @@ class Sellmo_Product_Mapping {
 
 		$sellmo_product_id = trim( $sellmo_product_id );
 		$sellmo_code       = trim( $sellmo_code );
-		$sellmo_name       = trim( $sellmo_name );
+		$sellmo_name       = self::clean_name( $sellmo_name );
 
 		if ( '' === $sellmo_product_id || $wc_product_id <= 0 ) {
 			return false;
@@ -975,7 +1034,7 @@ class Sellmo_Product_Mapping {
 			[
 				'pos_product_id'   => $sellmo_product_id,
 				'pos_product_code' => (string) ( $fields['pos_product_code'] ?? '' ),
-				'pos_product_name' => (string) ( $fields['pos_product_name'] ?? '' ),
+				'pos_product_name' => self::clean_name( (string) ( $fields['pos_product_name'] ?? '' ) ),
 				'category'            => (string) ( $fields['category'] ?? '' ),
 				'price'               => (float) ( $fields['price'] ?? 0 ),
 				'variant_count'       => (int) ( $fields['variant_count'] ?? 0 ),

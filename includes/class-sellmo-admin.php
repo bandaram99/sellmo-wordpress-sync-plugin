@@ -1205,7 +1205,11 @@ class Sellmo_Admin {
 		}
 
 		$action = sanitize_key( wp_unslash( $_POST['bulk_action'] ?? '' ) );
-		$rows   = isset( $_POST['rows'] ) ? (array) $_POST['rows'] : [];
+		// wp_unslash before sanitising — WordPress slashes $_POST (including nested
+		// rows), and without this the product name accrues a backslash before every
+		// apostrophe on each run (Men's -> Men\'s -> Men\\\'s ...).
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitized per field below.
+		$rows   = isset( $_POST['rows'] ) ? (array) wp_unslash( $_POST['rows'] ) : [];
 
 		if ( ! in_array( $action, [ 'unmap', 'auto_map_sku' ], true ) || empty( $rows ) ) {
 			wp_send_json_error( [ 'message' => __( 'Invalid bulk mapper request.', 'sellmo-woocommerce' ) ] );
