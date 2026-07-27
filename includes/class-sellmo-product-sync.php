@@ -264,6 +264,11 @@ class Sellmo_Product_Sync {
 		// so the stock pass can match this product and its variations this run).
 		$this->link_wc_product_meta( $wc_product_id, $sellmo_product );
 
+		// Snapshot the current WooCommerce values so we can log exactly what changed.
+		$old_regular = (string) $product->get_regular_price();
+		$old_sale    = (string) $product->get_sale_price();
+		$old_cats    = $this->wc_category_names( $wc_product_id );
+
 		try {
 			// Regular price: prefer the configured shop's price, fall back to selling_price.
 			$price = $this->extract_shop_price( $sellmo_product );
@@ -283,6 +288,8 @@ class Sellmo_Product_Sync {
 
 			$this->apply_product_category( $product, $sellmo_product );
 			$product->save();
+
+			$this->log_field_changes( $product, $wc_product_id, $sellmo_product, $old_regular, $old_sale, $old_cats );
 
 			// Update each existing variation's price from its Sellmo variant.
 			// Variant stock flows through the stock loop; this covers price.
@@ -318,6 +325,86 @@ class Sellmo_Product_Sync {
 			);
 			return 'error';
 		}
+	}
+
+	/**
+	 * Comma-separated product_cat term names for a WooCommerce product.
+	 *
+	 * Uses wp_get_post_terms (uncached) so a read taken right after a category
+	 * change reflects the new terms, not a stale object cache.
+	 *
+	 * @since  1.3.0
+	 * @param  int $wc_product_id WooCommerce product id.
+	 * @return string
+	 */
+	private function wc_category_names( int $wc_product_id ): string {
+		$names = wp_get_post_terms( $wc_product_id, 'product_cat', [ 'fields' => 'names' ] );
+
+		return is_array( $names ) ? implode( ', ', $names ) : '';
+	}
+
+	/**
+	 * Log each price/category field that changed on a mapped WooCommerce product.
+	 *
+	 * Only fields that actually changed are reported, each as "old → new", so the
+	 * Sync Log spells out exactly what a stock sync altered on the store side.
+	 *
+	 * @since  1.3.0
+	 * @param  WC_Product           $product        Saved WooCommerce product.
+	 * @param  int                  $wc_product_id  WooCommerce product id.
+	 * @param  array<string, mixed> $sellmo_product Source POS payload (for item id).
+	 * @param  string               $old_regular    Regular price before the update.
+	 * @param  string               $old_sale       Sale price before the update.
+	 * @param  string               $old_cats       Category names before the update.
+	 * @return void
+	 */
+	private function log_field_changes( WC_Product $product, int $wc_product_id, array $sellmo_product, string $old_regular, string $old_sale, string $old_cats ): void {
+		$new_regular = (string) $product->get_regular_price();
+		$new_sale    = (string) $product->get_sale_price();
+		$new_cats    = $this->wc_category_names( $wc_product_id );
+
+		$changes = [];
+
+		if ( $old_regular !== $new_regular ) {
+			$changes[] = sprintf(
+				'regular price %s → %s',
+				'' !== $old_regular ? $old_regular : 'n/a',
+				'' !== $new_regular ? $new_regular : 'n/a'
+			);
+		}
+
+		if ( $old_sale !== $new_sale ) {
+			$changes[] = sprintf(
+				'sale price %s → %s',
+				'' !== $old_sale ? $old_sale : 'none',
+				'' !== $new_sale ? $new_sale : 'none'
+			);
+		}
+
+		if ( $old_cats !== $new_cats ) {
+			$changes[] = sprintf(
+				'category "%s" → "%s"',
+				'' !== $old_cats ? $old_cats : 'none',
+				'' !== $new_cats ? $new_cats : 'none'
+			);
+		}
+
+		if ( empty( $changes ) ) {
+			return;
+		}
+
+		Sellmo_Logger::log(
+			'product',
+			'pos_to_wc',
+			'success',
+			sprintf(
+				'Fields updated for "%s" (WC #%d): %s.',
+				$product->get_name(),
+				$wc_product_id,
+				implode( '; ', $changes )
+			),
+			(string) ( $sellmo_product['product_code'] ?? '' )
+		);
 	}
 
 	/**

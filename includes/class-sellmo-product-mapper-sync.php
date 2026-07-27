@@ -81,7 +81,7 @@ class Sellmo_Product_Mapper_Sync {
 
 		// id -> shop_name map from /shops, so each staged row can carry a
 		// human-readable shop name alongside the id pulled from the product.
-		$shop_names = $this->fetch_shop_names( $api );
+		$shop_names = Sellmo_Product_Mapping::fetch_shop_names( $api );
 
 		// Snapshot of already-staged ids so membership is O(1), not a query per row.
 		$existing = Sellmo_Product_Mapping::get_existing_id_set();
@@ -144,7 +144,7 @@ class Sellmo_Product_Mapper_Sync {
 					continue;
 				}
 
-				[ $shop_ids, $shop_names_csv ] = $this->resolve_available_shops( $product, $shop_names );
+				[ $shop_ids, $shop_names_csv ] = Sellmo_Product_Mapping::resolve_available_shops( $product, $shop_names );
 
 				$ok = Sellmo_Product_Mapping::insert_new( [
 					'pos_product_id'   => $sellmo_id,
@@ -181,6 +181,11 @@ class Sellmo_Product_Mapper_Sync {
 			$removed = Sellmo_Product_Mapping::reconcile_absent( array_keys( $seen_ids ) );
 		}
 
+		// Enforce the selected-shop scope: products no longer in the selected shop
+		// have their WooCommerce product removed and are un-mapped (the mapper row
+		// is kept and flagged as belonging to another shop).
+		$out_of_shop = Sellmo_Product_Mapping::enforce_selected_shop_scope();
+
 		Sellmo_Settings::set( 'last_product_sync', [
 			'time'   => time(),
 			'status' => 'success',
@@ -191,18 +196,25 @@ class Sellmo_Product_Mapper_Sync {
 			'product',
 			'pos_to_wc',
 			'success',
-			sprintf( '%d new products staged in mapper, %d skipped, %d removed (deleted in POS).', $inserted, $skipped, $removed )
+			sprintf(
+				'%d new products staged in mapper, %d skipped, %d removed (deleted in POS), %d removed from WooCommerce (another shop).',
+				$inserted,
+				$skipped,
+				$removed,
+				$out_of_shop
+			)
 		);
 
 		return [
 			'success' => true,
 			'count'   => $inserted,
 			'message' => sprintf(
-				/* translators: 1: inserted count, 2: skipped count, 3: removed count */
-				__( '%1$d new products added to the Product Mapper. %2$d already present. %3$d removed (deleted in POS).', 'sellmo-woocommerce' ),
+				/* translators: 1: inserted count, 2: skipped count, 3: removed count, 4: out-of-shop count */
+				__( '%1$d new products added to the Product Mapper. %2$d already present. %3$d removed (deleted in POS). %4$d removed from WooCommerce (belong to another shop).', 'sellmo-woocommerce' ),
 				$inserted,
 				$skipped,
-				$removed
+				$removed,
+				$out_of_shop
 			),
 		];
 	}
@@ -273,75 +285,5 @@ class Sellmo_Product_Mapper_Sync {
 			return (float) $shops[0]['price'];
 		}
 		return isset( $product['selling_price'] ) ? (float) $product['selling_price'] : 0.0;
-	}
-
-	/**
-	 * Collect every shop the product is available for sale in.
-	 *
-	 * A product can belong to multiple shops; only those with a truthy
-	 * available_for_sale are stored. Returns the ids and their matching names
-	 * (from the /shops map) as two comma-separated strings, aligned by position.
-	 *
-	 * @since  1.3.0
-	 * @param  array<string, mixed>  $product    Product payload.
-	 * @param  array<string, string> $shop_names id -> shop_name map from /shops.
-	 * @return array{0: string, 1: string} [ shop_ids_csv, shop_names_csv ]
-	 */
-	private function resolve_available_shops( array $product, array $shop_names ): array {
-		$shops = isset( $product['shops'] ) && is_array( $product['shops'] ) ? $product['shops'] : [];
-
-		$ids   = [];
-		$names = [];
-		foreach ( $shops as $shop ) {
-			if ( ! is_array( $shop ) ) {
-				continue;
-			}
-
-			// Only store shops the product is actually sellable in.
-			if ( array_key_exists( 'available_for_sale', $shop ) && ! (bool) $shop['available_for_sale'] ) {
-				continue;
-			}
-
-			$id = (string) ( $shop['shop_id'] ?? '' );
-			if ( '' === $id || in_array( $id, $ids, true ) ) {
-				continue;
-			}
-
-			$ids[]   = $id;
-			$names[] = $shop_names[ $id ] ?? '';
-		}
-
-		return [ implode( ',', $ids ), implode( ',', $names ) ];
-	}
-
-	/**
-	 * Build an id -> shop_name map from the /shops endpoint.
-	 *
-	 * Failures are non-fatal: an empty map just leaves shop_name blank, so a
-	 * shops-endpoint hiccup never blocks the product sync.
-	 *
-	 * @since  1.3.0
-	 * @param  Sellmo_API $api API client.
-	 * @return array<string, string>
-	 */
-	private function fetch_shop_names( Sellmo_API $api ): array {
-		$response = $api->get_shops();
-		if ( is_wp_error( $response ) ) {
-			return [];
-		}
-
-		$shops = isset( $response['shops'] ) && is_array( $response['shops'] ) ? $response['shops'] : [];
-		$map   = [];
-		foreach ( $shops as $shop ) {
-			if ( ! is_array( $shop ) ) {
-				continue;
-			}
-			$id = (string) ( $shop['id'] ?? '' );
-			if ( '' !== $id ) {
-				$map[ $id ] = (string) ( $shop['shop_name'] ?? '' );
-			}
-		}
-
-		return $map;
 	}
 }

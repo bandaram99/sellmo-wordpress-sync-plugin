@@ -129,6 +129,7 @@ $mapper_stats = Sellmo_Product_Mapping::get_dashboard_stats();
 		<p id="sellmo-mapper-error-text"></p>
 	</div>
 
+	<div class="sellmo-mapper-table-wrap">
 	<table id="sellmo-mapper-table" class="wp-list-table widefat fixed striped sellmo-mapper-table" style="display:none;">
 		<thead>
 			<tr>
@@ -157,6 +158,7 @@ $mapper_stats = Sellmo_Product_Mapping::get_dashboard_stats();
 			</tr>
 		</tfoot>
 	</table>
+	</div>
 
 	<div id="sellmo-mapper-pagination" class="tablenav bottom" style="display:none;">
 		<div class="tablenav-pages">

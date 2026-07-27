@@ -157,15 +157,20 @@ class Sellmo_Scheduler {
 	/**
 	 * WP-Cron callback for product sync.
 	 *
-	 * Instantiates Sellmo_Product_Sync and delegates to run_sync(), which
-	 * re-checks the enabled setting before doing any work.
+	 * Runs the incremental mapper sync: new POS products are staged into the
+	 * Product Mapper and deletions reconciled, but nothing is pushed to
+	 * WooCommerce — products only reach WooCommerce once explicitly mapped or
+	 * imported from the Product Mapper.
 	 *
 	 * @since  1.0.0
 	 * @return void
 	 */
 	public function run_product_sync(): void {
-		$sync = new Sellmo_Product_Sync();
-		$sync->run_sync();
+		if ( 'yes' !== (string) Sellmo_Settings::get( 'product_sync_enabled' ) ) {
+			return;
+		}
+
+		( new Sellmo_Product_Mapper_Sync() )->run_incremental_sync();
 	}
 
 	// -------------------------------------------------------------------------

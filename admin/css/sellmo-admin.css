@@ -209,6 +209,10 @@
 	border-radius: 3px;
 	font-size: 12px;
 	font-weight: 500;
+
+	white-space: normal; 
+	word-break: break-word; 
+	max-width: 100%;
 }
 
 .sellmo-result-badge.success {
@@ -464,21 +468,42 @@
 	color: #1d2327;
 }
 
-.sellmo-mapper-table .column-sellmo-product { width: 220px; }
-.sellmo-mapper-table .column-sellmo-code    { width: 120px; }
-.sellmo-mapper-table .column-sellmo-category{ width: 130px; }
-.sellmo-mapper-table .column-sellmo-price   { width: 90px; }
-.sellmo-mapper-table .column-wc-product     { width: 200px; }
-.sellmo-mapper-table .column-sellmo-status  { width: 120px; }
-.sellmo-mapper-table .column-sellmo-actions { width: 260px; }
+/*
+ * Percentage widths (not pixels) so fixed layout always sums to 100% and
+ * scales fluidly with the viewport. The table's min-width (below) keeps them
+ * usable on narrow screens; the wrapper scrolls instead of crushing columns.
+ */
+.sellmo-mapper-table .column-sellmo-product  { width: 18%; }
+.sellmo-mapper-table .column-sellmo-code     { width: 9%;  }
+.sellmo-mapper-table .column-sellmo-category { width: 11%; }
+.sellmo-mapper-table .column-sellmo-price    { width: 7%;  }
+.sellmo-mapper-table .column-wc-product      { width: 18%; }
+.sellmo-mapper-table .column-sellmo-status   { width: 15%; }
+.sellmo-mapper-table .column-sellmo-actions  { width: 20%; }
+
+/* Horizontal-scroll wrapper: on screens too narrow for all columns the table
+   scrolls instead of overflowing content onto the next column. */
+.sellmo-mapper-table-wrap {
+	width: 100%;
+	overflow-x: auto;
+}
 
 .sellmo-mapper-table {
 	table-layout: fixed;
 	width: 100%;
+	min-width: 1040px;
 }
 
 .sellmo-mapper-table td {
 	vertical-align: middle;
+}
+
+/* Truncate long text cells inside their column instead of spilling over. */
+.sellmo-mapper-table .sellmo-mapper-product-cell,
+.sellmo-mapper-table .sellmo-mapper-category-cell {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .sellmo-mapper-table .sellmo-mapper-wc-select {
@@ -504,12 +529,17 @@
 }
 
 .sellmo-mapper-table .sellmo-mapper-status-cell {
-	white-space: nowrap;
-	min-width: 110px;
+	white-space: normal;
 }
 
-.sellmo-mapper-table .sellmo-mapper-actions-cell {
-	min-width: 200px;
+/* Let long status labels (e.g. "Another shop (No company2)") wrap inside the
+   column instead of overflowing into the Action column. */
+.sellmo-mapper-table .sellmo-mapper-status-cell .sellmo-result-badge {
+	display: inline-block;
+	max-width: 100%;
+	white-space: normal;
+	word-break: break-word;
+	line-height: 1.4;
 }
 
 .sellmo-mapper-actions-wrap {

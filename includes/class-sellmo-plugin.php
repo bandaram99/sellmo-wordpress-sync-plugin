@@ -155,18 +155,21 @@ class Sellmo_Plugin {
 			return;
 		}
 
+		$css_path = SELLMO_WC_PATH . 'admin/css/sellmo-admin.css';
+		$js_path  = SELLMO_WC_PATH . 'admin/js/sellmo-admin.js';
+
 		wp_enqueue_style(
 			'sellmo-admin',
 			SELLMO_WC_URL . 'admin/css/sellmo-admin.css',
 			[],
-			SELLMO_WC_VERSION
+			file_exists( $css_path ) ? filemtime( $css_path ) : SELLMO_WC_VERSION
 		);
 
 		wp_enqueue_script(
 			'sellmo-admin',
 			SELLMO_WC_URL . 'admin/js/sellmo-admin.js',
 			[ 'jquery' ],
-			SELLMO_WC_VERSION,
+			file_exists( $js_path ) ? filemtime( $js_path ) : SELLMO_WC_VERSION,
 			true
 		);
 	}

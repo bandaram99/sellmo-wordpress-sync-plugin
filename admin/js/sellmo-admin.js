@@ -1268,6 +1268,27 @@ var sellmoSel = '<select class="sellmo-sellmo-select2 sellmo-mapper-sellmo-selec
 					+ '</tr>';
 			}
 
+			// Out-of-shop row: product belongs to a shop other than the selected one.
+			// It stays listed for reference but cannot be mapped or imported here.
+			if ( false === row.in_selected_shop ) {
+				var otherShopName = escHtml( String( row.shop_name || '' ) );
+				var otherBadge    = '<span class="sellmo-result-badge skipped">'
+					+ escHtml( i18n.anotherShop || 'Another shop' )
+					+ ( otherShopName ? ' (' + otherShopName + ')' : '' )
+					+ '</span>';
+
+				return '<tr data-sellmo-id="' + sellmoId + '" data-sellmo-code="' + sellmoCode + '" data-sellmo-name="' + sellmoName + '">'
+					+ '<th class="check-column"><input type="checkbox" class="sellmo-mapper-checkbox" disabled></th>'
+					+ '<td class="sellmo-mapper-product-cell"><strong>' + sellmoName + '</strong></td>'
+					+ '<td class="sellmo-mapper-code-cell"><code>' + sellmoCode + '</code></td>'
+					+ '<td class="sellmo-mapper-category-cell">' + category + '</td>'
+					+ '<td class="sellmo-mapper-price-cell">' + ( price > 0 ? escHtml( price.toFixed( 2 ) ) : '—' ) + '</td>'
+					+ '<td class="sellmo-mapper-wc-cell">—</td>'
+					+ '<td class="sellmo-mapper-status-cell">' + otherBadge + '</td>'
+					+ '<td class="sellmo-mapper-actions-cell">—</td>'
+					+ '</tr>';
+			}
+
 			// Build the WC product list for the custom searchable dropdown.
 			// Start with a blank "—" option.
 			var wcOptions = [ { id: 0, label: '—' } ];

@@ -120,13 +120,36 @@ class Sellmo_Stock_Sync_Pagination {
 					$product = wc_get_product( $wc_product_id );
 
 					if ( $product ) {
+						$old_qty    = $product->get_stock_quantity();
+						$old_status = (string) $product->get_stock_status();
+						$new_status = $in_stock > 0 ? 'instock' : 'outofstock';
+
 						try {
 							$product->set_manage_stock( true );
 							$product->set_stock_quantity( $in_stock );
-							$product->set_stock_status( $in_stock > 0 ? 'instock' : 'outofstock' );
+							$product->set_stock_status( $new_status );
 							$product->save();
-							
+
 							$synced++;
+
+							// Log only when something actually changed on the WC product.
+							if ( (int) $old_qty !== $in_stock || $old_status !== $new_status ) {
+								Sellmo_Logger::log(
+									'stock',
+									'pos_to_wc',
+									'success',
+									sprintf(
+										'Stock updated for "%s" (WC #%d): quantity %s → %d, status %s → %s.',
+										$product->get_name(),
+										$wc_product_id,
+										null === $old_qty ? 'unmanaged' : (string) (int) $old_qty,
+										$in_stock,
+										'' !== $old_status ? $old_status : 'n/a',
+										$new_status
+									),
+									$product_code ?: $sellmo_id
+								);
+							}
 						} catch ( Exception $e ) {
 							$errors++;
 							Sellmo_Logger::log(
@@ -155,6 +178,11 @@ class Sellmo_Stock_Sync_Pagination {
 		// keeps mapped products' price and category in step with the POS catalogue.
 		$fields_synced = $this->apply_mapped_product_fields( $lookup['payloads'] ?? [] );
 
+		// Refresh each row's stored shop availability (shop_id/shop_name) from the
+		// fresh /products payloads, so a shop toggled available/unavailable in the
+		// POS is reflected in the mapper table alongside the price/stock update.
+		$shops_synced = $this->apply_shop_availability( $lookup['payloads'] ?? [] );
+
 		// Push the Sellmo catalogue image onto each mapped WooCommerce product.
 		// Mapped products are handled here (not in the stock loop) so the manual
 		// "Sync Stock Now" action also keeps their featured images up to date.
@@ -168,12 +196,13 @@ class Sellmo_Stock_Sync_Pagination {
 			'pos_to_wc',
 			$status,
 			sprintf(
-				'Stock sync completed. %d items synced, %d skipped, %d errors, %d mapped fields updated, %d mapped images updated.',
+				'Stock sync completed. %d items synced, %d skipped, %d errors, %d mapped fields updated, %d mapped images updated, %d shop-availability rows updated.',
 				$synced,
 				$skipped,
 				$errors,
 				$fields_synced,
-				$images_synced
+				$images_synced,
+				$shops_synced
 			)
 		);
 
@@ -301,6 +330,63 @@ class Sellmo_Stock_Sync_Pagination {
 			if ( is_array( $payload ) && 'success' === $product_sync->sync_mapped_product_fields( $payload ) ) {
 				$updated++;
 			}
+		}
+
+		return $updated;
+	}
+
+	/**
+	 * Refresh stored shop availability (shop_id/shop_name) for every product.
+	 *
+	 * Recomputes each product's available-for-sale shops from the fresh /products
+	 * payload and overwrites the mapper row's shop columns, so a shop toggled in
+	 * the POS is reflected. Covers staged and mapped rows alike (matched by id/code).
+	 *
+	 * @since  1.3.0
+	 * @param  array<int, array<string, mixed>> $payloads Full /products payloads.
+	 * @return int Number of rows updated.
+	 */
+	private function apply_shop_availability( array $payloads ): int {
+		if ( empty( $payloads ) ) {
+			return 0;
+		}
+
+		$shop_names = Sellmo_Product_Mapping::fetch_shop_names( new Sellmo_API() );
+		$updated    = 0;
+
+		foreach ( $payloads as $payload ) {
+			if ( ! is_array( $payload ) ) {
+				continue;
+			}
+
+			$sellmo_id = (string) ( $payload['id'] ?? '' );
+			$code      = (string) ( $payload['product_code'] ?? '' );
+
+			[ $shop_ids, $shop_names_csv ] = Sellmo_Product_Mapping::resolve_available_shops( $payload, $shop_names );
+
+			// Compare against what is stored so we only write (and log) real changes.
+			// update_shops always bumps updated_at, so its affected-row count can't
+			// tell a genuine availability change from a no-op.
+			$before = Sellmo_Product_Mapping::get_row_shops( $sellmo_id, $code );
+			if ( null === $before || ( $before['shop_id'] === $shop_ids && $before['shop_name'] === $shop_names_csv ) ) {
+				continue;
+			}
+
+			Sellmo_Product_Mapping::update_shops( $sellmo_id, $code, $shop_ids, $shop_names_csv );
+			$updated++;
+
+			Sellmo_Logger::log(
+				'stock',
+				'pos_to_wc',
+				'success',
+				sprintf(
+					'Shop availability updated for "%s": [%s] → [%s].',
+					(string) ( $payload['product_name'] ?? $code ),
+					'' !== $before['shop_name'] ? $before['shop_name'] : 'none',
+					'' !== $shop_names_csv ? $shop_names_csv : 'none'
+				),
+				$code ?: $sellmo_id
+			);
 		}
 
 		return $updated;

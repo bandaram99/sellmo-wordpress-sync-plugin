@@ -770,6 +770,7 @@ class Sellmo_Admin {
 					),
 					'mapperBulkHint'     => __( 'Please select a mapper bulk action.', 'sellmo-woocommerce' ),
 					'mapperSelectRows'  => __( 'Please select at least one row.', 'sellmo-woocommerce' ),
+					'anotherShop'       => __( 'Another shop', 'sellmo-woocommerce' ),
 				],
 			]
 		);
@@ -827,6 +828,8 @@ class Sellmo_Admin {
 				}
 			}
 
+			$shop_id_csv = (string) ( $product['shop_id'] ?? '' );
+
 			$row = [
 				'sellmo_id'       => $sellmo_id,
 				'sellmo_name'     => $name,
@@ -837,6 +840,8 @@ class Sellmo_Admin {
 				'wc_product_label'=> $wc_label,
 				'wc_edit_url'     => $wc_edit_url,
 				'status'          => $is_mapped ? 'mapped' : 'not_mapped',
+				'shop_name'       => (string) ( $product['shop_name'] ?? '' ),
+				'in_selected_shop'=> Sellmo_Product_Mapping::is_in_selected_shop( $shop_id_csv ),
 			];
 
 			// Only one mapper row can exist per product code.
@@ -1020,6 +1025,10 @@ class Sellmo_Admin {
 			wp_send_json_error( [ 'message' => __( 'WooCommerce product does not exist.', 'sellmo-woocommerce' ) ] );
 		}
 
+		if ( $this->product_in_another_shop( $sellmo_id, $sellmo_code ) ) {
+			wp_send_json_error( [ 'message' => __( 'This product belongs to another shop and cannot be mapped into the selected shop.', 'sellmo-woocommerce' ) ] );
+		}
+
 		$was_mapped = Sellmo_Product_Mapping::get_mapping_by_sellmo_id( $sellmo_id );
 
 		if ( ! Sellmo_Product_Mapping::upsert_mapping( $sellmo_id, $sellmo_code, $sellmo_name, $wc_product_id ) ) {
@@ -1090,6 +1099,10 @@ class Sellmo_Admin {
 		}
 		if ( is_array( $existing ) ) {
 			wp_send_json_error( [ 'message' => __( 'Product is already mapped.', 'sellmo-woocommerce' ) ] );
+		}
+
+		if ( $this->product_in_another_shop( $sellmo_id, $sellmo_code ) ) {
+			wp_send_json_error( [ 'message' => __( 'This product belongs to another shop and cannot be imported into the selected shop.', 'sellmo-woocommerce' ) ] );
 		}
 
 		// Locate the Sellmo product payload in the cached catalogue.
@@ -2091,6 +2104,24 @@ class Sellmo_Admin {
 		}
 
 		return $map;
+	}
+
+	/**
+	 * Whether a staged product belongs to a shop other than the selected one.
+	 *
+	 * Used to block mapping/importing products that are not sold in the shop
+	 * chosen in settings. Returns false when there is no matching mapper row or
+	 * no shop is selected (nothing to enforce).
+	 *
+	 * @since  1.3.0
+	 * @param  string $sellmo_id   Sellmo product id.
+	 * @param  string $sellmo_code Sellmo product code (fallback match).
+	 * @return bool
+	 */
+	private function product_in_another_shop( string $sellmo_id, string $sellmo_code ): bool {
+		$row = Sellmo_Product_Mapping::get_row_shops( $sellmo_id, $sellmo_code );
+
+		return is_array( $row ) && ! Sellmo_Product_Mapping::is_in_selected_shop( (string) $row['shop_id'] );
 	}
 
 	/**

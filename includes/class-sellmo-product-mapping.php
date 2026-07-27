@@ -608,6 +608,251 @@ class Sellmo_Product_Mapping {
 	}
 
 	// =========================================================================
+	// Shops
+	// =========================================================================
+
+	/**
+	 * Build an id -> shop_name map from the /shops endpoint.
+	 *
+	 * Failures are non-fatal: an empty map just leaves shop_name blank, so a
+	 * /shops hiccup never blocks a sync.
+	 *
+	 * @since  1.3.0
+	 * @param  Sellmo_API $api API client.
+	 * @return array<string, string>
+	 */
+	public static function fetch_shop_names( Sellmo_API $api ): array {
+		$response = $api->get_shops();
+		if ( is_wp_error( $response ) ) {
+			return [];
+		}
+
+		$shops = isset( $response['shops'] ) && is_array( $response['shops'] ) ? $response['shops'] : [];
+		$map   = [];
+		foreach ( $shops as $shop ) {
+			if ( ! is_array( $shop ) ) {
+				continue;
+			}
+			$id = (string) ( $shop['id'] ?? '' );
+			if ( '' !== $id ) {
+				$map[ $id ] = (string) ( $shop['shop_name'] ?? '' );
+			}
+		}
+
+		return $map;
+	}
+
+	/**
+	 * Collect every shop a product is available for sale in.
+	 *
+	 * A product can belong to multiple shops; only those with a truthy
+	 * available_for_sale are kept (a missing flag counts as available). Returns
+	 * the ids and their matching names (from the /shops map) as two
+	 * comma-separated strings, aligned by position.
+	 *
+	 * @since  1.3.0
+	 * @param  array<string, mixed>  $product    Product payload.
+	 * @param  array<string, string> $shop_names id -> shop_name map from /shops.
+	 * @return array{0: string, 1: string} [ shop_ids_csv, shop_names_csv ]
+	 */
+	public static function resolve_available_shops( array $product, array $shop_names ): array {
+		$shops = isset( $product['shops'] ) && is_array( $product['shops'] ) ? $product['shops'] : [];
+
+		$ids   = [];
+		$names = [];
+		foreach ( $shops as $shop ) {
+			if ( ! is_array( $shop ) ) {
+				continue;
+			}
+
+			// Only keep shops the product is actually sellable in.
+			if ( array_key_exists( 'available_for_sale', $shop ) && ! (bool) $shop['available_for_sale'] ) {
+				continue;
+			}
+
+			$id = (string) ( $shop['shop_id'] ?? '' );
+			if ( '' === $id || in_array( $id, $ids, true ) ) {
+				continue;
+			}
+
+			$ids[]   = $id;
+			$names[] = $shop_names[ $id ] ?? '';
+		}
+
+		return [ implode( ',', $ids ), implode( ',', $names ) ];
+	}
+
+	/**
+	 * Read the stored shop id/name list for the row matching a product.
+	 *
+	 * Matches by pos_product_id first, then pos_product_code. Returns null when
+	 * no row matches (product not staged), so callers can skip it.
+	 *
+	 * @since  1.3.0
+	 * @param  string $sellmo_product_id Sellmo master product id.
+	 * @param  string $product_code      Sellmo product code (fallback match).
+	 * @return array{shop_id: string, shop_name: string}|null
+	 */
+	public static function get_row_shops( string $sellmo_product_id, string $product_code ): ?array {
+		$row = self::find_row_by_sellmo_id( trim( $sellmo_product_id ) );
+		if ( ! is_array( $row ) && '' !== trim( $product_code ) ) {
+			$row = self::find_row_by_sellmo_code( trim( $product_code ) );
+		}
+		if ( ! is_array( $row ) ) {
+			return null;
+		}
+
+		return [
+			'shop_id'   => (string) ( $row['shop_id'] ?? '' ),
+			'shop_name' => (string) ( $row['shop_name'] ?? '' ),
+		];
+	}
+
+	/**
+	 * Overwrite the stored shop id/name list on any row matching the product.
+	 *
+	 * Matches by pos_product_id and/or pos_product_code. An empty list is a valid
+	 * update — it means the product is no longer available for sale in any shop.
+	 *
+	 * @since  1.3.0
+	 * @param  string $sellmo_product_id Sellmo master product id.
+	 * @param  string $product_code      Sellmo product code (fallback match).
+	 * @param  string $shop_ids          Comma-separated shop ids.
+	 * @param  string $shop_names        Comma-separated shop names.
+	 * @return int                       Number of rows updated.
+	 */
+	public static function update_shops( string $sellmo_product_id, string $product_code, string $shop_ids, string $shop_names ): int {
+		self::ensure_table();
+		global $wpdb;
+
+		$sellmo_product_id = trim( $sellmo_product_id );
+		$product_code      = trim( $product_code );
+
+		$conditions = [];
+		$params     = [];
+
+		if ( '' !== $sellmo_product_id ) {
+			$conditions[] = 'pos_product_id = %s';
+			$params[]     = $sellmo_product_id;
+		}
+		if ( '' !== $product_code ) {
+			$conditions[] = 'pos_product_code = %s';
+			$params[]     = $product_code;
+		}
+
+		if ( empty( $conditions ) ) {
+			return 0;
+		}
+
+		$table = self::table_name();
+		$where = implode( ' OR ', $conditions );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return (int) $wpdb->query(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				"UPDATE `{$table}` SET shop_id = %s, shop_name = %s, updated_at = %s WHERE {$where}",
+				$shop_ids,
+				$shop_names,
+				current_time( 'mysql', true ),
+				...$params
+			)
+		);
+	}
+
+	/**
+	 * The shop id selected in plugin settings (empty when none chosen).
+	 *
+	 * @since  1.3.0
+	 * @return string
+	 */
+	public static function selected_shop_id(): string {
+		return trim( (string) ( Sellmo_Settings::get( 'shop_id' ) ?: '' ) );
+	}
+
+	/**
+	 * Whether a comma-separated shop id list contains the selected shop.
+	 *
+	 * With no shop selected, everything is considered in-scope.
+	 *
+	 * @since  1.3.0
+	 * @param  string $shop_id_csv Comma-separated shop ids stored on the row.
+	 * @return bool
+	 */
+	public static function is_in_selected_shop( string $shop_id_csv ): bool {
+		$selected = self::selected_shop_id();
+		if ( '' === $selected ) {
+			return true;
+		}
+
+		return in_array( $selected, '' !== $shop_id_csv ? explode( ',', $shop_id_csv ) : [], true );
+	}
+
+	/**
+	 * Enforce the selected-shop scope on mapped products.
+	 *
+	 * Any mapped row whose shop list does not include the selected shop has its
+	 * WooCommerce product deleted and is un-mapped — but the mapper row is kept
+	 * (flagged as belonging to another shop in the UI). Does nothing when no shop
+	 * is selected.
+	 *
+	 * @since  1.3.0
+	 * @return int Number of products removed from WooCommerce.
+	 */
+	public static function enforce_selected_shop_scope(): int {
+		$selected = self::selected_shop_id();
+		if ( '' === $selected ) {
+			return 0;
+		}
+
+		self::ensure_table();
+		global $wpdb;
+		$table = self::table_name();
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$rows = $wpdb->get_results(
+			"SELECT id, pos_product_code, pos_product_name, shop_id, wc_product_id
+			 FROM `{$table}` WHERE map_status = 1 AND wc_product_id IS NOT NULL",
+			ARRAY_A
+		);
+
+		$removed = 0;
+		foreach ( (array) $rows as $row ) {
+			if ( self::is_in_selected_shop( (string) ( $row['shop_id'] ?? '' ) ) ) {
+				continue;
+			}
+
+			$wc_id = (int) ( $row['wc_product_id'] ?? 0 );
+			if ( $wc_id > 0 ) {
+				self::delete_wc_product( $wc_id );
+			}
+
+			$wpdb->update(
+				$table,
+				[ 'wc_product_id' => null, 'map_status' => 0, 'updated_at' => current_time( 'mysql', true ) ],
+				[ 'id' => (int) $row['id'] ],
+				[ '%d', '%d', '%s' ],
+				[ '%d' ]
+			);
+			$removed++;
+
+			Sellmo_Logger::log(
+				'product',
+				'pos_to_wc',
+				'success',
+				sprintf(
+					'Removed WooCommerce product #%d for "%s" — it belongs to another shop, not the selected shop.',
+					$wc_id,
+					(string) ( $row['pos_product_name'] ?? '' )
+				),
+				(string) ( $row['pos_product_code'] ?? '' )
+			);
+		}
+
+		return $removed;
+	}
+
+	// =========================================================================
 	// Stock
 	// =========================================================================
 
