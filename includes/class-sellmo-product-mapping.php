@@ -543,6 +543,34 @@ class Sellmo_Product_Mapping {
 		return is_array( $row ) ? $row : null;
 	}
 
+	/**
+	 * Fetch a mapping row by its primary-key id.
+	 *
+	 * Used by the per-variant mapper import to load the parent's stored
+	 * raw_payload and pos identifiers.
+	 *
+	 * @since  1.4.0
+	 * @param  int $id Mapping row id.
+	 * @return array<string, mixed>|null
+	 */
+	public static function get_row_by_id( int $id ): ?array {
+		if ( $id <= 0 ) {
+			return null;
+		}
+
+		self::ensure_table();
+		global $wpdb;
+
+		$table = self::table_name();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$row = $wpdb->get_row(
+			$wpdb->prepare( "SELECT * FROM `{$table}` WHERE id = %d LIMIT 1", $id ),
+			ARRAY_A
+		);
+
+		return is_array( $row ) ? $row : null;
+	}
+
 	// =========================================================================
 	// Catalogue fields (price / category / variant_count)
 	// =========================================================================
@@ -656,27 +684,44 @@ class Sellmo_Product_Mapping {
 	 * @return array{0: string, 1: string} [ shop_ids_csv, shop_names_csv ]
 	 */
 	public static function resolve_available_shops( array $product, array $shop_names ): array {
-		$shops = isset( $product['shops'] ) && is_array( $product['shops'] ) ? $product['shops'] : [];
-
 		$ids   = [];
 		$names = [];
-		foreach ( $shops as $shop ) {
-			if ( ! is_array( $shop ) ) {
-				continue;
-			}
 
-			// Only keep shops the product is actually sellable in.
-			if ( array_key_exists( 'available_for_sale', $shop ) && ! (bool) $shop['available_for_sale'] ) {
-				continue;
-			}
+		// Collect sellable shop ids from a shops array into $ids/$names (deduped).
+		$collect = static function ( array $shops ) use ( &$ids, &$names, $shop_names ): void {
+			foreach ( $shops as $shop ) {
+				if ( ! is_array( $shop ) ) {
+					continue;
+				}
 
-			$id = (string) ( $shop['shop_id'] ?? '' );
-			if ( '' === $id || in_array( $id, $ids, true ) ) {
-				continue;
-			}
+				// Only keep shops the item is actually sellable in.
+				if ( array_key_exists( 'available_for_sale', $shop ) && ! (bool) $shop['available_for_sale'] ) {
+					continue;
+				}
 
-			$ids[]   = $id;
-			$names[] = $shop_names[ $id ] ?? '';
+				$id = (string) ( $shop['shop_id'] ?? '' );
+				if ( '' === $id || in_array( $id, $ids, true ) ) {
+					continue;
+				}
+
+				$ids[]   = $id;
+				$names[] = $shop_names[ $id ] ?? '';
+			}
+		};
+
+		// Product-level shops (present for simple products).
+		if ( isset( $product['shops'] ) && is_array( $product['shops'] ) ) {
+			$collect( $product['shops'] );
+		}
+
+		// Variable products carry shop membership on their variants, so the
+		// product-level list is often empty. Union in every shop any variant is
+		// sellable in, so the parent is scoped to the selected shop correctly.
+		$variants = isset( $product['variants'] ) && is_array( $product['variants'] ) ? $product['variants'] : [];
+		foreach ( $variants as $variant ) {
+			if ( is_array( $variant ) && isset( $variant['shops'] ) && is_array( $variant['shops'] ) ) {
+				$collect( $variant['shops'] );
+			}
 		}
 
 		return [ implode( ',', $ids ), implode( ',', $names ) ];

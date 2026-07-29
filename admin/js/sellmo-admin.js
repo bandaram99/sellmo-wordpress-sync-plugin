@@ -1096,6 +1096,128 @@
 			} );
 		} );
 
+		// Expand/collapse a variable product's variant sub-rows.
+		$( document ).on( 'click', '.sellmo-variant-toggle', function () {
+			var $btn      = $( this );
+			var $parent   = $btn.closest( 'tr' );
+			var $subs     = $parent.nextUntil( ':not(.sellmo-variant-row)' );
+			var expanded  = 'true' === String( $btn.attr( 'aria-expanded' ) );
+
+			$btn.attr( 'aria-expanded', expanded ? 'false' : 'true' );
+			$btn.find( '.sellmo-variant-caret' )
+				.toggleClass( 'dashicons-arrow-right-alt2', expanded )
+				.toggleClass( 'dashicons-arrow-down-alt2', ! expanded );
+			$subs.toggle( ! expanded );
+		} );
+
+		// Import a single variant onto the parent's WooCommerce variable product.
+		$( document ).on( 'click', '.sellmo-variant-import-btn', function () {
+			var $btn      = $( this );
+			var $row      = $btn.closest( 'tr' );
+			var mappingId = parseInt( $row.data( 'mapping-id' ) || 0, 10 );
+			var variantId = String( $row.data( 'variant-id' ) || '' );
+
+			if ( ! mappingId || ! variantId ) {
+				return;
+			}
+
+			var origLabel = $btn.text();
+			$btn.prop( 'disabled', true ).text( i18n.importing || 'Importing…' );
+
+			$.post( ajaxUrl, {
+				action     : 'sellmo_wc_mapper_import_variant',
+				nonce      : nonce,
+				mapping_id : mappingId,
+				variant_id : variantId
+			} )
+			.done( function ( res ) {
+				if ( res && res.success ) {
+					loadMapperList( mapperPage );
+				} else {
+					// eslint-disable-next-line no-alert
+					window.alert( ( res.data && res.data.message ) || ( i18n.importError || 'Import failed.' ) );
+					$btn.prop( 'disabled', false ).text( origLabel );
+				}
+			} )
+			.fail( function () {
+				// eslint-disable-next-line no-alert
+				window.alert( i18n.importError || 'Import failed. Please try again.' );
+				$btn.prop( 'disabled', false ).text( origLabel );
+			} );
+		} );
+
+		// Import every in-shop variant of a parent as WooCommerce variations.
+		$( document ).on( 'click', '.sellmo-mapper-import-all-btn', function () {
+			var $btn      = $( this );
+			var $row      = $btn.closest( 'tr' );
+			var mappingId = parseInt( $row.data( 'mapping-id' ) || 0, 10 );
+
+			var origLabel = $btn.text();
+			$btn.prop( 'disabled', true ).text( i18n.importing || 'Importing…' );
+
+			$.post( ajaxUrl, {
+				action      : 'sellmo_wc_mapper_import_all_variants',
+				nonce       : nonce,
+				mapping_id  : mappingId,
+				sellmo_id   : String( $row.data( 'sellmo-id' ) || '' ),
+				sellmo_code : String( $row.data( 'sellmo-code' ) || '' )
+			} )
+			.done( function ( res ) {
+				if ( res && res.success ) {
+					loadMapperList( mapperPage );
+				} else {
+					// eslint-disable-next-line no-alert
+					window.alert( ( res.data && res.data.message ) || ( i18n.importError || 'Import failed.' ) );
+					$btn.prop( 'disabled', false ).text( origLabel );
+				}
+			} )
+			.fail( function () {
+				// eslint-disable-next-line no-alert
+				window.alert( i18n.importError || 'Import failed. Please try again.' );
+				$btn.prop( 'disabled', false ).text( origLabel );
+			} );
+		} );
+
+		// Map a variant to an already-existing WooCommerce variation.
+		$( document ).on( 'click', '.sellmo-variant-map-btn', function () {
+			var $btn          = $( this );
+			var $row          = $btn.closest( 'tr' );
+			var mappingId     = parseInt( $row.data( 'mapping-id' ) || 0, 10 );
+			var variantId     = String( $row.data( 'variant-id' ) || '' );
+			var wcVariationId = parseInt( $row.find( '.sellmo-variant-wc-select' ).val() || 0, 10 );
+
+			if ( ! wcVariationId ) {
+				// eslint-disable-next-line no-alert
+				window.alert( i18n.mapperChooseWc || 'Select a WooCommerce product first.' );
+				return;
+			}
+
+			$btn.prop( 'disabled', true );
+
+			$.post( ajaxUrl, {
+				action          : 'sellmo_wc_map_variant',
+				nonce           : nonce,
+				mapping_id      : mappingId,
+				variant_id      : variantId,
+				wc_variation_id : wcVariationId
+			} )
+			.done( function ( res ) {
+				if ( res && res.success ) {
+					loadMapperList( mapperPage );
+				} else {
+					// eslint-disable-next-line no-alert
+					window.alert( ( res.data && res.data.message ) || ( i18n.mapperActionError || 'Mapping action failed.' ) );
+				}
+			} )
+			.fail( function () {
+				// eslint-disable-next-line no-alert
+				window.alert( i18n.mapperActionError || 'Mapping action failed. Please try again.' );
+			} )
+			.always( function () {
+				$btn.prop( 'disabled', false );
+			} );
+		} );
+
 		$( '#sellmo-mapper-bulk-apply' ).on( 'click', function () {
 			var bulkAction = String( $( '#sellmo-mapper-bulk-action' ).val() || '' );
 			var selected   = [];
@@ -1334,26 +1456,91 @@ var wcOption = selectedWcId > 0
 				? '<span class="sellmo-result-badge success">' + escHtml( i18n.mapped || 'Mapped' ) + '</span>'
 				: '<span class="sellmo-result-badge skipped">' + escHtml( i18n.notMapped || 'Not Mapped' ) + '</span>';
 
+			var mappingId   = parseInt( row.mapping_id || 0, 10 );
+			var variants    = Array.isArray( row.variants ) ? row.variants : [];
+			var hasVariants = true === row.has_variants && variants.length > 0;
+
 			var actionLabel = 'mapped' === status ? ( i18n.change || 'Change' ) : ( i18n.map || 'Map' );
 			var actions     = '<button type="button" class="button button-small sellmo-mapper-map-btn">' + escHtml( actionLabel ) + '</button>';
 			if ( 'mapped' === status ) {
 				actions += ' <button type="button" class="button button-small sellmo-mapper-unmap-btn">' + escHtml( i18n.unmap || 'Unmap' ) + '</button>';
-			} else {
-				// One-click: create the WooCommerce product and auto-map it.
+			} else if ( ! hasVariants ) {
+				// Simple product: one click creates the WooCommerce product and maps it.
 				actions += ' <button type="button" class="button button-small sellmo-mapper-import-btn">' + escHtml( i18n.importProduct || 'Import to WooCommerce' ) + '</button>';
+			}
+			// Variable product: import every in-shop variant as variations in one click
+			// (shown for mapped parents too, so remaining variants can be added later).
+			if ( hasVariants ) {
+				actions += ' <button type="button" class="button button-small sellmo-mapper-import-all-btn">' + escHtml( i18n.importAll || 'Import all to WooCommerce' ) + '</button>';
 			}
 			if ( wcEditUrl ) {
 				actions += ' <a class="button button-small" target="_blank" href="' + escHtml( wcEditUrl ) + '">' + escHtml( i18n.viewInWC || 'View in WC' ) + '</a>';
 			}
 
-			return '<tr data-sellmo-id="' + sellmoId + '" data-sellmo-code="' + sellmoCode + '" data-sellmo-name="' + sellmoName + '">'
+			// Expander toggle in the product cell for variable products.
+			var productCell = '<strong>' + sellmoName + '</strong>';
+			if ( hasVariants ) {
+				productCell = '<button type="button" class="button-link sellmo-variant-toggle" aria-expanded="false" title="' + escHtml( i18n.showVariants || 'Show variants' ) + '">'
+					+ '<span class="sellmo-variant-caret dashicons dashicons-arrow-right-alt2"></span></button> '
+					+ productCell
+					+ ' <span class="sellmo-variant-count">(' + variants.length + ')</span>';
+			}
+
+			var parentTr = '<tr data-sellmo-id="' + sellmoId + '" data-sellmo-code="' + sellmoCode + '" data-sellmo-name="' + sellmoName + '" data-mapping-id="' + mappingId + '"' + ( hasVariants ? ' data-has-variants="1"' : '' ) + '>'
 				+ '<th class="check-column"><input type="checkbox" class="sellmo-mapper-checkbox"></th>'
-				+ '<td class="sellmo-mapper-product-cell"><strong>' + sellmoName + '</strong></td>'
+				+ '<td class="sellmo-mapper-product-cell">' + productCell + '</td>'
 				+ '<td class="sellmo-mapper-code-cell"><code>' + sellmoCode + '</code></td>'
 				+ '<td class="sellmo-mapper-category-cell">' + category + '</td>'
 				+ '<td class="sellmo-mapper-price-cell">' + ( price > 0 ? escHtml( price.toFixed( 2 ) ) : '—' ) + '</td>'
 				+ '<td class="sellmo-mapper-wc-cell">' + wcSelect + '</td>'
 				+ '<td class="sellmo-mapper-status-cell">' + statusBadge + '</td>'
+				+ '<td class="sellmo-mapper-actions-cell"><div class="sellmo-mapper-actions-wrap">' + actions + '</div></td>'
+				+ '</tr>';
+
+			if ( ! hasVariants ) {
+				return parentTr;
+			}
+
+			var subRows = '';
+			$.each( variants, function ( _i, v ) {
+				subRows += buildVariantRow( v, mappingId );
+			} );
+
+			return parentTr + subRows;
+		}
+
+		// Build a single variant sub-row (hidden until its parent is expanded).
+		function buildVariantRow( v, mappingId ) {
+			var variantId  = escHtml( String( v.variant_id || '' ) );
+			var code       = escHtml( String( v.code || '' ) );
+			var options    = escHtml( String( v.options || '—' ) );
+			var price      = parseFloat( v.price || 0 );
+			var stock      = parseInt( v.stock || 0, 10 );
+			var shopName   = escHtml( String( v.shop_name || '' ) );
+			var status     = String( v.status || 'not_mapped' );
+			var wcEditUrl  = String( v.wc_edit_url || '' );
+
+			var badge = 'mapped' === status
+				? '<span class="sellmo-result-badge success">' + escHtml( i18n.mapped || 'Mapped' ) + '</span>'
+				: '<span class="sellmo-result-badge skipped">' + escHtml( i18n.notMapped || 'Not Mapped' ) + '</span>';
+
+			// Map-to-existing dropdown (populated on demand by the select2 module).
+			var wcSelect = '<select class="sellmo-variant-wc-select" style="width:100%"></select>';
+
+			var actions = '<button type="button" class="button button-small sellmo-variant-map-btn">' + escHtml( 'mapped' === status ? ( i18n.change || 'Change' ) : ( i18n.map || 'Map' ) ) + '</button>';
+			actions += ' <button type="button" class="button button-small sellmo-variant-import-btn">' + escHtml( i18n.importProduct || 'Import to WooCommerce' ) + '</button>';
+			if ( wcEditUrl ) {
+				actions += ' <a class="button button-small" target="_blank" href="' + escHtml( wcEditUrl ) + '">' + escHtml( i18n.viewInWC || 'View in WC' ) + '</a>';
+			}
+
+			return '<tr class="sellmo-variant-row" data-variant-id="' + variantId + '" data-variant-code="' + code + '" data-mapping-id="' + mappingId + '" style="display:none;">'
+				+ '<th class="check-column"></th>'
+				+ '<td class="sellmo-mapper-product-cell sellmo-variant-name-cell"><span class="sellmo-variant-branch">↳</span> ' + options + ( shopName ? ' <span class="sellmo-variant-shop">' + shopName + '</span>' : '' ) + '</td>'
+				+ '<td class="sellmo-mapper-code-cell"><code>' + code + '</code></td>'
+				+ '<td class="sellmo-mapper-category-cell">—</td>'
+				+ '<td class="sellmo-mapper-price-cell">' + ( price > 0 ? escHtml( price.toFixed( 2 ) ) : '—' ) + '</td>'
+				+ '<td class="sellmo-mapper-wc-cell">' + wcSelect + '</td>'
+				+ '<td class="sellmo-mapper-status-cell">' + badge + '</td>'
 				+ '<td class="sellmo-mapper-actions-cell"><div class="sellmo-mapper-actions-wrap">' + actions + '</div></td>'
 				+ '</tr>';
 		}

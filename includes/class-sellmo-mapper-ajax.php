@@ -41,6 +41,7 @@ class Sellmo_Mapper_Ajax {
 	public function __construct() {
 		add_action( 'wp_ajax_sellmo_wc_search_wc_products', [ $this, 'ajax_search_wc_products' ] );
 		add_action( 'wp_ajax_sellmo_wc_search_sellmo_products', [ $this, 'ajax_search_sellmo_products' ] );
+		add_action( 'wp_ajax_sellmo_wc_search_wc_variations', [ $this, 'ajax_search_wc_variations' ] );
 		add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_assets' ], 25 );
 	}
 
@@ -62,11 +63,12 @@ class Sellmo_Mapper_Ajax {
 		wp_enqueue_script( 'selectWoo' );
 		wp_enqueue_style( 'select2' );
 
+		$select2_path = SELLMO_WC_PATH . 'admin/js/sellmo-mapper-select2.js';
 		wp_enqueue_script(
 			'sellmo-mapper-select2',
 			SELLMO_WC_URL . 'admin/js/sellmo-mapper-select2.js',
 			[ 'jquery', 'selectWoo' ],
-			SELLMO_WC_VERSION,
+			file_exists( $select2_path ) ? filemtime( $select2_path ) : SELLMO_WC_VERSION,
 			true
 		);
 
@@ -77,9 +79,10 @@ class Sellmo_Mapper_Ajax {
 				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
 				'nonce'   => wp_create_nonce( 'sellmo_wc_admin' ),
 				'i18n'    => [
-					'searchWc'     => __( 'Search WooCommerce product by name or SKU…', 'sellmo-woocommerce' ),
-					'searchSellmo' => __( 'Search Sellmo product by name or code…', 'sellmo-woocommerce' ),
-					'noResults'    => __( 'No matches found', 'sellmo-woocommerce' ),
+					'searchWc'          => __( 'Search WooCommerce product by name or SKU…', 'sellmo-woocommerce' ),
+					'searchSellmo'      => __( 'Search Sellmo product by name or code…', 'sellmo-woocommerce' ),
+					'searchWcVariation' => __( 'Search WooCommerce variation by SKU or name…', 'sellmo-woocommerce' ),
+					'noResults'         => __( 'No matches found', 'sellmo-woocommerce' ),
 				],
 			]
 		);
@@ -183,6 +186,77 @@ class Sellmo_Mapper_Ajax {
 		wp_send_json( [
 			'results'    => $results,
 			'pagination' => [ 'more' => ( $page * self::PER_PAGE ) < (int) $data['total'] ],
+		] );
+	}
+
+	/**
+	 * AJAX: search existing WooCommerce variations by SKU or parent title.
+	 *
+	 * Backs the per-variant "Map to existing" dropdown in the Product Mapper.
+	 *
+	 * @since  1.4.0
+	 * @return void
+	 */
+	public function ajax_search_wc_variations(): void {
+		$this->guard();
+
+		global $wpdb;
+
+		$search = sanitize_text_field( wp_unslash( $_REQUEST['q'] ?? $_REQUEST['search'] ?? '' ) );
+		$page   = max( 1, absint( $_REQUEST['page'] ?? 1 ) );
+		$offset = ( $page - 1 ) * self::PER_PAGE;
+
+		$where  = "p.post_type = 'product_variation' AND p.post_status IN ( 'publish', 'private' )";
+		$params = [];
+
+		if ( '' !== $search ) {
+			$like     = '%' . $wpdb->esc_like( $search ) . '%';
+			$where   .= ' AND ( sku.meta_value LIKE %s OR parent.post_title LIKE %s )';
+			$params[] = $like;
+			$params[] = $like;
+		}
+
+		// One extra row drives the Select2 "more" pagination flag.
+		$params[] = self::PER_PAGE + 1;
+		$params[] = $offset;
+
+		$sql = "SELECT p.ID FROM {$wpdb->posts} p
+			LEFT JOIN {$wpdb->postmeta} sku ON sku.post_id = p.ID AND sku.meta_key = '_sku'
+			LEFT JOIN {$wpdb->posts} parent ON parent.ID = p.post_parent
+			WHERE {$where}
+			ORDER BY p.ID DESC
+			LIMIT %d OFFSET %d";
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$ids = (array) $wpdb->get_col( $wpdb->prepare( $sql, ...$params ) );
+
+		$has_more = count( $ids ) > self::PER_PAGE;
+		if ( $has_more ) {
+			array_pop( $ids );
+		}
+
+		$results = [];
+		foreach ( $ids as $variation_id ) {
+			$variation = wc_get_product( (int) $variation_id );
+			if ( ! $variation instanceof WC_Product_Variation ) {
+				continue;
+			}
+
+			$sku       = (string) $variation->get_sku();
+			$results[] = [
+				'id'   => (int) $variation_id,
+				'text' => sprintf(
+					'#%d - %s%s',
+					(int) $variation_id,
+					$variation->get_name(),
+					'' !== $sku ? ' (' . $sku . ')' : ''
+				),
+			];
+		}
+
+		wp_send_json( [
+			'results'    => $results,
+			'pagination' => [ 'more' => $has_more ],
 		] );
 	}
 

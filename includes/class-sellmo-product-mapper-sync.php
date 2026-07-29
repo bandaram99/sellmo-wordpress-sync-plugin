@@ -132,19 +132,26 @@ class Sellmo_Product_Mapper_Sync {
 					continue;
 				}
 
-				// Skip products already pushed to WooCommerce (real mapping exists).
-				if ( Sellmo_Product_Mapping::is_sellmo_product_mapped( $product ) ) {
-					$skipped++;
-					continue;
-				}
-
-				// Skip products already staged in the mapper table (no overwrite).
-				if ( '' !== $sellmo_id && isset( $existing[ $sellmo_id ] ) ) {
-					$skipped++;
-					continue;
-				}
-
+				// Current shop membership, resolved up front so it can be refreshed on
+				// existing rows too — a shop added/removed upstream must propagate to
+				// already-staged and already-mapped products, not only new ones.
 				[ $shop_ids, $shop_names_csv ] = Sellmo_Product_Mapping::resolve_available_shops( $product, $shop_names );
+
+				// Skip products already pushed to WooCommerce (real mapping exists),
+				// but keep their stored shop membership current for scope enforcement.
+				if ( Sellmo_Product_Mapping::is_sellmo_product_mapped( $product ) ) {
+					Sellmo_Product_Mapping::update_shops( $sellmo_id, $code, $shop_ids, $shop_names_csv );
+					$skipped++;
+					continue;
+				}
+
+				// Skip products already staged in the mapper table (no overwrite),
+				// but refresh their shop membership so scope stays accurate.
+				if ( '' !== $sellmo_id && isset( $existing[ $sellmo_id ] ) ) {
+					Sellmo_Product_Mapping::update_shops( $sellmo_id, $code, $shop_ids, $shop_names_csv );
+					$skipped++;
+					continue;
+				}
 
 				$ok = Sellmo_Product_Mapping::insert_new( [
 					'pos_product_id'   => $sellmo_id,

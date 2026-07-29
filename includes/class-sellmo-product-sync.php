@@ -159,6 +159,58 @@ class Sellmo_Product_Sync {
 	}
 
 	/**
+	 * Create or update a WooCommerce product from a Sellmo payload, bypassing
+	 * import_product()'s "already mapped" guard.
+	 *
+	 * Used by the per-variant mapper import so a variation can be added to a
+	 * parent variable product that is already mapped. Pass a payload whose
+	 * `variants` array holds exactly the variations that should exist — the
+	 * variation sync deletes any WC variation whose code is not in that set.
+	 *
+	 * @since  1.4.0
+	 * @param  array<string, mixed> $sellmo_product Decoded Sellmo product payload.
+	 * @return int                                  WC product id, 0 on failure.
+	 */
+	public function sync_product_to_wc( array $sellmo_product ): int {
+		return $this->sync_or_create_product( $sellmo_product );
+	}
+
+	/**
+	 * Resolve the WooCommerce variation id for a Sellmo variant under a parent.
+	 *
+	 * Tries the SalesPlay variant-id meta first, then the POS product code, then
+	 * the SKU — the same keys the sync writes.
+	 *
+	 * @since  1.4.0
+	 * @param  int                  $parent_id Parent WooCommerce product id.
+	 * @param  array<string, mixed> $variant   Sellmo variant payload.
+	 * @return int                             Variation id, 0 when not found.
+	 */
+	public function find_variation_id_for_variant( int $parent_id, array $variant ): int {
+		$variant_id = (string) ( $variant['variant_id'] ?? '' );
+		if ( '' !== $variant_id ) {
+			$found = $this->find_variation_id_by_salesplay_variant_id( $parent_id, $variant_id );
+			if ( $found > 0 ) {
+				return $found;
+			}
+		}
+
+		$code = (string) ( $variant['product_code'] ?? '' );
+		if ( '' !== $code ) {
+			$found = $this->find_variation_id_by_code_for_parent( $parent_id, $code );
+			if ( $found > 0 ) {
+				return $found;
+			}
+			$found = $this->find_variation_id_by_sku_for_parent( $parent_id, $code );
+			if ( $found > 0 ) {
+				return $found;
+			}
+		}
+
+		return 0;
+	}
+
+	/**
 	 * Stamp Sellmo join-key meta onto an existing WooCommerce product.
 	 *
 	 * Called when a Sellmo product is mapped to a pre-existing WooCommerce product

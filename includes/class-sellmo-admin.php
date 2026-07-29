@@ -64,6 +64,10 @@ class Sellmo_Admin {
 		add_action( 'wp_ajax_sellmo_wc_unmap_product',      [ $this, 'ajax_unmap_product' ] );
 		add_action( 'wp_ajax_sellmo_wc_bulk_mapper',        [ $this, 'ajax_bulk_mapper' ] );
 		add_action( 'wp_ajax_sellmo_wc_mapper_wc_products', [ $this, 'ajax_mapper_wc_products' ] );
+
+		add_action( 'wp_ajax_sellmo_wc_mapper_import_variant',      [ $this, 'ajax_mapper_import_variant' ] );
+		add_action( 'wp_ajax_sellmo_wc_mapper_import_all_variants', [ $this, 'ajax_mapper_import_all_variants' ] );
+		add_action( 'wp_ajax_sellmo_wc_map_variant',                [ $this, 'ajax_map_variant' ] );
 	}
 
 	// -------------------------------------------------------------------------
@@ -771,6 +775,8 @@ class Sellmo_Admin {
 					'mapperBulkHint'     => __( 'Please select a mapper bulk action.', 'sellmo-woocommerce' ),
 					'mapperSelectRows'  => __( 'Please select at least one row.', 'sellmo-woocommerce' ),
 					'anotherShop'       => __( 'Another shop', 'sellmo-woocommerce' ),
+					'importAll'         => __( 'Import all to WooCommerce', 'sellmo-woocommerce' ),
+					'showVariants'      => __( 'Show variants', 'sellmo-woocommerce' ),
 				],
 			]
 		);
@@ -842,6 +848,10 @@ class Sellmo_Admin {
 				'status'          => $is_mapped ? 'mapped' : 'not_mapped',
 				'shop_name'       => (string) ( $product['shop_name'] ?? '' ),
 				'in_selected_shop'=> Sellmo_Product_Mapping::is_in_selected_shop( $shop_id_csv ),
+				// Parent mapping row id + variant count gate the per-variant sub-rows
+				// that are attached to the paginated slice below.
+				'mapping_id'      => (int) ( $product['id'] ?? 0 ),
+				'variant_count'   => (int) ( $product['variant_count'] ?? 0 ),
 			];
 
 			// Only one mapper row can exist per product code.
@@ -981,8 +991,22 @@ class Sellmo_Admin {
 		}
 		$wc_only_count = count( $wc_products ) - count( $mapped_wc_ids );
 
+		// Attach per-variant sub-rows to the visible page only, so variant lookups
+		// stay bounded to $per_page rows rather than the whole catalogue.
+		$page_rows = array_values( array_slice( $rows, $offset, $per_page ) );
+		foreach ( $page_rows as &$page_row ) {
+			$page_row['variants'] = ( (int) ( $page_row['variant_count'] ?? 0 ) > 0 )
+				? $this->build_variant_rows_for_mapper(
+					(int) ( $page_row['mapping_id'] ?? 0 ),
+					(int) ( $page_row['wc_product_id'] ?? 0 )
+				)
+				: [];
+			$page_row['has_variants'] = ! empty( $page_row['variants'] );
+		}
+		unset( $page_row );
+
 		wp_send_json_success( [
-			'rows'            => array_values( array_slice( $rows, $offset, $per_page ) ),
+			'rows'            => $page_rows,
 			'total'           => $total,
 			'pages'           => max( 1, $total_pages ),
 			'current_page'    => $page,
@@ -996,6 +1020,91 @@ class Sellmo_Admin {
 				'woocommerce_only_products' => max( 0, $wc_only_count ),
 			],
 		] );
+	}
+
+	/**
+	 * Build per-variant sub-rows for a parent product in the mapper list.
+	 *
+	 * Pulls the stored variants for the parent mapping row, filters them to the
+	 * selected shop (mirroring the product-level scope), and derives each
+	 * variant's map status from its recorded WooCommerce variation.
+	 *
+	 * @since  1.4.0
+	 * @param  int $mapping_id   Parent mapping row id (wp_salespay_product_mapping.id).
+	 * @param  int $wc_parent_id Mapped WooCommerce product id (0 when unmapped).
+	 * @return array<int, array<string, mixed>>
+	 */
+	private function build_variant_rows_for_mapper( int $mapping_id, int $wc_parent_id ): array {
+		if ( $mapping_id <= 0 ) {
+			return [];
+		}
+
+		$variants = Sellmo_Product_Variant_Store::get_variants_for_product( $mapping_id );
+		if ( empty( $variants ) ) {
+			return [];
+		}
+
+		$selected_shop = Sellmo_Product_Mapping::selected_shop_id();
+		$parent_edit   = $wc_parent_id > 0 ? (string) get_edit_post_link( $wc_parent_id, 'raw' ) : '';
+
+		$rows = [];
+		foreach ( $variants as $variant ) {
+			// Selected-shop filter: only variants sellable in the chosen shop.
+			$shop_ids = $this->decode_json_list( (string) ( $variant['shop_ids'] ?? '' ) );
+			if ( '' !== $selected_shop && ! in_array( $selected_shop, $shop_ids, true ) ) {
+				continue;
+			}
+
+			$shop_names = $this->decode_json_list( (string) ( $variant['shop_names'] ?? '' ) );
+
+			$options = array_values( array_filter(
+				[
+					(string) ( $variant['option1_value'] ?? '' ),
+					(string) ( $variant['option2_value'] ?? '' ),
+					(string) ( $variant['option3_value'] ?? '' ),
+				],
+				static fn( string $v ): bool => '' !== trim( $v )
+			) );
+
+			// A variant is mapped when it points at a still-existing WC variation.
+			$wc_variation_id = (int) ( $variant['wc_variation_id'] ?? 0 );
+			$is_mapped       = false;
+			if ( $wc_variation_id > 0 ) {
+				$is_mapped = wc_get_product( $wc_variation_id ) instanceof WC_Product_Variation;
+			}
+
+			$rows[] = [
+				'variant_id'      => (string) ( $variant['variant_id'] ?? '' ),
+				'code'            => (string) ( $variant['product_code'] ?? '' ),
+				'options'         => implode( ' / ', $options ),
+				'price'           => (float) ( $variant['default_cost'] ?? 0 ),
+				'stock'           => (int) ( $variant['stock_count'] ?? 0 ),
+				'shop_name'       => implode( ', ', $shop_names ),
+				'status'          => $is_mapped ? 'mapped' : 'not_mapped',
+				'wc_variation_id' => $is_mapped ? $wc_variation_id : 0,
+				'wc_edit_url'     => $is_mapped ? $parent_edit : '',
+			];
+		}
+
+		return $rows;
+	}
+
+	/**
+	 * Decode a JSON list column (shop_ids / shop_names) to a string array.
+	 *
+	 * @since  1.4.0
+	 * @param  string $json Stored JSON array, possibly empty.
+	 * @return array<int, string>
+	 */
+	private function decode_json_list( string $json ): array {
+		if ( '' === trim( $json ) ) {
+			return [];
+		}
+		$decoded = json_decode( $json, true );
+		if ( ! is_array( $decoded ) ) {
+			return [];
+		}
+		return array_values( array_map( 'strval', $decoded ) );
 	}
 
 	/**
@@ -1164,6 +1273,223 @@ class Sellmo_Admin {
 			'edit_url' => (string) get_edit_post_link( $new_id, 'raw' ),
 			'message'  => __( 'Product imported and mapped.', 'sellmo-woocommerce' ),
 		] );
+	}
+
+	/**
+	 * Import a set of variants of a parent product as WooCommerce variations.
+	 *
+	 * Builds the parent variable product (or reuses the already-mapped one),
+	 * passing the union of already-imported variants and the newly requested
+	 * ones so the variation sync never deletes siblings. Records each imported
+	 * variant's WooCommerce variation id and pulls current stock.
+	 *
+	 * @since  1.4.0
+	 * @param  int                $mapping_id            Parent mapping row id.
+	 * @param  array<int, string> $requested_variant_ids Variant ids to import.
+	 * @return array{wc_id:int, linked:int}|WP_Error
+	 */
+	private function import_variants_for_parent( int $mapping_id, array $requested_variant_ids ): array|\WP_Error {
+		$row = Sellmo_Product_Mapping::get_row_by_id( $mapping_id );
+		if ( ! is_array( $row ) ) {
+			return new \WP_Error( 'sellmo_no_parent', __( 'Parent product not found.', 'sellmo-woocommerce' ) );
+		}
+
+		$pos_id = (string) ( $row['pos_product_id'] ?? '' );
+		$code   = (string) ( $row['pos_product_code'] ?? '' );
+		$name   = (string) ( $row['pos_product_name'] ?? '' );
+
+		// Defensive: sub-rows are already shop-scoped, but never import an
+		// out-of-shop product's variants into the selected shop.
+		if ( $this->product_in_another_shop( $pos_id, $code ) ) {
+			return new \WP_Error( 'sellmo_other_shop', __( 'This product belongs to another shop.', 'sellmo-woocommerce' ) );
+		}
+
+		$payload = $this->resolve_sellmo_payload( $pos_id, $code );
+		if ( ! is_array( $payload ) ) {
+			return new \WP_Error( 'sellmo_no_payload', __( 'Product data not found. Run Sync Products Now first.', 'sellmo-woocommerce' ) );
+		}
+
+		$all_variants = isset( $payload['variants'] ) && is_array( $payload['variants'] ) ? $payload['variants'] : [];
+		if ( empty( $all_variants ) ) {
+			return new \WP_Error( 'sellmo_no_variants', __( 'This product has no variants.', 'sellmo-woocommerce' ) );
+		}
+
+		// Target set = variants already imported (so the variation sync never
+		// deletes them) plus the newly requested ids.
+		$already = [];
+		foreach ( Sellmo_Product_Variant_Store::get_variants_for_product( $mapping_id ) as $sv ) {
+			$wc_variation_id = (int) ( $sv['wc_variation_id'] ?? 0 );
+			if ( $wc_variation_id > 0 && wc_get_product( $wc_variation_id ) instanceof WC_Product_Variation ) {
+				$already[] = (string) ( $sv['variant_id'] ?? '' );
+			}
+		}
+
+		$target_ids = array_values( array_unique( array_filter(
+			array_merge( $already, array_map( 'strval', $requested_variant_ids ) )
+		) ) );
+		if ( empty( $target_ids ) ) {
+			return new \WP_Error( 'sellmo_no_selection', __( 'No variants selected to import.', 'sellmo-woocommerce' ) );
+		}
+
+		$selected = array_values( array_filter(
+			$all_variants,
+			static fn( $v ): bool => is_array( $v ) && in_array( (string) ( $v['variant_id'] ?? '' ), $target_ids, true )
+		) );
+		if ( empty( $selected ) ) {
+			return new \WP_Error( 'sellmo_variant_missing', __( 'Selected variants were not found in the product data.', 'sellmo-woocommerce' ) );
+		}
+
+		$payload['variants'] = $selected;
+
+		$sync  = new Sellmo_Product_Sync();
+		$wc_id = $sync->sync_product_to_wc( $payload );
+		if ( $wc_id <= 0 ) {
+			return new \WP_Error( 'sellmo_import_failed', __( 'Import failed. Check the Sync Log for details.', 'sellmo-woocommerce' ) );
+		}
+
+		// Map (or re-map) the parent to the WooCommerce variable product.
+		Sellmo_Product_Mapping::upsert_mapping( $pos_id, $code, $name, $wc_id );
+
+		// Record the WooCommerce variation id against each imported variant.
+		$linked = 0;
+		foreach ( $selected as $v ) {
+			$vid = (string) ( $v['variant_id'] ?? '' );
+			if ( '' === $vid ) {
+				continue;
+			}
+			$variation_id = $sync->find_variation_id_for_variant( $wc_id, $v );
+			if ( $variation_id > 0 ) {
+				Sellmo_Product_Variant_Store::set_wc_variation_id( $vid, $variation_id );
+				$linked++;
+			}
+		}
+
+		// Pull current stock for the parent and its variations.
+		( new Sellmo_Stock_Sync() )->sync_stock_for_wc_product( $wc_id );
+
+		return [ 'wc_id' => $wc_id, 'linked' => $linked ];
+	}
+
+	/**
+	 * AJAX: import a single variant onto its parent variable product.
+	 *
+	 * @since  1.4.0
+	 * @return void
+	 */
+	public function ajax_mapper_import_variant(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$mapping_id = absint( $_POST['mapping_id'] ?? 0 );
+		$variant_id = sanitize_text_field( wp_unslash( $_POST['variant_id'] ?? '' ) );
+
+		if ( $mapping_id <= 0 || '' === $variant_id ) {
+			wp_send_json_error( [ 'message' => __( 'Invalid variant reference.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$result = $this->import_variants_for_parent( $mapping_id, [ $variant_id ] );
+		if ( is_wp_error( $result ) ) {
+			wp_send_json_error( [ 'message' => $result->get_error_message() ] );
+		}
+
+		wp_send_json_success( [
+			'message' => __( 'Variant imported.', 'sellmo-woocommerce' ),
+			'wc_id'   => (int) $result['wc_id'],
+		] );
+	}
+
+	/**
+	 * AJAX: import every in-shop variant of a parent as WooCommerce variations.
+	 *
+	 * @since  1.4.0
+	 * @return void
+	 */
+	public function ajax_mapper_import_all_variants(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$mapping_id = absint( $_POST['mapping_id'] ?? 0 );
+		if ( $mapping_id <= 0 ) {
+			wp_send_json_error( [ 'message' => __( 'Invalid product reference.', 'sellmo-woocommerce' ) ] );
+		}
+
+		// Every variant currently shown for the selected shop.
+		$variant_ids = [];
+		foreach ( $this->build_variant_rows_for_mapper( $mapping_id, 0 ) as $vr ) {
+			if ( '' !== (string) ( $vr['variant_id'] ?? '' ) ) {
+				$variant_ids[] = (string) $vr['variant_id'];
+			}
+		}
+
+		if ( empty( $variant_ids ) ) {
+			wp_send_json_error( [ 'message' => __( 'No variants available to import for the selected shop.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$result = $this->import_variants_for_parent( $mapping_id, $variant_ids );
+		if ( is_wp_error( $result ) ) {
+			wp_send_json_error( [ 'message' => $result->get_error_message() ] );
+		}
+
+		wp_send_json_success( [
+			'message' => __( 'All variants imported.', 'sellmo-woocommerce' ),
+			'wc_id'   => (int) $result['wc_id'],
+		] );
+	}
+
+	/**
+	 * AJAX: map a variant to an already-existing WooCommerce variation.
+	 *
+	 * @since  1.4.0
+	 * @return void
+	 */
+	public function ajax_map_variant(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$mapping_id      = absint( $_POST['mapping_id'] ?? 0 );
+		$variant_id      = sanitize_text_field( wp_unslash( $_POST['variant_id'] ?? '' ) );
+		$wc_variation_id = absint( $_POST['wc_variation_id'] ?? 0 );
+
+		if ( $mapping_id <= 0 || '' === $variant_id || $wc_variation_id <= 0 ) {
+			wp_send_json_error( [ 'message' => __( 'Invalid mapping payload.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$variation = wc_get_product( $wc_variation_id );
+		if ( ! $variation instanceof WC_Product_Variation ) {
+			wp_send_json_error( [ 'message' => __( 'Selected WooCommerce variation does not exist.', 'sellmo-woocommerce' ) ] );
+		}
+
+		// Record the link + join-key meta so the stock sync can match the variation.
+		Sellmo_Product_Variant_Store::set_wc_variation_id( $variant_id, $wc_variation_id );
+		update_post_meta( $wc_variation_id, '_salesplay_variant_id', $variant_id );
+
+		$store_row = Sellmo_Product_Variant_Store::get_by_variant_id( $variant_id );
+		if ( is_array( $store_row ) && '' !== (string) ( $store_row['product_code'] ?? '' ) ) {
+			update_post_meta( $wc_variation_id, '_pos_product_code', (string) $store_row['product_code'] );
+		}
+
+		// Ensure the parent product is mapped to the variation's parent product.
+		$parent_id = (int) $variation->get_parent_id();
+		$row       = Sellmo_Product_Mapping::get_row_by_id( $mapping_id );
+		if ( is_array( $row ) && $parent_id > 0 ) {
+			Sellmo_Product_Mapping::upsert_mapping(
+				(string) ( $row['pos_product_id'] ?? '' ),
+				(string) ( $row['pos_product_code'] ?? '' ),
+				(string) ( $row['pos_product_name'] ?? '' ),
+				$parent_id
+			);
+		}
+
+		wp_send_json_success( [ 'message' => __( 'Variant mapped.', 'sellmo-woocommerce' ) ] );
 	}
 
 	/**

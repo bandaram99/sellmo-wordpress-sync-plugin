@@ -60,6 +60,10 @@ class Sellmo_Product_Variant_Sync {
 		// Stock snapshot from /inventory, keyed by Sellmo id and by product code.
 		[ $stock_by_id, $stock_by_code ] = $this->build_stock_maps( $api );
 
+		// id -> shop_name map from /shops, so each variant row carries the
+		// human-readable shop names alongside the ids pulled from the variant.
+		$shop_names = Sellmo_Product_Mapping::fetch_shop_names( $api );
+
 		$cursor             = '';
 		$page               = 0;
 		$variants_stored    = 0;
@@ -119,6 +123,11 @@ class Sellmo_Product_Variant_Sync {
 
 					$variant_code = (string) ( $variant['product_code'] ?? '' );
 
+					// Shops the variant is sellable in — ids + aligned names. Always
+					// written so shop_ids/shop_names track upstream add/remove on every
+					// "Sync Products Now"; selected-shop filtering happens at display time.
+					[ $variant_shop_ids, $variant_shop_names ] = $this->resolve_shops( $variant, $shop_names );
+
 					// Stock: inventory rows key a variant by its own id (product_id)
 					// and by its product_code; prefer the id match.
 					$stock = $stock_by_id[ $variant_id ]
@@ -132,7 +141,8 @@ class Sellmo_Product_Variant_Sync {
 						'option1_value' => (string) ( $variant['option1_value'] ?? '' ),
 						'option2_value' => (string) ( $variant['option2_value'] ?? '' ),
 						'option3_value' => (string) ( $variant['option3_value'] ?? '' ),
-						'shop_ids'      => $this->extract_shop_ids( $variant ),
+						'shop_ids'      => $variant_shop_ids,
+						'shop_names'    => $variant_shop_names,
 						'stock_count'   => (int) $stock,
 						// stock_status is derived from stock_count inside upsert_variant().
 					] );
@@ -221,23 +231,42 @@ class Sellmo_Product_Variant_Sync {
 	}
 
 	/**
-	 * Extract the list of shop ids a variant belongs to.
+	 * Resolve the shops a variant belongs to as aligned id + name lists.
 	 *
-	 * @since  1.1.0
-	 * @param  array<string, mixed> $variant Variant payload.
-	 * @return array<int, string>
+	 * Only shops the variant is actually sellable in are kept (a missing
+	 * available_for_sale flag counts as available). Names come from the /shops
+	 * id -> name map and are aligned by position with the ids.
+	 *
+	 * @since  1.4.0
+	 * @param  array<string, mixed>  $variant    Variant payload.
+	 * @param  array<string, string> $shop_names id -> shop_name map from /shops.
+	 * @return array{0: array<int, string>, 1: array<int, string>} [ ids, names ]
 	 */
-	private function extract_shop_ids( array $variant ): array {
+	private function resolve_shops( array $variant, array $shop_names ): array {
 		$shops = isset( $variant['shops'] ) && is_array( $variant['shops'] ) ? $variant['shops'] : [];
-		$ids   = [];
 
+		$ids   = [];
+		$names = [];
 		foreach ( $shops as $shop ) {
-			if ( is_array( $shop ) && ! empty( $shop['shop_id'] ) ) {
-				$ids[] = (string) $shop['shop_id'];
+			if ( ! is_array( $shop ) || empty( $shop['shop_id'] ) ) {
+				continue;
 			}
+
+			// Only keep shops the variant is actually sellable in.
+			if ( array_key_exists( 'available_for_sale', $shop ) && ! (bool) $shop['available_for_sale'] ) {
+				continue;
+			}
+
+			$id = (string) $shop['shop_id'];
+			if ( in_array( $id, $ids, true ) ) {
+				continue;
+			}
+
+			$ids[]   = $id;
+			$names[] = $shop_names[ $id ] ?? '';
 		}
 
-		return array_values( array_unique( $ids ) );
+		return [ $ids, $names ];
 	}
 
 	/**

@@ -71,6 +71,8 @@ class Sellmo_Product_Variant_Store {
   option2_value VARCHAR(191) NOT NULL DEFAULT '',
   option3_value VARCHAR(191) NOT NULL DEFAULT '',
   shop_ids      LONGTEXT NULL,
+  shop_names    LONGTEXT NULL,
+  wc_variation_id BIGINT UNSIGNED NULL DEFAULT NULL,
   stock_count   INT NOT NULL DEFAULT 0,
   stock_status  TINYINT(1) NOT NULL DEFAULT 0,
   created_at    DATETIME NOT NULL DEFAULT '1970-01-01 00:00:00',
@@ -135,9 +137,65 @@ class Sellmo_Product_Variant_Store {
 
 		if ( $table !== $exists ) {
 			self::create_table();
+		} else {
+			self::ensure_columns();
 		}
 
 		self::$table_verified = true;
+	}
+
+	/**
+	 * Add columns introduced after the table's first release.
+	 *
+	 * Idempotent: only adds a column when it is missing, so it is safe to run on
+	 * every request. Mirrors the products-mapping shop columns — shop_names holds
+	 * the human-readable shop names aligned by position with shop_ids.
+	 *
+	 * @since  1.4.0
+	 * @return void
+	 */
+	private static function ensure_columns(): void {
+		global $wpdb;
+
+		$table = self::table_name();
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$columns = array_map( 'strval', (array) $wpdb->get_col( "SHOW COLUMNS FROM `{$table}`" ) );
+
+		if ( ! in_array( 'shop_names', $columns, true ) ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$wpdb->query( "ALTER TABLE `{$table}` ADD COLUMN shop_names LONGTEXT NULL AFTER shop_ids" );
+		}
+
+		if ( ! in_array( 'wc_variation_id', $columns, true ) ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$wpdb->query( "ALTER TABLE `{$table}` ADD COLUMN wc_variation_id BIGINT UNSIGNED NULL DEFAULT NULL AFTER shop_names" );
+		}
+	}
+
+	/**
+	 * Record (or clear) the WooCommerce variation a variant is imported/mapped to.
+	 *
+	 * @since  1.4.0
+	 * @param  string   $variant_id      Sellmo variant id.
+	 * @param  int|null $wc_variation_id  WooCommerce variation id, or null to unlink.
+	 * @return int                        Rows updated.
+	 */
+	public static function set_wc_variation_id( string $variant_id, ?int $wc_variation_id ): int {
+		self::ensure_table();
+		global $wpdb;
+
+		$variant_id = trim( $variant_id );
+		if ( '' === $variant_id ) {
+			return 0;
+		}
+
+		return (int) $wpdb->update(
+			self::table_name(),
+			[ 'wc_variation_id' => ( $wc_variation_id && $wc_variation_id > 0 ) ? $wc_variation_id : null, 'updated_at' => current_time( 'mysql', true ) ],
+			[ 'variant_id' => $variant_id ],
+			[ '%d', '%s' ],
+			[ '%s' ]
+		);
 	}
 
 	/**
@@ -175,6 +233,11 @@ class Sellmo_Product_Variant_Store {
 			$shop_ids = wp_json_encode( array_values( $shop_ids ) );
 		}
 
+		$shop_names = $fields['shop_names'] ?? [];
+		if ( is_array( $shop_names ) ) {
+			$shop_names = wp_json_encode( array_values( $shop_names ) );
+		}
+
 		$stock_count  = (int) ( $fields['stock_count'] ?? 0 );
 		$stock_status = isset( $fields['stock_status'] )
 			? (int) $fields['stock_status']
@@ -190,11 +253,12 @@ class Sellmo_Product_Variant_Store {
 			'option2_value' => (string) ( $fields['option2_value'] ?? '' ),
 			'option3_value' => (string) ( $fields['option3_value'] ?? '' ),
 			'shop_ids'      => is_string( $shop_ids ) ? $shop_ids : null,
+			'shop_names'    => is_string( $shop_names ) ? $shop_names : null,
 			'stock_count'   => $stock_count,
 			'stock_status'  => $stock_status,
 			'updated_at'    => $now,
 		];
-		$formats = [ '%d', '%s', '%s', '%f', '%s', '%s', '%s', '%s', '%d', '%d', '%s' ];
+		$formats = [ '%d', '%s', '%s', '%f', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s' ];
 
 		$table    = self::table_name();
 		$existing = self::get_by_variant_id( $variant_id );

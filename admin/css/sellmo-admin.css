@@ -553,6 +553,53 @@
 	margin: 0;
 }
 
+/* ── Variant sub-rows (expandable variable products) ─────────────────────── */
+
+.sellmo-variant-toggle {
+	padding: 0;
+	margin-right: 2px;
+	cursor: pointer;
+	vertical-align: middle;
+	text-decoration: none;
+	color: #50575e;
+}
+
+.sellmo-variant-toggle .sellmo-variant-caret {
+	font-size: 18px;
+	line-height: 1;
+	width: 18px;
+	height: 18px;
+}
+
+.sellmo-variant-count {
+	color: #787c82;
+	font-size: 12px;
+	font-weight: 400;
+}
+
+.sellmo-mapper-table .sellmo-variant-row {
+	background: #f6f7f7;
+}
+
+.sellmo-mapper-table .sellmo-variant-row > td {
+	border-top: 1px solid #f0f0f1;
+}
+
+.sellmo-variant-name-cell {
+	padding-left: 28px !important;
+}
+
+.sellmo-variant-branch {
+	color: #a7aaad;
+	margin-right: 4px;
+}
+
+.sellmo-variant-shop {
+	color: #787c82;
+	font-size: 12px;
+	margin-left: 6px;
+}
+
 #sellmo-mapper-search {
 	min-width: 260px;
 }

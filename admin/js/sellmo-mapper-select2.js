@@ -96,6 +96,19 @@
 			$el.data( 'sellmo-s2', true );
 		} );
 
+		// Variant map column — searches existing WooCommerce variations via AJAX.
+		$( '.sellmo-variant-wc-select' ).each( function () {
+			var $el = $( this );
+			if ( $el.data( 'sellmo-s2' ) ) {
+				return;
+			}
+			$el[ $fn ]( ajaxConfig(
+				'sellmo_wc_search_wc_variations',
+				i18n.searchWcVariation || 'Search WooCommerce variation…'
+			) );
+			$el.data( 'sellmo-s2', true );
+		} );
+
 		// Sellmo product column (WC-only rows) — local data already loaded with the table.
 		$( '.sellmo-sellmo-select2' ).each( function () {
 			var $el = $( this );
