@@ -99,6 +99,11 @@ $mapper_stats = Sellmo_Product_Mapping::get_dashboard_stats();
 
 			<button type="button" id="sellmo-mapper-search-btn" class="button"><?php esc_html_e( 'Search', 'sellmo-woocommerce' ); ?></button>
 			<button type="button" id="sellmo-mapper-refresh" class="button"><?php esc_html_e( 'Refresh', 'sellmo-woocommerce' ); ?></button>
+
+			<label for="sellmo-mapper-show-other-shops" class="sellmo-mapper-show-other">
+				<input type="checkbox" id="sellmo-mapper-show-other-shops" />
+				<?php esc_html_e( 'Show other-shop products', 'sellmo-woocommerce' ); ?>
+			</label>
 		</div>
 	</div>
 

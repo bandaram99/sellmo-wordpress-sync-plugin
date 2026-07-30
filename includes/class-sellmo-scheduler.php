@@ -143,15 +143,20 @@ class Sellmo_Scheduler {
 	/**
 	 * WP-Cron callback for stock sync.
 	 *
-	 * Instantiates Sellmo_Stock_Sync and delegates to run_sync(), which re-checks
-	 * the enabled setting before doing any work.
+	 * Runs the exact same implementation as the "Sync Stock Now" button
+	 * (Sellmo_Stock_Sync_Pagination) so scheduled runs are shop-scoped and pull
+	 * fresh inventory, identical to the manual action. Gated by the enabled
+	 * setting so a disabled sync is a no-op.
 	 *
 	 * @since  1.0.0
 	 * @return void
 	 */
 	public function run_stock_sync(): void {
-		$sync = new Sellmo_Stock_Sync();
-		$sync->run_sync();
+		if ( 'yes' !== (string) Sellmo_Settings::get( 'stock_sync_enabled' ) ) {
+			return;
+		}
+
+		( new Sellmo_Stock_Sync_Pagination() )->run();
 	}
 
 	/**
@@ -162,6 +167,9 @@ class Sellmo_Scheduler {
 	 * WooCommerce — products only reach WooCommerce once explicitly mapped or
 	 * imported from the Product Mapper.
 	 *
+	 * Matches the "Sync Products Now" button by forcing a fresh catalogue fetch
+	 * rather than reading the cached /products transient.
+	 *
 	 * @since  1.0.0
 	 * @return void
 	 */
@@ -169,6 +177,8 @@ class Sellmo_Scheduler {
 		if ( 'yes' !== (string) Sellmo_Settings::get( 'product_sync_enabled' ) ) {
 			return;
 		}
+
+		Sellmo_API::set_force_fresh( true );
 
 		( new Sellmo_Product_Mapper_Sync() )->run_incremental_sync();
 	}

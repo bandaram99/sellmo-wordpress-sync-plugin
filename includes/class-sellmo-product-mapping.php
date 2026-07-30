@@ -635,6 +635,79 @@ class Sellmo_Product_Mapping {
 		);
 	}
 
+	/**
+	 * Refresh an existing mapper row's full catalogue snapshot in place.
+	 *
+	 * Rewrites shops, price, category, variant_count and raw_payload on the row
+	 * matching the product, so a re-sync propagates upstream edits (not only new
+	 * products). Returns a list of human-readable "old → new" descriptions for the
+	 * shop / price / category fields that actually changed, so the caller can log
+	 * exactly what a sync altered. An empty array means nothing changed.
+	 *
+	 * @since  1.4.0
+	 * @param  string             $sellmo_product_id Sellmo master product id.
+	 * @param  string             $product_code      Sellmo product code (fallback match).
+	 * @param  string             $shop_ids          Comma-separated shop ids.
+	 * @param  string             $shop_names        Comma-separated shop names.
+	 * @param  float|null         $price             Representative price, or null to leave unchanged.
+	 * @param  string             $category          Category name.
+	 * @param  int                $variant_count     Variant count.
+	 * @param  array|string|null  $raw_payload       Full product payload (array or JSON), or null to leave.
+	 * @return array<int, string>                    Change descriptions for the log.
+	 */
+	public static function refresh_catalogue_row( string $sellmo_product_id, string $product_code, string $shop_ids, string $shop_names, ?float $price, string $category, int $variant_count, $raw_payload ): array {
+		self::ensure_table();
+		global $wpdb;
+
+		$row = self::find_row_by_sellmo_id( trim( $sellmo_product_id ) );
+		if ( ! is_array( $row ) && '' !== trim( $product_code ) ) {
+			$row = self::find_row_by_sellmo_code( trim( $product_code ) );
+		}
+		if ( ! is_array( $row ) ) {
+			return [];
+		}
+
+		// Detect shop / price / category changes for the log.
+		$changes  = [];
+		$old_shop = (string) ( $row['shop_name'] ?? '' );
+		if ( $old_shop !== $shop_names ) {
+			$changes[] = sprintf( 'shops "%s" → "%s"', '' !== $old_shop ? $old_shop : 'none', '' !== $shop_names ? $shop_names : 'none' );
+		}
+		if ( null !== $price ) {
+			$old_price = (float) ( $row['price'] ?? 0 );
+			if ( abs( $old_price - $price ) > 0.0001 ) {
+				$changes[] = sprintf( 'price %s → %s', number_format( $old_price, 2, '.', '' ), number_format( $price, 2, '.', '' ) );
+			}
+		}
+		$old_cat = (string) ( $row['category'] ?? '' );
+		if ( $old_cat !== $category ) {
+			$changes[] = sprintf( 'category "%s" → "%s"', '' !== $old_cat ? $old_cat : 'none', '' !== $category ? $category : 'none' );
+		}
+
+		// Rewrite the catalogue snapshot. Order of $data keys must match $formats.
+		$data = [
+			'shop_id'       => $shop_ids,
+			'shop_name'     => $shop_names,
+			'category'      => $category,
+			'variant_count' => $variant_count,
+			'updated_at'    => current_time( 'mysql', true ),
+		];
+		$formats = [ '%s', '%s', '%s', '%d', '%s' ];
+
+		if ( null !== $price ) {
+			$data['price'] = $price;
+			$formats[]     = '%f';
+		}
+		if ( null !== $raw_payload ) {
+			$data['raw_payload'] = is_string( $raw_payload ) ? $raw_payload : wp_json_encode( $raw_payload );
+			$formats[]           = '%s';
+		}
+
+		$wpdb->update( self::table_name(), $data, [ 'id' => (int) $row['id'] ], $formats, [ '%d' ] );
+
+		return $changes;
+	}
+
 	// =========================================================================
 	// Shops
 	// =========================================================================

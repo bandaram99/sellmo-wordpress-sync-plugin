@@ -128,6 +128,28 @@ class Sellmo_Product_Variant_Sync {
 					// "Sync Products Now"; selected-shop filtering happens at display time.
 					[ $variant_shop_ids, $variant_shop_names ] = $this->resolve_shops( $variant, $shop_names );
 
+					// Log a variant's shop change (old → new) before the upsert overwrites
+					// it. ponytail: one extra indexed read per variant; fine at these sizes.
+					$existing_variant = Sellmo_Product_Variant_Store::get_by_variant_id( $variant_id );
+					if ( is_array( $existing_variant ) ) {
+						$old_shops = $this->decode_names( (string) ( $existing_variant['shop_names'] ?? '' ) );
+						$new_shops = implode( ', ', $variant_shop_names );
+						if ( $old_shops !== $new_shops ) {
+							Sellmo_Logger::log(
+								'product',
+								'pos_to_wc',
+								'success',
+								sprintf(
+									'Variant "%s" shops "%s" → "%s".',
+									'' !== $variant_code ? $variant_code : $variant_id,
+									'' !== $old_shops ? $old_shops : 'none',
+									'' !== $new_shops ? $new_shops : 'none'
+								),
+								$variant_code
+							);
+						}
+					}
+
 					// Stock: inventory rows key a variant by its own id (product_id)
 					// and by its product_code; prefer the id match.
 					$stock = $stock_by_id[ $variant_id ]
@@ -267,6 +289,21 @@ class Sellmo_Product_Variant_Sync {
 		}
 
 		return [ $ids, $names ];
+	}
+
+	/**
+	 * Decode a stored JSON shop_names column into a comma-joined string.
+	 *
+	 * @since  1.4.0
+	 * @param  string $json Stored JSON array (possibly empty).
+	 * @return string
+	 */
+	private function decode_names( string $json ): string {
+		if ( '' === trim( $json ) ) {
+			return '';
+		}
+		$decoded = json_decode( $json, true );
+		return is_array( $decoded ) ? implode( ', ', array_map( 'strval', $decoded ) ) : '';
 	}
 
 	/**

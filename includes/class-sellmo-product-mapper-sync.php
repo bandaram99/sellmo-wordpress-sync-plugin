@@ -132,23 +132,41 @@ class Sellmo_Product_Mapper_Sync {
 					continue;
 				}
 
-				// Current shop membership, resolved up front so it can be refreshed on
-				// existing rows too — a shop added/removed upstream must propagate to
-				// already-staged and already-mapped products, not only new ones.
+				// Current catalogue snapshot, resolved up front so it can be refreshed
+				// on existing rows too — an upstream edit (shop/price/category/variants)
+				// must propagate to already-staged and already-mapped products.
 				[ $shop_ids, $shop_names_csv ] = Sellmo_Product_Mapping::resolve_available_shops( $product, $shop_names );
+				$variant_count = isset( $product['variants'] ) && is_array( $product['variants'] ) ? count( $product['variants'] ) : 0;
 
-				// Skip products already pushed to WooCommerce (real mapping exists),
-				// but keep their stored shop membership current for scope enforcement.
-				if ( Sellmo_Product_Mapping::is_sellmo_product_mapped( $product ) ) {
-					Sellmo_Product_Mapping::update_shops( $sellmo_id, $code, $shop_ids, $shop_names_csv );
-					$skipped++;
-					continue;
-				}
+				// Existing row (mapped or already staged): refresh its snapshot in place
+				// — shops, price, category, variant_count, raw_payload — and log any
+				// shop/price/category change. No new WooCommerce write happens here.
+				if ( Sellmo_Product_Mapping::is_sellmo_product_mapped( $product ) || ( '' !== $sellmo_id && isset( $existing[ $sellmo_id ] ) ) ) {
+					$changes = Sellmo_Product_Mapping::refresh_catalogue_row(
+						$sellmo_id,
+						$code,
+						$shop_ids,
+						$shop_names_csv,
+						$this->resolve_price( $product ),
+						$this->resolve_category( $product ),
+						$variant_count,
+						$product
+					);
 
-				// Skip products already staged in the mapper table (no overwrite),
-				// but refresh their shop membership so scope stays accurate.
-				if ( '' !== $sellmo_id && isset( $existing[ $sellmo_id ] ) ) {
-					Sellmo_Product_Mapping::update_shops( $sellmo_id, $code, $shop_ids, $shop_names_csv );
+					if ( ! empty( $changes ) ) {
+						Sellmo_Logger::log(
+							'product',
+							'pos_to_wc',
+							'success',
+							sprintf(
+								'Mapper row updated for "%s": %s.',
+								(string) ( $product['product_name'] ?? '' ),
+								implode( '; ', $changes )
+							),
+							$code
+						);
+					}
+
 					$skipped++;
 					continue;
 				}
@@ -291,6 +309,25 @@ class Sellmo_Product_Mapper_Sync {
 		if ( isset( $shops[0]['price'] ) && is_numeric( $shops[0]['price'] ) ) {
 			return (float) $shops[0]['price'];
 		}
-		return isset( $product['selling_price'] ) ? (float) $product['selling_price'] : 0.0;
+		if ( isset( $product['selling_price'] ) && is_numeric( $product['selling_price'] ) && (float) $product['selling_price'] > 0 ) {
+			return (float) $product['selling_price'];
+		}
+
+		// Variable products carry no product-level price — use the first variant
+		// that lists a shop price as the representative value for the mapper list.
+		$variants = isset( $product['variants'] ) && is_array( $product['variants'] ) ? $product['variants'] : [];
+		foreach ( $variants as $variant ) {
+			if ( ! is_array( $variant ) ) {
+				continue;
+			}
+			$vshops = isset( $variant['shops'] ) && is_array( $variant['shops'] ) ? $variant['shops'] : [];
+			foreach ( $vshops as $shop ) {
+				if ( is_array( $shop ) && isset( $shop['price'] ) && is_numeric( $shop['price'] ) ) {
+					return (float) $shop['price'];
+				}
+			}
+		}
+
+		return 0.0;
 	}
 }

@@ -68,6 +68,7 @@ class Sellmo_Admin {
 		add_action( 'wp_ajax_sellmo_wc_mapper_import_variant',      [ $this, 'ajax_mapper_import_variant' ] );
 		add_action( 'wp_ajax_sellmo_wc_mapper_import_all_variants', [ $this, 'ajax_mapper_import_all_variants' ] );
 		add_action( 'wp_ajax_sellmo_wc_map_variant',                [ $this, 'ajax_map_variant' ] );
+		add_action( 'wp_ajax_sellmo_wc_unmap_variant',              [ $this, 'ajax_unmap_variant' ] );
 	}
 
 	// -------------------------------------------------------------------------
@@ -801,6 +802,8 @@ class Sellmo_Admin {
 		$status      = sanitize_key( wp_unslash( $_POST['status'] ?? '' ) );
 		$status      = in_array( $status, [ 'mapped', 'not_mapped' ], true ) ? $status : '';
 		$cat_filter  = sanitize_text_field( wp_unslash( $_POST['category'] ?? '' ) );
+		// When unticked (default) products belonging only to another shop are hidden.
+		$show_other  = '1' === (string) ( $_POST['show_other_shops'] ?? '' );
 		// Source the Sellmo product list from the local mapping table (staged by the
 		// dashboard "Sync Products Now" action) instead of the live API, so the list
 		// reflects stored data and is empty once that data is cleared.
@@ -873,6 +876,11 @@ class Sellmo_Admin {
 
 		$rows = [];
 		foreach ( array_values( $deduped_rows ) as $row ) {
+			// Hide products that belong only to another shop unless the user opts in.
+			if ( ! $show_other && false === ( $row['in_selected_shop'] ?? true ) ) {
+				continue;
+			}
+
 			if ( 'mapped' === $status && 'mapped' !== (string) $row['status'] ) {
 				continue;
 			}
@@ -1047,6 +1055,10 @@ class Sellmo_Admin {
 		$selected_shop = Sellmo_Product_Mapping::selected_shop_id();
 		$parent_edit   = $wc_parent_id > 0 ? (string) get_edit_post_link( $wc_parent_id, 'raw' ) : '';
 
+		// Variant selling price lives on the payload's per-shop entries (the store
+		// keeps only cost), so resolve it from the parent's raw_payload.
+		$price_map = $this->variant_prices_for_shop( $mapping_id, $selected_shop );
+
 		$rows = [];
 		foreach ( $variants as $variant ) {
 			// Selected-shop filter: only variants sellable in the chosen shop.
@@ -1077,7 +1089,7 @@ class Sellmo_Admin {
 				'variant_id'      => (string) ( $variant['variant_id'] ?? '' ),
 				'code'            => (string) ( $variant['product_code'] ?? '' ),
 				'options'         => implode( ' / ', $options ),
-				'price'           => (float) ( $variant['default_cost'] ?? 0 ),
+				'price'           => (float) ( $price_map[ (string) ( $variant['variant_id'] ?? '' ) ] ?? 0 ),
 				'stock'           => (int) ( $variant['stock_count'] ?? 0 ),
 				'shop_name'       => implode( ', ', $shop_names ),
 				'status'          => $is_mapped ? 'mapped' : 'not_mapped',
@@ -1087,6 +1099,88 @@ class Sellmo_Admin {
 		}
 
 		return $rows;
+	}
+
+	/**
+	 * Resolve each variant's selling price for a shop from the parent raw_payload.
+	 *
+	 * The variant store keeps only default_cost; the selling price lives on the
+	 * payload's per-shop entries. Prefers the selected shop's price, falling back
+	 * to the first shop that lists one.
+	 *
+	 * @since  1.4.0
+	 * @param  int    $mapping_id    Parent mapping row id.
+	 * @param  string $selected_shop Selected shop id ('' when none chosen).
+	 * @return array<string, float>  variant_id => price
+	 */
+	private function variant_prices_for_shop( int $mapping_id, string $selected_shop ): array {
+		$row = Sellmo_Product_Mapping::get_row_by_id( $mapping_id );
+		if ( ! is_array( $row ) || empty( $row['raw_payload'] ) ) {
+			return [];
+		}
+
+		$payload = json_decode( (string) $row['raw_payload'], true );
+		if ( ! is_array( $payload ) || empty( $payload['variants'] ) || ! is_array( $payload['variants'] ) ) {
+			return [];
+		}
+
+		$prices = [];
+		foreach ( $payload['variants'] as $variant ) {
+			if ( ! is_array( $variant ) ) {
+				continue;
+			}
+			$vid = (string) ( $variant['variant_id'] ?? '' );
+			if ( '' === $vid ) {
+				continue;
+			}
+
+			$shops    = isset( $variant['shops'] ) && is_array( $variant['shops'] ) ? $variant['shops'] : [];
+			$selected = null;
+			$fallback = null;
+			foreach ( $shops as $shop ) {
+				if ( ! is_array( $shop ) || ! isset( $shop['price'] ) || ! is_numeric( $shop['price'] ) ) {
+					continue;
+				}
+				$shop_price = (float) $shop['price'];
+				if ( null === $fallback ) {
+					$fallback = $shop_price;
+				}
+				if ( '' !== $selected_shop && (string) ( $shop['shop_id'] ?? '' ) === $selected_shop ) {
+					$selected = $shop_price;
+					break;
+				}
+			}
+
+			$prices[ $vid ] = $selected ?? $fallback ?? 0.0;
+		}
+
+		return $prices;
+	}
+
+	/**
+	 * AJAX: unmap a variant — unlink it from its WooCommerce variation.
+	 *
+	 * Mirrors the parent Unmap: it detaches the mapping (clears the recorded
+	 * variation id) but does not delete the WooCommerce variation.
+	 *
+	 * @since  1.4.0
+	 * @return void
+	 */
+	public function ajax_unmap_variant(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$variant_id = sanitize_text_field( wp_unslash( $_POST['variant_id'] ?? '' ) );
+		if ( '' === $variant_id ) {
+			wp_send_json_error( [ 'message' => __( 'Invalid variant reference.', 'sellmo-woocommerce' ) ] );
+		}
+
+		Sellmo_Product_Variant_Store::set_wc_variation_id( $variant_id, null );
+
+		wp_send_json_success( [ 'message' => __( 'Variant unmapped.', 'sellmo-woocommerce' ) ] );
 	}
 
 	/**

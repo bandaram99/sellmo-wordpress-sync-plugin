@@ -604,6 +604,20 @@
 	min-width: 260px;
 }
 
+.sellmo-mapper-show-other {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	margin-left: 10px;
+	font-size: 13px;
+	color: #50575e;
+	vertical-align: middle;
+}
+
+.sellmo-mapper-show-other input {
+	margin: 0;
+}
+
 /* ── Sync Log page ───────────────────────────────────────────────────────────── */
 
 .sellmo-log-wrap {

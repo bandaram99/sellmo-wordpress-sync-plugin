@@ -526,6 +526,8 @@ class Sellmo_Product_Sync {
 				continue;
 			}
 
+			$old_price = (string) $variation->get_regular_price();
+
 			$variation->set_regular_price( (string) $price );
 
 			if ( isset( $variant['discounted_price'] ) && (float) $variant['discounted_price'] > 0 ) {
@@ -536,6 +538,24 @@ class Sellmo_Product_Sync {
 
 			$variation->save();
 			$changed = true;
+
+			// Log the per-variation price change (old → new) when it actually moved.
+			$new_price = (string) $variation->get_regular_price();
+			if ( $old_price !== $new_price ) {
+				Sellmo_Logger::log(
+					'product',
+					'pos_to_wc',
+					'success',
+					sprintf(
+						'Variation "%s" (WC #%d) price %s → %s.',
+						'' !== $sku ? $sku : $svid,
+						(int) $variation_id,
+						'' !== $old_price ? $old_price : 'n/a',
+						'' !== $new_price ? $new_price : 'n/a'
+					),
+					(string) ( $variant['product_code'] ?? '' )
+				);
+			}
 		}
 
 		// Refresh the parent's cached price range / lookup tables so the storefront

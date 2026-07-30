@@ -815,6 +815,7 @@
 		var mapperSearch         = '';
 		var mapperStatus         = '';
 		var mapperCategory       = '';
+		var mapperShowOther      = false;
 		var mapperLoading        = false;
 		var mapperWcProducts     = [];
 		var mapperSellmoProducts = [];
@@ -861,6 +862,12 @@
 
 		$( '#sellmo-mapper-category-filter' ).on( 'change', function () {
 			mapperCategory = String( $( this ).val() || '' );
+			loadMapperList( 1 );
+		} );
+
+		// Toggle visibility of products that belong to another shop.
+		$( '#sellmo-mapper-show-other-shops' ).on( 'change', function () {
+			mapperShowOther = $( this ).is( ':checked' );
 			loadMapperList( 1 );
 		} );
 
@@ -1178,28 +1185,22 @@
 			} );
 		} );
 
-		// Map a variant to an already-existing WooCommerce variation.
-		$( document ).on( 'click', '.sellmo-variant-map-btn', function () {
-			var $btn          = $( this );
-			var $row          = $btn.closest( 'tr' );
-			var mappingId     = parseInt( $row.data( 'mapping-id' ) || 0, 10 );
-			var variantId     = String( $row.data( 'variant-id' ) || '' );
-			var wcVariationId = parseInt( $row.find( '.sellmo-variant-wc-select' ).val() || 0, 10 );
+		// Unmap a variant — unlink it from its WooCommerce variation.
+		$( document ).on( 'click', '.sellmo-variant-unmap-btn', function () {
+			var $btn      = $( this );
+			var $row      = $btn.closest( 'tr' );
+			var variantId = String( $row.data( 'variant-id' ) || '' );
 
-			if ( ! wcVariationId ) {
-				// eslint-disable-next-line no-alert
-				window.alert( i18n.mapperChooseWc || 'Select a WooCommerce product first.' );
+			if ( ! variantId ) {
 				return;
 			}
 
 			$btn.prop( 'disabled', true );
 
 			$.post( ajaxUrl, {
-				action          : 'sellmo_wc_map_variant',
-				nonce           : nonce,
-				mapping_id      : mappingId,
-				variant_id      : variantId,
-				wc_variation_id : wcVariationId
+				action     : 'sellmo_wc_unmap_variant',
+				nonce      : nonce,
+				variant_id : variantId
 			} )
 			.done( function ( res ) {
 				if ( res && res.success ) {
@@ -1287,12 +1288,13 @@
 			$( '#sellmo-mapper-error' ).hide();
 
 			$.post( ajaxUrl, {
-				action   : 'sellmo_wc_get_mapper_list',
-				nonce    : nonce,
-				page     : page,
-				search   : mapperSearch,
-				status   : mapperStatus,
-				category : mapperCategory
+				action           : 'sellmo_wc_get_mapper_list',
+				nonce            : nonce,
+				page             : page,
+				search           : mapperSearch,
+				status           : mapperStatus,
+				category         : mapperCategory,
+				show_other_shops : mapperShowOther ? '1' : ''
 			} )
 			.done( function ( res ) {
 				if ( ! res.success ) {
@@ -1468,9 +1470,9 @@ var wcOption = selectedWcId > 0
 				// Simple product: one click creates the WooCommerce product and maps it.
 				actions += ' <button type="button" class="button button-small sellmo-mapper-import-btn">' + escHtml( i18n.importProduct || 'Import to WooCommerce' ) + '</button>';
 			}
-			// Variable product: import every in-shop variant as variations in one click
-			// (shown for mapped parents too, so remaining variants can be added later).
-			if ( hasVariants ) {
+			// Variable product not yet mapped: import every in-shop variant at once.
+			// Hidden after mapping — remaining variants are imported per sub-row.
+			if ( hasVariants && 'mapped' !== status ) {
 				actions += ' <button type="button" class="button button-small sellmo-mapper-import-all-btn">' + escHtml( i18n.importAll || 'Import all to WooCommerce' ) + '</button>';
 			}
 			if ( wcEditUrl ) {
@@ -1520,18 +1522,26 @@ var wcOption = selectedWcId > 0
 			var status     = String( v.status || 'not_mapped' );
 			var wcEditUrl  = String( v.wc_edit_url || '' );
 
-			var badge = 'mapped' === status
+			var wcVariationId = parseInt( v.wc_variation_id || 0, 10 );
+			var isMapped      = 'mapped' === status;
+
+			var badge = isMapped
 				? '<span class="sellmo-result-badge success">' + escHtml( i18n.mapped || 'Mapped' ) + '</span>'
 				: '<span class="sellmo-result-badge skipped">' + escHtml( i18n.notMapped || 'Not Mapped' ) + '</span>';
 
-			// Map-to-existing dropdown (populated on demand by the select2 module).
-			var wcSelect = '<select class="sellmo-variant-wc-select" style="width:100%"></select>';
-
-			var actions = '<button type="button" class="button button-small sellmo-variant-map-btn">' + escHtml( 'mapped' === status ? ( i18n.change || 'Change' ) : ( i18n.map || 'Map' ) ) + '</button>';
-			actions += ' <button type="button" class="button button-small sellmo-variant-import-btn">' + escHtml( i18n.importProduct || 'Import to WooCommerce' ) + '</button>';
-			if ( wcEditUrl ) {
-				actions += ' <a class="button button-small" target="_blank" href="' + escHtml( wcEditUrl ) + '">' + escHtml( i18n.viewInWC || 'View in WC' ) + '</a>';
+			// Mapped variant: Unmap + View in WC. Not mapped: Import to WooCommerce.
+			var actions;
+			if ( isMapped ) {
+				actions = '<button type="button" class="button button-small sellmo-variant-unmap-btn">' + escHtml( i18n.unmap || 'Unmap' ) + '</button>';
+				if ( wcEditUrl ) {
+					actions += ' <a class="button button-small" target="_blank" href="' + escHtml( wcEditUrl ) + '">' + escHtml( i18n.viewInWC || 'View in WC' ) + '</a>';
+				}
+			} else {
+				actions = '<button type="button" class="button button-small sellmo-variant-import-btn">' + escHtml( i18n.importProduct || 'Import to WooCommerce' ) + '</button>';
 			}
+
+			// WooCommerce column: the linked variation reference when mapped, else —.
+			var wcCell = isMapped && wcVariationId > 0 ? '#' + wcVariationId : '—';
 
 			return '<tr class="sellmo-variant-row" data-variant-id="' + variantId + '" data-variant-code="' + code + '" data-mapping-id="' + mappingId + '" style="display:none;">'
 				+ '<th class="check-column"></th>'
@@ -1539,7 +1549,7 @@ var wcOption = selectedWcId > 0
 				+ '<td class="sellmo-mapper-code-cell"><code>' + code + '</code></td>'
 				+ '<td class="sellmo-mapper-category-cell">—</td>'
 				+ '<td class="sellmo-mapper-price-cell">' + ( price > 0 ? escHtml( price.toFixed( 2 ) ) : '—' ) + '</td>'
-				+ '<td class="sellmo-mapper-wc-cell">' + wcSelect + '</td>'
+				+ '<td class="sellmo-mapper-wc-cell">' + wcCell + '</td>'
 				+ '<td class="sellmo-mapper-status-cell">' + badge + '</td>'
 				+ '<td class="sellmo-mapper-actions-cell"><div class="sellmo-mapper-actions-wrap">' + actions + '</div></td>'
 				+ '</tr>';
