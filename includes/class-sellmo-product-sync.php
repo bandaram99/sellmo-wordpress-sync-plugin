@@ -286,11 +286,11 @@ class Sellmo_Product_Sync {
 	/**
 	 * Push price + category from a Sellmo payload onto a MAPPED WooCommerce product.
 	 *
-	 * Used by the stock sync so "Sync Stock Now" also refreshes the price and
+	 * Used by the stock sync so "Sync Stock Now" also refreshes the name, price and
 	 * category of mapped products (stock itself flows through the stock sync's own
-	 * loop). Product name/description are left untouched. The mapper table's
-	 * cached price/category/variant_count columns are mirrored so the Product
-	 * Mapper list stays in step with the live product.
+	 * loop). Product description is left untouched. The mapper table's cached
+	 * name/price/category/variant_count columns are mirrored so the Product Mapper
+	 * list stays in step with the live product.
 	 *
 	 * @since  1.2.0
 	 * @param  array<string, mixed> $sellmo_product Decoded Sellmo product payload.
@@ -320,8 +320,17 @@ class Sellmo_Product_Sync {
 		$old_regular = (string) $product->get_regular_price();
 		$old_sale    = (string) $product->get_sale_price();
 		$old_cats    = $this->wc_category_names( $wc_product_id );
+		$old_name    = (string) $product->get_name();
 
 		try {
+			// Product name: keep the mapped product's title in step with the POS name.
+			if ( isset( $sellmo_product['product_name'] ) ) {
+				$new_name = (string) $sellmo_product['product_name'];
+				if ( '' !== $new_name && $new_name !== $old_name ) {
+					$product->set_name( $new_name );
+				}
+			}
+
 			// Regular price: prefer the configured shop's price, fall back to selling_price.
 			$price = $this->extract_shop_price( $sellmo_product );
 			if ( null === $price && isset( $sellmo_product['selling_price'] ) ) {
@@ -341,7 +350,7 @@ class Sellmo_Product_Sync {
 			$this->apply_product_category( $product, $sellmo_product );
 			$product->save();
 
-			$this->log_field_changes( $product, $wc_product_id, $sellmo_product, $old_regular, $old_sale, $old_cats );
+			$this->log_field_changes( $product, $wc_product_id, $sellmo_product, $old_regular, $old_sale, $old_cats, $old_name );
 
 			// Update each existing variation's price from its Sellmo variant.
 			// Variant stock flows through the stock loop; this covers price.
@@ -363,7 +372,8 @@ class Sellmo_Product_Sync {
 				(string) ( $sellmo_product['product_code'] ?? '' ),
 				null !== $mapper_price ? (float) $mapper_price : null,
 				$this->resolve_sellmo_category_name( $sellmo_product ),
-				$variant_count
+				$variant_count,
+				(string) ( $sellmo_product['product_name'] ?? '' )
 			);
 
 			return 'success';
@@ -408,14 +418,24 @@ class Sellmo_Product_Sync {
 	 * @param  string               $old_regular    Regular price before the update.
 	 * @param  string               $old_sale       Sale price before the update.
 	 * @param  string               $old_cats       Category names before the update.
+	 * @param  string               $old_name       Product name before the update.
 	 * @return void
 	 */
-	private function log_field_changes( WC_Product $product, int $wc_product_id, array $sellmo_product, string $old_regular, string $old_sale, string $old_cats ): void {
+	private function log_field_changes( WC_Product $product, int $wc_product_id, array $sellmo_product, string $old_regular, string $old_sale, string $old_cats, string $old_name = '' ): void {
 		$new_regular = (string) $product->get_regular_price();
 		$new_sale    = (string) $product->get_sale_price();
 		$new_cats    = $this->wc_category_names( $wc_product_id );
+		$new_name    = (string) $product->get_name();
 
 		$changes = [];
+
+		if ( $old_name !== $new_name ) {
+			$changes[] = sprintf(
+				'name "%s" → "%s"',
+				'' !== $old_name ? $old_name : 'n/a',
+				'' !== $new_name ? $new_name : 'n/a'
+			);
+		}
 
 		if ( $old_regular !== $new_regular ) {
 			$changes[] = sprintf(

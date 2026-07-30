@@ -590,7 +590,7 @@ class Sellmo_Product_Mapping {
 	 * @param  int        $variant_count     New variant count.
 	 * @return int                           Number of rows updated.
 	 */
-	public static function update_catalogue_fields( string $sellmo_product_id, string $product_code, ?float $price, string $category, int $variant_count ): int {
+	public static function update_catalogue_fields( string $sellmo_product_id, string $product_code, ?float $price, string $category, int $variant_count, ?string $name = null ): int {
 		self::ensure_table();
 		global $wpdb;
 
@@ -619,6 +619,12 @@ class Sellmo_Product_Mapping {
 		if ( null !== $price ) {
 			array_unshift( $set, 'price = %f' );
 			array_unshift( $values, $price );
+		}
+
+		// Mirror the POS product name into the mapper list when supplied.
+		if ( null !== $name && '' !== $name ) {
+			$set[]    = 'pos_product_name = %s';
+			$values[] = $name;
 		}
 
 		$table = self::table_name();
