@@ -163,6 +163,13 @@
 				return;
 			}
 
+			// Mapped rows show a static rectangle; the first "Change" click reveals
+			// the dropdown (handled in admin.js) and must not be blocked here.
+			var $cell = $row.find( '.sellmo-mapper-wc-cell' );
+			if ( $cell.find( '.sellmo-mapper-wc-static' ).length && ! $cell.find( '.sellmo-wc-select2' ).length ) {
+				return;
+			}
+
 			var wcVal = parseInt( $row.find( '.sellmo-wc-select2' ).val() || 0, 10 );
 			if ( ! wcVal ) {
 				e.preventDefault();

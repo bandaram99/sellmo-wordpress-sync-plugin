@@ -528,6 +528,23 @@
 	overflow: visible;
 }
 
+/* Read-only rectangle shown for a mapped product instead of the dropdown. */
+.sellmo-mapper-wc-static {
+	display: block;
+	height: 30px;
+	line-height: 28px;
+	padding: 0 8px;
+	border: 1px solid #dcdcde;
+	border-radius: 3px;
+	background: #f6f7f7;
+	color: #2c3338;
+	font-size: 13px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	box-sizing: border-box;
+}
+
 .sellmo-mapper-table .sellmo-mapper-status-cell {
 	white-space: normal;
 }

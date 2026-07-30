@@ -985,6 +985,15 @@
 			var $row    = $btn.closest( 'tr' );
 			var rowType = String( $row.data( 'row-type' ) || 'sellmo' );
 
+			// "Change" on a mapped row: reveal the searchable dropdown in place of the
+			// static rectangle, then let the next click perform the re-map.
+			var $wcCell = $row.find( '.sellmo-mapper-wc-cell' );
+			if ( $wcCell.find( '.sellmo-mapper-wc-static' ).length && ! $wcCell.find( '.sellmo-mapper-wc-select' ).length ) {
+				$wcCell.html( '<select class="sellmo-wc-select2 sellmo-mapper-wc-select" style="width:100%"></select>' );
+				$( document ).trigger( 'sellmo:mapper-rendered', [ mapperSellmoProducts ] );
+				return;
+			}
+
 			var sellmoId, sellmoCode, sellmoName, wcProduct;
 
 			if ( 'wc_only' === rowType ) {
@@ -1454,6 +1463,12 @@ var wcOption = selectedWcId > 0
 				: '';
 			var wcSelect = '<select class="sellmo-wc-select2 sellmo-mapper-wc-select" style="width:100%">' + wcOption + '</select>';
 
+			// Mapped rows show a static, read-only rectangle with the linked product;
+			// only unmapped rows get the searchable dropdown. "Change" reveals it.
+			var wcCellContent = 'mapped' === status
+				? '<div class="sellmo-mapper-wc-static">' + escHtml( selectedWcLabel ) + '</div>'
+				: wcSelect;
+
 			var statusBadge = 'mapped' === status
 				? '<span class="sellmo-result-badge success">' + escHtml( i18n.mapped || 'Mapped' ) + '</span>'
 				: '<span class="sellmo-result-badge skipped">' + escHtml( i18n.notMapped || 'Not Mapped' ) + '</span>';
@@ -1494,7 +1509,7 @@ var wcOption = selectedWcId > 0
 				+ '<td class="sellmo-mapper-code-cell"><code>' + sellmoCode + '</code></td>'
 				+ '<td class="sellmo-mapper-category-cell">' + category + '</td>'
 				+ '<td class="sellmo-mapper-price-cell">' + ( price > 0 ? escHtml( price.toFixed( 2 ) ) : '—' ) + '</td>'
-				+ '<td class="sellmo-mapper-wc-cell">' + wcSelect + '</td>'
+				+ '<td class="sellmo-mapper-wc-cell">' + wcCellContent + '</td>'
 				+ '<td class="sellmo-mapper-status-cell">' + statusBadge + '</td>'
 				+ '<td class="sellmo-mapper-actions-cell"><div class="sellmo-mapper-actions-wrap">' + actions + '</div></td>'
 				+ '</tr>';
