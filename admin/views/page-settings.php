@@ -22,6 +22,7 @@ $order_sync_enabled    = 'yes' === (string) Sellmo_Settings::get( 'order_sync_en
 $stock_sync_interval   = (string) ( Sellmo_Settings::get( 'stock_sync_interval' ) ?: 'hourly' );
 $product_sync_interval = (string) ( Sellmo_Settings::get( 'product_sync_interval' ) ?: 'twicedaily' );
 $webhook_secret        = (string) ( Sellmo_Settings::get( 'webhook_secret' ) ?: '' );
+$order_timezone        = (string) ( Sellmo_Settings::get( 'order_timezone' ) ?: '' );
 $webhook_url           = rest_url( 'sellmo-wc/v1/webhook' );
 ?>
 <div class="wrap sellmo-settings-wrap">
@@ -198,6 +199,57 @@ $webhook_url           = rest_url( 'sellmo-wc/v1/webhook' );
 								);
 								?>
 							</label>
+						</td>
+					</tr>
+
+					<tr>
+						<th scope="row">
+							<label for="sellmo_wc_order_timezone">
+								<?php esc_html_e( 'Order Time Zone', 'sellmo-woocommerce' ); ?>
+							</label>
+						</th>
+						<td>
+							<select id="sellmo_wc_order_timezone" name="sellmo_wc_order_timezone">
+								<option value="">
+									<?php
+									printf(
+										/* translators: %s: the site's current timezone, e.g. "Asia/Colombo" or "+05:30". */
+										esc_html__( 'Use WordPress time zone (%s)', 'sellmo-woocommerce' ),
+										esc_html( wp_timezone_string() )
+									);
+									?>
+								</option>
+								<?php
+								// Group the PHP timezone list by region so the dropdown reads like
+								// the WordPress one. Every value is a real identifier, so it can be
+								// handed straight to DateTimeZone without further conversion.
+								$tz_regions = [];
+								foreach ( timezone_identifiers_list() as $tz_id ) {
+									$tz_regions[ explode( '/', $tz_id )[0] ][] = $tz_id;
+								}
+
+								foreach ( $tz_regions as $tz_region => $tz_ids ) :
+									?>
+									<optgroup label="<?php echo esc_attr( $tz_region ); ?>">
+										<?php foreach ( $tz_ids as $tz_id ) : ?>
+											<option value="<?php echo esc_attr( $tz_id ); ?>" <?php selected( $order_timezone, $tz_id ); ?>>
+												<?php echo esc_html( str_replace( [ $tz_region . '/', '_' ], [ '', ' ' ], $tz_id ) ); ?>
+											</option>
+										<?php endforeach; ?>
+									</optgroup>
+									<?php
+								endforeach;
+								?>
+							</select>
+							<p class="description">
+								<?php
+								printf(
+									/* translators: %s: Brand display name. */
+									esc_html__( 'Time zone used for the order date and time sent to %s. Leave on the WordPress time zone unless your shop is in a different one.', 'sellmo-woocommerce' ),
+									esc_html( $brand_name )
+								);
+								?>
+							</p>
 						</td>
 					</tr>
 

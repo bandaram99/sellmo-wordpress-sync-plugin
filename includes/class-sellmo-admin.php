@@ -436,6 +436,14 @@ class Sellmo_Admin {
 			Sellmo_Settings::set( 'product_sync_interval', $product_interval );
 		}
 
+		// Order time zone — empty means "follow the WordPress time zone". Anything
+		// else must be a real PHP identifier so build_payload() can pass it to
+		// DateTimeZone; unrecognised values are rejected rather than stored.
+		$order_timezone = sanitize_text_field( wp_unslash( $_POST['sellmo_wc_order_timezone'] ?? '' ) );
+		if ( '' === $order_timezone || in_array( $order_timezone, timezone_identifiers_list(), true ) ) {
+			Sellmo_Settings::set( 'order_timezone', $order_timezone );
+		}
+
 		// Category filter — array of IDs (stored as strings to match API responses).
 		$raw_cats      = isset( $_POST['sellmo_wc_sync_categories'] ) ? (array) $_POST['sellmo_wc_sync_categories'] : [];
 		$sync_cats     = array_values( array_filter( array_map( 'sanitize_text_field', array_map( 'wp_unslash', $raw_cats ) ) ) );

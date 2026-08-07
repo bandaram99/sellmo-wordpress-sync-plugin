@@ -69,6 +69,7 @@ class Sellmo_Settings {
 			'product_sync_interval' => 'twicedaily',
 			'sync_categories'       => [],
 			'terminal_key'          => '',
+			'order_timezone'        => '',
 		];
 	}
 }

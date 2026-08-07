@@ -402,7 +402,17 @@ class Sellmo_Order_Sync {
 			);
 		}
 
-		$date_created    = $order->get_date_created();
+		// Order times go out as local wall-clock strings, so they follow the
+		// WooCommerce site time zone unless the Order Time Zone setting overrides
+		// it. Clone before re-zoning: get_date_created() hands back the order's
+		// own object and setTimezone() mutates in place.
+		$date_created = $order->get_date_created();
+		$timezone     = (string) ( Sellmo_Settings::get( 'order_timezone' ) ?: '' );
+
+		if ( $date_created && in_array( $timezone, timezone_identifiers_list(), true ) ) {
+			$date_created = ( clone $date_created )->setTimezone( new DateTimeZone( $timezone ) );
+		}
+
 		$order_date      = $date_created ? $date_created->date( 'Y-m-d' ) : '';
 		$order_date_time = $date_created ? $date_created->date( 'Y-m-d H:i:s' ) : '';
 

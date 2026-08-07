@@ -71,6 +71,7 @@ final class POS_Brand_Migrator {
 		'product_sync_interval',
 		'sync_categories',
 		'terminal_key',
+		'order_timezone',
 	];
 
 	/**
