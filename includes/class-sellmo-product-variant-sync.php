@@ -67,6 +67,7 @@ class Sellmo_Product_Variant_Sync {
 		$cursor             = '';
 		$page               = 0;
 		$variants_stored    = 0;
+		$variants_removed   = 0;
 		$products_with_vars = 0;
 		$skipped_no_row     = 0;
 
@@ -93,23 +94,30 @@ class Sellmo_Product_Variant_Sync {
 				}
 
 				$variants = isset( $product['variants'] ) && is_array( $product['variants'] ) ? $product['variants'] : [];
-				if ( empty( $variants ) ) {
-					continue;
-				}
 
-				$products_with_vars++;
+				if ( ! empty( $variants ) ) {
+					$products_with_vars++;
+				}
 
 				// The variant row's foreign key is the parent product's row id in
 				// wp_sellmo_product_mapping. do_delta_sync stages every product before
 				// this runs, so a row exists whether the product is mapped or staged.
+				// ponytail: resolved for every product, not only ones with variants, so a
+				// product whose variants were ALL deleted upstream can still be pruned.
 				$mapping_id = Sellmo_Product_Mapping::get_id_by_sellmo(
 					(string) ( $product['id'] ?? '' ),
 					(string) ( $product['product_code'] ?? '' )
 				);
 				if ( $mapping_id <= 0 ) {
-					$skipped_no_row++;
+					if ( ! empty( $variants ) ) {
+						$skipped_no_row++;
+					}
 					continue;
 				}
+
+				// Variant ids the POS still returns for this product — anything stored
+				// outside this set was deleted upstream and is pruned after the upserts.
+				$live_variant_ids = [];
 
 				foreach ( $variants as $variant ) {
 					if ( ! is_array( $variant ) ) {
@@ -120,6 +128,8 @@ class Sellmo_Product_Variant_Sync {
 					if ( '' === $variant_id ) {
 						continue;
 					}
+
+					$live_variant_ids[] = $variant_id;
 
 					$variant_code = (string) ( $variant['product_code'] ?? '' );
 
@@ -173,6 +183,10 @@ class Sellmo_Product_Variant_Sync {
 						$variants_stored++;
 					}
 				}
+
+				// Drop variants deleted in the backoffice so the Product Mapper stops
+				// listing them (and their WooCommerce variation, if one was imported).
+				$variants_removed += $this->prune_absent_variants( $mapping_id, $live_variant_ids, $product );
 			}
 
 			$cursor = $this->extract_cursor( $response );
@@ -184,9 +198,10 @@ class Sellmo_Product_Variant_Sync {
 			'pos_to_wc',
 			'success',
 			sprintf(
-				'Variant sync: %d variants stored across %d product(s) with variants; %d skipped (no mapping row).',
+				'Variant sync: %d variants stored across %d product(s) with variants; %d removed (deleted in POS); %d skipped (no mapping row).',
 				$variants_stored,
 				$products_with_vars - $skipped_no_row,
+				$variants_removed,
 				$skipped_no_row
 			)
 		);
@@ -200,6 +215,92 @@ class Sellmo_Product_Variant_Sync {
 				$variants_stored
 			),
 		];
+	}
+
+	/**
+	 * Remove stored variants that the POS no longer returns for a product.
+	 *
+	 * Each pruned variant is logged by name, and any WooCommerce variation it had
+	 * been imported to is deleted — the POS variant behind it no longer exists, so
+	 * leaving the variation would keep an unsellable row on the storefront. Parent
+	 * variable products are re-synced so their cached price range drops the removed
+	 * variations.
+	 *
+	 * @since  1.5.0
+	 * @param  int                  $mapping_id       Parent mapping row id.
+	 * @param  array<int, string>   $live_variant_ids Variant ids present upstream right now.
+	 * @param  array<string, mixed> $product          Parent product payload (for the log).
+	 * @return int                                    Number of variants removed.
+	 */
+	private function prune_absent_variants( int $mapping_id, array $live_variant_ids, array $product ): int {
+		$removed = Sellmo_Product_Variant_Store::delete_absent_for_product( $mapping_id, $live_variant_ids );
+		if ( empty( $removed ) ) {
+			return 0;
+		}
+
+		$parent_ids = [];
+
+		foreach ( $removed as $row ) {
+			$wc_variation_id = (int) ( $row['wc_variation_id'] ?? 0 );
+
+			if ( $wc_variation_id > 0 ) {
+				$parent_id = (int) wp_get_post_parent_id( $wc_variation_id );
+				if ( $parent_id > 0 ) {
+					$parent_ids[ $parent_id ] = true;
+				}
+				wp_delete_post( $wc_variation_id, true );
+			}
+
+			Sellmo_Logger::log(
+				'product',
+				'pos_to_wc',
+				'success',
+				sprintf(
+					'Variant "%s" removed from "%s" (deleted in POS)%s.',
+					$this->variant_label( $row ),
+					(string) ( $product['product_name'] ?? '' ),
+					$wc_variation_id > 0 ? sprintf( '; WooCommerce variation #%d deleted', $wc_variation_id ) : ''
+				),
+				(string) ( $row['product_code'] ?? '' )
+			);
+		}
+
+		// ponytail: refreshes the parent's price range / children cache. The parent's
+		// attribute option lists are left as-is — an option no longer used by any
+		// variation is harmless; rebuild them here if empty option terms show up.
+		foreach ( array_keys( $parent_ids ) as $parent_id ) {
+			if ( function_exists( 'wc_delete_product_transients' ) ) {
+				wc_delete_product_transients( $parent_id );
+			}
+			WC_Product_Variable::sync( $parent_id );
+		}
+
+		return count( $removed );
+	}
+
+	/**
+	 * Human-readable label for a stored variant row.
+	 *
+	 * @since  1.5.0
+	 * @param  array<string, mixed> $row Variant store row.
+	 * @return string
+	 */
+	private function variant_label( array $row ): string {
+		$options = [];
+		foreach ( [ 'option1_value', 'option2_value', 'option3_value' ] as $key ) {
+			$value = trim( (string) ( $row[ $key ] ?? '' ) );
+			if ( '' !== $value ) {
+				$options[] = $value;
+			}
+		}
+
+		if ( ! empty( $options ) ) {
+			return implode( ' / ', $options );
+		}
+
+		$code = trim( (string) ( $row['product_code'] ?? '' ) );
+
+		return '' !== $code ? $code : (string) ( $row['variant_id'] ?? '' );
 	}
 
 	/**

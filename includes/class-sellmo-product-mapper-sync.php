@@ -139,8 +139,8 @@ class Sellmo_Product_Mapper_Sync {
 				$variant_count = isset( $product['variants'] ) && is_array( $product['variants'] ) ? count( $product['variants'] ) : 0;
 
 				// Existing row (mapped or already staged): refresh its snapshot in place
-				// — shops, price, category, variant_count, raw_payload — and log any
-				// shop/price/category change. No new WooCommerce write happens here.
+				// — name, shops, price, category, variant_count, variants, raw_payload —
+				// and log every field that changed. No new WooCommerce write happens here.
 				if ( Sellmo_Product_Mapping::is_sellmo_product_mapped( $product ) || ( '' !== $sellmo_id && isset( $existing[ $sellmo_id ] ) ) ) {
 					$changes = Sellmo_Product_Mapping::refresh_catalogue_row(
 						$sellmo_id,
@@ -150,7 +150,8 @@ class Sellmo_Product_Mapper_Sync {
 						$this->resolve_price( $product ),
 						$this->resolve_category( $product ),
 						$variant_count,
-						$product
+						$product,
+						(string) ( $product['product_name'] ?? '' )
 					);
 
 					if ( ! empty( $changes ) ) {

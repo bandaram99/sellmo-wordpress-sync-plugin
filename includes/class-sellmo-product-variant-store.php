@@ -331,6 +331,63 @@ class Sellmo_Product_Variant_Store {
 	}
 
 	/**
+	 * Delete a parent product's stored variants that are no longer in the POS payload.
+	 *
+	 * Called with the variant ids the API just returned for that product; every
+	 * stored row for the parent whose variant_id is missing from that list is a
+	 * variant deleted in the backoffice and is removed. An empty live list is a
+	 * legitimate "this product no longer has variants" — unlike the whole-catalogue
+	 * reconcile, the caller has already confirmed the parent exists upstream, so
+	 * pruning all of its variants is correct.
+	 *
+	 * @since  1.5.0
+	 * @param  int                $product_id       Parent mapping row id (wp_sellmo_product_mapping.id).
+	 * @param  array<int, string> $live_variant_ids Variant ids present upstream right now.
+	 * @return array<int, array<string, mixed>>     The rows that were deleted.
+	 */
+	public static function delete_absent_for_product( int $product_id, array $live_variant_ids ): array {
+		self::ensure_table();
+		global $wpdb;
+
+		if ( $product_id <= 0 ) {
+			return [];
+		}
+
+		$live = array_values( array_unique( array_filter(
+			array_map( 'strval', $live_variant_ids ),
+			static fn( string $v ): bool => '' !== $v
+		) ) );
+
+		$table = self::table_name();
+
+		if ( empty( $live ) ) {
+			$rows = self::get_variants_for_product( $product_id );
+		} else {
+			$placeholders = implode( ',', array_fill( 0, count( $live ), '%s' ) );
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table from trusted prefix; ids are prepared.
+			$rows = $wpdb->get_results(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+					"SELECT * FROM `{$table}` WHERE product_id = %d AND variant_id NOT IN ( {$placeholders} )",
+					$product_id,
+					...$live
+				),
+				ARRAY_A
+			);
+		}
+
+		if ( ! is_array( $rows ) || empty( $rows ) ) {
+			return [];
+		}
+
+		foreach ( $rows as $row ) {
+			$wpdb->delete( $table, [ 'id' => (int) $row['id'] ], [ '%d' ] );
+		}
+
+		return $rows;
+	}
+
+	/**
 	 * Fetch all variant rows for a parent product id.
 	 *
 	 * @since  1.1.0

@@ -226,6 +226,10 @@ class Sellmo_Product_Mapping {
 				self::delete_wc_product( $wc_id );
 			}
 
+			// The parent is gone, so its stored variants have nothing left to point at.
+			// Passing an empty live list prunes every variant row for this parent.
+			Sellmo_Product_Variant_Store::delete_absent_for_product( (int) $row['id'], [] );
+
 			$wpdb->delete( $table, [ 'id' => (int) $row['id'] ], [ '%d' ] );
 			$removed++;
 		}
@@ -659,9 +663,10 @@ class Sellmo_Product_Mapping {
 	 * @param  string             $category          Category name.
 	 * @param  int                $variant_count     Variant count.
 	 * @param  array|string|null  $raw_payload       Full product payload (array or JSON), or null to leave.
+	 * @param  string|null        $name              POS product name, or null to leave unchanged.
 	 * @return array<int, string>                    Change descriptions for the log.
 	 */
-	public static function refresh_catalogue_row( string $sellmo_product_id, string $product_code, string $shop_ids, string $shop_names, ?float $price, string $category, int $variant_count, $raw_payload ): array {
+	public static function refresh_catalogue_row( string $sellmo_product_id, string $product_code, string $shop_ids, string $shop_names, ?float $price, string $category, int $variant_count, $raw_payload, ?string $name = null ): array {
 		self::ensure_table();
 		global $wpdb;
 
@@ -673,8 +678,17 @@ class Sellmo_Product_Mapping {
 			return [];
 		}
 
-		// Detect shop / price / category changes for the log.
-		$changes  = [];
+		// Detect name / shop / price / category / variant changes for the log.
+		$changes = [];
+
+		if ( null !== $name ) {
+			$name     = self::clean_name( $name );
+			$old_name = (string) ( $row['pos_product_name'] ?? '' );
+			if ( '' !== $name && $old_name !== $name ) {
+				$changes[] = sprintf( 'name "%s" → "%s"', '' !== $old_name ? $old_name : 'none', $name );
+			}
+		}
+
 		$old_shop = (string) ( $row['shop_name'] ?? '' );
 		if ( $old_shop !== $shop_names ) {
 			$changes[] = sprintf( 'shops "%s" → "%s"', '' !== $old_shop ? $old_shop : 'none', '' !== $shop_names ? $shop_names : 'none' );
@@ -688,6 +702,16 @@ class Sellmo_Product_Mapping {
 		$old_cat = (string) ( $row['category'] ?? '' );
 		if ( $old_cat !== $category ) {
 			$changes[] = sprintf( 'category "%s" → "%s"', '' !== $old_cat ? $old_cat : 'none', '' !== $category ? $category : 'none' );
+		}
+
+		$old_variant_count = (int) ( $row['variant_count'] ?? 0 );
+		if ( $old_variant_count !== $variant_count ) {
+			$changes[] = sprintf( 'variant count %d → %d', $old_variant_count, $variant_count );
+		}
+
+		// Per-variant diff against the previously stored payload.
+		if ( null !== $raw_payload ) {
+			$changes = array_merge( $changes, self::variant_changes( $row['raw_payload'] ?? null, $raw_payload ) );
 		}
 
 		// Rewrite the catalogue snapshot. Order of $data keys must match $formats.
@@ -704,6 +728,10 @@ class Sellmo_Product_Mapping {
 			$data['price'] = $price;
 			$formats[]     = '%f';
 		}
+		if ( null !== $name && '' !== $name ) {
+			$data['pos_product_name'] = $name;
+			$formats[]                = '%s';
+		}
 		if ( null !== $raw_payload ) {
 			$data['raw_payload'] = is_string( $raw_payload ) ? $raw_payload : wp_json_encode( $raw_payload );
 			$formats[]           = '%s';
@@ -712,6 +740,145 @@ class Sellmo_Product_Mapping {
 		$wpdb->update( self::table_name(), $data, [ 'id' => (int) $row['id'] ], $formats, [ '%d' ] );
 
 		return $changes;
+	}
+
+	/**
+	 * Maximum per-variant change lines reported in a single log entry.
+	 *
+	 * ponytail: a flat cap keeps one product with 200 edited variants from
+	 * flooding the Sync Log. Raise it if merchants need the full list.
+	 */
+	private const MAX_VARIANT_CHANGES = 10;
+
+	/**
+	 * Describe how a product's variant list changed between two payloads.
+	 *
+	 * Compares the variants stored on the mapper row against the ones in the
+	 * freshly fetched payload, reporting added, removed, renamed and re-priced
+	 * variants as human-readable "old → new" strings.
+	 *
+	 * @since  1.5.0
+	 * @param  array|string|null $old_payload Previously stored payload (JSON string or array).
+	 * @param  array|string|null $new_payload Freshly fetched payload (JSON string or array).
+	 * @return array<int, string>
+	 */
+	private static function variant_changes( $old_payload, $new_payload ): array {
+		$old = self::index_variants( $old_payload );
+		$new = self::index_variants( $new_payload );
+
+		if ( empty( $old ) && empty( $new ) ) {
+			return [];
+		}
+
+		$changes = [];
+
+		foreach ( $new as $key => $variant ) {
+			if ( ! isset( $old[ $key ] ) ) {
+				$changes[] = sprintf( 'variant "%s" added', $variant['label'] );
+				continue;
+			}
+
+			$previous = $old[ $key ];
+
+			if ( $previous['label'] !== $variant['label'] ) {
+				$changes[] = sprintf( 'variant "%s" → "%s"', $previous['label'], $variant['label'] );
+			}
+
+			if ( abs( $previous['price'] - $variant['price'] ) > 0.0001 ) {
+				$changes[] = sprintf(
+					'variant "%s" price %s → %s',
+					$variant['label'],
+					number_format( $previous['price'], 2, '.', '' ),
+					number_format( $variant['price'], 2, '.', '' )
+				);
+			}
+		}
+
+		foreach ( $old as $key => $variant ) {
+			if ( ! isset( $new[ $key ] ) ) {
+				$changes[] = sprintf( 'variant "%s" removed', $variant['label'] );
+			}
+		}
+
+		if ( count( $changes ) > self::MAX_VARIANT_CHANGES ) {
+			$extra   = count( $changes ) - self::MAX_VARIANT_CHANGES;
+			$changes = array_slice( $changes, 0, self::MAX_VARIANT_CHANGES );
+			$changes[] = sprintf( 'and %d more variant change(s)', $extra );
+		}
+
+		return $changes;
+	}
+
+	/**
+	 * Index a payload's variants by a stable key, with a display label and price.
+	 *
+	 * Keyed by variant_id when present so a renamed variant is recognised as the
+	 * same variant rather than an add + remove pair; product_code is the fallback.
+	 *
+	 * @since  1.5.0
+	 * @param  array|string|null $payload Product payload (JSON string or array).
+	 * @return array<string, array{label: string, price: float}>
+	 */
+	private static function index_variants( $payload ): array {
+		if ( is_string( $payload ) ) {
+			$payload = json_decode( $payload, true );
+		}
+		if ( ! is_array( $payload ) || ! isset( $payload['variants'] ) || ! is_array( $payload['variants'] ) ) {
+			return [];
+		}
+
+		$indexed = [];
+
+		foreach ( $payload['variants'] as $variant ) {
+			if ( ! is_array( $variant ) ) {
+				continue;
+			}
+
+			$variant_id = trim( (string) ( $variant['variant_id'] ?? '' ) );
+			$code       = trim( (string) ( $variant['product_code'] ?? '' ) );
+			$key        = '' !== $variant_id ? 'id:' . $variant_id : ( '' !== $code ? 'code:' . $code : '' );
+
+			if ( '' === $key ) {
+				continue;
+			}
+
+			$options = [];
+			foreach ( [ 'option1_value', 'option2_value', 'option3_value' ] as $option_key ) {
+				$value = trim( (string) ( $variant[ $option_key ] ?? '' ) );
+				if ( '' !== $value ) {
+					$options[] = $value;
+				}
+			}
+
+			$label = ! empty( $options ) ? implode( ' / ', $options ) : ( '' !== $code ? $code : $variant_id );
+
+			$indexed[ $key ] = [
+				'label' => self::clean_name( $label ),
+				'price' => self::variant_price( $variant ),
+			];
+		}
+
+		return $indexed;
+	}
+
+	/**
+	 * Representative price for a single variant payload.
+	 *
+	 * @since  1.5.0
+	 * @param  array<string, mixed> $variant Variant payload.
+	 * @return float
+	 */
+	private static function variant_price( array $variant ): float {
+		$shops = isset( $variant['shops'] ) && is_array( $variant['shops'] ) ? $variant['shops'] : [];
+		foreach ( $shops as $shop ) {
+			if ( is_array( $shop ) && isset( $shop['price'] ) && is_numeric( $shop['price'] ) ) {
+				return (float) $shop['price'];
+			}
+		}
+
+		return isset( $variant['selling_price'] ) && is_numeric( $variant['selling_price'] )
+			? (float) $variant['selling_price']
+			: 0.0;
 	}
 
 	// =========================================================================
