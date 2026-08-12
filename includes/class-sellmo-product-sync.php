@@ -1658,6 +1658,7 @@ class Sellmo_Product_Sync {
 	private function convert_to_variable_product( WC_Product $product ): WC_Product_Variable {
 		$product_id = $product->get_id();
 		wp_set_object_terms( $product_id, 'variable', 'product_type' );
+		$this->flush_product_type_cache( $product_id );
 
 		$converted = wc_get_product( $product_id );
 		if ( ! $converted instanceof WC_Product_Variable ) {
@@ -1665,6 +1666,29 @@ class Sellmo_Product_Sync {
 		}
 
 		return $converted;
+	}
+
+	/**
+	 * Drop WooCommerce's cached product type after re-terming a product.
+	 *
+	 * WC_Product_Data_Store_CPT::get_product_type() memoises the type in the
+	 * 'products' cache group, and wp_set_object_terms() does not invalidate it.
+	 * Without this, wc_get_product() keeps returning the OLD class immediately
+	 * after a type change — so a product that gains or loses all its variants
+	 * fails conversion with "Failed to convert product to ... type."
+	 *
+	 * @since  1.5.0
+	 * @param  int $product_id WooCommerce product id.
+	 * @return void
+	 */
+	private function flush_product_type_cache( int $product_id ): void {
+		if ( function_exists( 'wc_delete_product_transients' ) ) {
+			wc_delete_product_transients( $product_id );
+		}
+
+		if ( class_exists( 'WC_Cache_Helper' ) ) {
+			WC_Cache_Helper::invalidate_cache_group( 'product_' . $product_id );
+		}
 	}
 
 	/**
@@ -1677,6 +1701,7 @@ class Sellmo_Product_Sync {
 	private function convert_to_simple_product( WC_Product $product ): WC_Product_Simple {
 		$product_id = $product->get_id();
 		wp_set_object_terms( $product_id, 'simple', 'product_type' );
+		$this->flush_product_type_cache( $product_id );
 
 		$converted = wc_get_product( $product_id );
 		if ( ! $converted instanceof WC_Product_Simple ) {

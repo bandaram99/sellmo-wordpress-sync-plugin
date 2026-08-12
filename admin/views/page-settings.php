@@ -220,20 +220,17 @@ $webhook_url           = rest_url( 'sellmo-wc/v1/webhook' );
 									?>
 								</option>
 								<?php
-								// Group the PHP timezone list by region so the dropdown reads like
-								// the WordPress one. Every value is a real identifier, so it can be
-								// handed straight to DateTimeZone without further conversion.
-								$tz_regions = [];
-								foreach ( timezone_identifiers_list() as $tz_id ) {
-									$tz_regions[ explode( '/', $tz_id )[0] ][] = $tz_id;
-								}
-
-								foreach ( $tz_regions as $tz_region => $tz_ids ) :
+								// Offset-first labels — "(UTC+05:30) Sri Lanka, India" — sorted west
+								// to east. Offsets are computed from each zone, so fractional ones
+								// (+05:30, +05:45, +06:30) are exact and daylight saving is followed.
+								// Values stay real IANA identifiers, which is what the save handler
+								// validates and what Sellmo_Order_Sync hands to DateTimeZone.
+								foreach ( Sellmo_Settings::timezone_choices() as $tz_group => $tz_options ) :
 									?>
-									<optgroup label="<?php echo esc_attr( $tz_region ); ?>">
-										<?php foreach ( $tz_ids as $tz_id ) : ?>
+									<optgroup label="<?php echo esc_attr( $tz_group ); ?>">
+										<?php foreach ( $tz_options as $tz_id => $tz_label ) : ?>
 											<option value="<?php echo esc_attr( $tz_id ); ?>" <?php selected( $order_timezone, $tz_id ); ?>>
-												<?php echo esc_html( str_replace( [ $tz_region . '/', '_' ], [ '', ' ' ], $tz_id ) ); ?>
+												<?php echo esc_html( $tz_label ); ?>
 											</option>
 										<?php endforeach; ?>
 									</optgroup>

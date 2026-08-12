@@ -206,6 +206,24 @@ if (!is_file($envFile)) {
 
 echo "\nBuilding \033[1m$brand\033[0m...\n";
 
+// Gate: the integration suite must be green before anything is packaged.
+// Skip with --skip-tests only when you know why (e.g. no local WordPress).
+if (!in_array('--skip-tests', $argv, true)) {
+    $runner = ROOT . '/tests/run-all.php';
+
+    if (!is_file($runner)) {
+        fail("Test runner missing: $runner");
+    }
+
+    echo "  → Running test suite...\n";
+    passthru(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($runner) . ' --quiet', $testCode);
+
+    if (0 !== $testCode) {
+        fail("Tests failed — build aborted.\n  Fix the failures, or re-run with --skip-tests to override.");
+    }
+    step('Test suite passed');
+}
+
 $env = parse_env($envFile);
 
 // Identity slug drives file/folder/zip names.
