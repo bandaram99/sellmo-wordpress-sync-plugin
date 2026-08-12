@@ -367,11 +367,14 @@ class Sellmo_Product_Sync {
 				$mapper_price = $this->first_variant_price( $sellmo_product );
 			}
 
+			// The mapper column stores the DISPLAY category (blank when the POS has
+			// none), not the WooCommerce term name — otherwise this write and the
+			// product sync's write disagree and flip the row on alternating syncs.
 			Sellmo_Product_Mapping::update_catalogue_fields(
 				(string) ( $sellmo_product['id'] ?? '' ),
 				(string) ( $sellmo_product['product_code'] ?? '' ),
 				null !== $mapper_price ? (float) $mapper_price : null,
-				$this->resolve_sellmo_category_name( $sellmo_product ),
+				Sellmo_Product_Mapping::catalogue_category_name( $sellmo_product ),
 				$variant_count,
 				(string) ( $sellmo_product['product_name'] ?? '' )
 			);

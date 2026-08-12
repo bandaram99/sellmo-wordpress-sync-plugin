@@ -646,6 +646,35 @@ class Sellmo_Product_Mapping {
 	}
 
 	/**
+	 * The category name as stored in this table's `category` column.
+	 *
+	 * This is NOT the same value as the WooCommerce term name. A POS product with
+	 * no category becomes WooCommerce's "Uncategorized" term, but must stay blank
+	 * here so the Product Mapper renders "—".
+	 *
+	 * Both writers must agree on it. They previously did not: the product sync
+	 * wrote the WooCommerce term name while the mapper sync wrote the display
+	 * name, so a mapped product flipped between "Uncategorized" and "" on
+	 * alternating syncs and logged a phantom category change each time. Every
+	 * caller now routes through here.
+	 *
+	 * @since  1.5.0
+	 * @param  array<string, mixed> $product POS product payload.
+	 * @return string                        Category name, or '' when there is none.
+	 */
+	public static function catalogue_category_name( array $product ): string {
+		$raw = $product['category'] ?? '';
+
+		if ( is_array( $raw ) ) {
+			$raw = (string) ( $raw['name'] ?? $raw['title'] ?? $raw['label'] ?? '' );
+		}
+
+		$name = sanitize_text_field( (string) $raw );
+
+		return ( '' === $name || 0 === strcasecmp( $name, 'no category' ) ) ? '' : $name;
+	}
+
+	/**
 	 * Refresh an existing mapper row's full catalogue snapshot in place.
 	 *
 	 * Rewrites shops, price, category, variant_count and raw_payload on the row

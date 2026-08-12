@@ -139,6 +139,62 @@ t_contains( 'log records category change', 'category',       $logs );
 t_absent(   'no errors logged',           'Mapped field update failed', $logs );
 
 // -----------------------------------------------------------------------------
+// 1e. A product with no POS category must not flip between syncs
+//
+// Regression: the product sync wrote the WooCommerce term name ("Uncategorized")
+// into the mapper column while the mapper sync wrote the display name (""), so a
+// mapped product alternated between the two on every sync and logged a phantom
+// category change each time.
+// -----------------------------------------------------------------------------
+t_head( '1e. "No category" is stored consistently by both syncs' );
+
+$nc_pos  = t_uid( 'NOCAT' );
+$nc_code = T_PREFIX . '-NOCAT-300';
+
+$nc_payload = t_product( $nc_pos, $nc_code, 'No Category Product', 'No category', 500.00, $shop_a );
+$nc_row     = t_stage_product( $nc_payload );
+$nc_wc      = t_wc_simple( 'No Category Product', 500.00, $nc_code, $nc_pos, 5 );
+
+Sellmo_Product_Mapping::upsert_mapping( $nc_pos, $nc_code, 'No Category Product', $nc_wc );
+
+$mapper_sync = new Sellmo_Product_Mapper_Sync();
+
+t_eq( 'both resolvers agree on "No category"',
+	t_call( $mapper_sync, 'resolve_category', [ $nc_payload ] ),
+	Sellmo_Product_Mapping::catalogue_category_name( $nc_payload )
+);
+t_eq( 'and that agreed value is blank', '', Sellmo_Product_Mapping::catalogue_category_name( $nc_payload ) );
+
+// A product sync writes the row...
+Sellmo_Product_Mapping::refresh_catalogue_row(
+	$nc_pos, $nc_code, $shop_a, 'Shop A', 500.00,
+	t_call( $mapper_sync, 'resolve_category', [ $nc_payload ] ),
+	0, $nc_payload, 'No Category Product'
+);
+$after_product_sync = (string) Sellmo_Product_Mapping::get_row_by_id( $nc_row )['category'];
+
+// ...then a stock sync writes it through the mapped-fields path.
+$nc_mark = t_log_mark();
+t_eq( 'mapped field sync succeeded', 'success', ( new Sellmo_Product_Sync() )->sync_mapped_product_fields( $nc_payload ) );
+$after_stock_sync = (string) Sellmo_Product_Mapping::get_row_by_id( $nc_row )['category'];
+
+t_eq( 'product sync stored blank',        '', $after_product_sync );
+t_eq( 'stock sync stored the same value', $after_product_sync, $after_stock_sync );
+
+// And a second product sync must report no category change at all.
+$nc_changes = Sellmo_Product_Mapping::refresh_catalogue_row(
+	$nc_pos, $nc_code, $shop_a, 'Shop A', 500.00,
+	t_call( $mapper_sync, 'resolve_category', [ $nc_payload ] ),
+	0, $nc_payload, 'No Category Product'
+);
+t_absent( 'no phantom category change reported', 'category', $nc_changes );
+
+// The WooCommerce product still belongs to the Uncategorized term — the display
+// value and the WC term are deliberately different things.
+$nc_terms = wp_get_post_terms( $nc_wc, 'product_cat', [ 'fields' => 'names' ] );
+t_ok( 'WooCommerce product still has a category term', ! empty( $nc_terms ), 'terms: ' . implode( ', ', (array) $nc_terms ) );
+
+// -----------------------------------------------------------------------------
 // Isolation guarantee
 // -----------------------------------------------------------------------------
 t_head( 'Isolation' );

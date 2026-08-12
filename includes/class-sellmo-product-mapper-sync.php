@@ -289,13 +289,7 @@ class Sellmo_Product_Mapper_Sync {
 	 * @return string
 	 */
 	private function resolve_category( array $product ): string {
-		$raw = $product['category'] ?? '';
-		if ( is_array( $raw ) ) {
-			$raw = (string) ( $raw['name'] ?? $raw['title'] ?? '' );
-		}
-		$name = sanitize_text_field( (string) $raw );
-
-		return ( '' === $name || 0 === strcasecmp( $name, 'no category' ) ) ? '' : $name;
+		return Sellmo_Product_Mapping::catalogue_category_name( $product );
 	}
 
 	/**

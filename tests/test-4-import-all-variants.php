@@ -183,4 +183,138 @@ t_ok( 'import wrote log entries', ! empty( $logs ) );
 t_contains( 'log names the imported product code', $code, $logs );
 t_absent( 'no import failures logged', 'Import failed', $logs );
 
+// -----------------------------------------------------------------------------
+// 4f-2. Bulk variant buttons follow the VARIANTS' state, not the parent's
+//
+// The reported case: a simple product became a variable one upstream, so the
+// parent row is already mapped while all its variants are still unmapped. The
+// parent must still offer "Import all to WooCommerce".
+// -----------------------------------------------------------------------------
+t_head( '4f-2. Import all / Unmap all availability' );
+
+$row_for = static function ( array $response, string $code ): ?array {
+	foreach ( (array) ( $response['data']['rows'] ?? [] ) as $r ) {
+		if ( (string) ( $r['sellmo_code'] ?? '' ) === $code ) {
+			return $r;
+		}
+	}
+	return null;
+};
+
+$variant_states = static function ( ?array $row ): array {
+	$mapped = 0;
+	$unmapped = 0;
+	foreach ( (array) ( $row['variants'] ?? [] ) as $v ) {
+		if ( 'mapped' === (string) ( $v['status'] ?? '' ) ) {
+			$mapped++;
+		} else {
+			$unmapped++;
+		}
+	}
+	return [ 'mapped' => $mapped, 'unmapped' => $unmapped ];
+};
+
+// Right now the fixture is mapped AND all 5 variants are mapped.
+$listed = $row_for( t_ajax( $admin, 'ajax_get_mapper_list', [ 'search' => $code ] ), $code );
+t_ok( 'parent row is listed', null !== $listed );
+
+$states = $variant_states( $listed );
+t_eq( 'parent is mapped',        'mapped', (string) $listed['status'] );
+t_eq( '5 variants are mapped',   5, $states['mapped'] );
+t_eq( '0 variants are unmapped', 0, $states['unmapped'] );
+t_ok( 'with 2+ mapped variants the parent qualifies for "Unmap all"', $states['mapped'] >= 2 );
+
+// Unmap them all through the new endpoint — the mapped parent must then qualify
+// for "Import all" again, which is precisely the reported situation.
+$mark_unmap = t_log_mark();
+$unmap_all  = t_ajax( $admin, 'ajax_mapper_unmap_all_variants', [ 'mapping_id' => $mapping_id ] );
+
+t_ok( 'unmap all succeeded',   ! empty( $unmap_all['success'] ), wp_json_encode( $unmap_all ) );
+t_eq( '5 variants unmapped',   5, (int) $unmap_all['data']['unmapped'] );
+t_ok( 'unmap all was logged',  ! empty( t_log_since( $mark_unmap ) ) );
+
+// The WooCommerce variations must survive — only the link is removed.
+t_eq( 'WooCommerce variations left intact', 5, count( wc_get_product( $wc_id )->get_children() ) );
+
+$listed = $row_for( t_ajax( $admin, 'ajax_get_mapper_list', [ 'search' => $code ] ), $code );
+$states = $variant_states( $listed );
+
+t_eq( 'parent is still mapped',     'mapped', (string) $listed['status'] );
+t_eq( 'now 0 variants mapped',      0, $states['mapped'] );
+t_eq( 'now 5 variants unmapped',    5, $states['unmapped'] );
+t_ok( 'mapped parent with 2+ unmapped variants qualifies for "Import all"', $states['unmapped'] >= 2 );
+
+// Unmapping again has nothing to do and must say so rather than silently pass.
+$again = t_ajax( $admin, 'ajax_mapper_unmap_all_variants', [ 'mapping_id' => $mapping_id ] );
+t_eq( 'second unmap all is rejected', false, (bool) ( $again['success'] ?? true ) );
+t_contains( 'and explains why', 'No mapped variants', [ (string) ( $again['data']['message'] ?? '' ) ] );
+
+// A bad reference is rejected.
+$bad_ref = t_ajax( $admin, 'ajax_mapper_unmap_all_variants', [ 'mapping_id' => 0 ] );
+t_eq( 'zero mapping id rejected', false, (bool) ( $bad_ref['success'] ?? true ) );
+
+// A SIMPLE product has no variants, so neither bulk button applies.
+$simple_code = T_PREFIX . '-NOVAR-450';
+$simple_id   = t_stage_product( t_product( t_uid( 'NOVAR' ), $simple_code, 'No Variants', 'Cat', 90.0, $shop_mine ) );
+$simple_row  = $row_for( t_ajax( $admin, 'ajax_get_mapper_list', [ 'search' => $simple_code ] ), $simple_code );
+
+t_ok( 'simple product listed', null !== $simple_row );
+t_eq( 'simple product reports no variants', 0, (int) ( $simple_row['variant_count'] ?? -1 ) );
+t_ok( 'simple product carries no variant rows', empty( $simple_row['variants'] ) );
+
+// -----------------------------------------------------------------------------
+// 4g. Bulk mapper actions ("Auto-map by matching SKU" / "Unmap selected")
+// -----------------------------------------------------------------------------
+t_head( '4g. Bulk mapper actions' );
+
+$bulk_pos  = t_uid( 'BULK' );
+$bulk_code = T_PREFIX . '-BULK-500';
+$bulk_row  = t_stage_product( t_product( $bulk_pos, $bulk_code, 'Bulk Target', 'Cat', 120.00, $shop_mine ) );
+
+$bulk_rows = [ [ 'sellmo_id' => $bulk_pos, 'sellmo_code' => $bulk_code, 'sellmo_name' => 'Bulk Target' ] ];
+
+// -- Auto-map with NO matching SKU: must say so, not just "0 rows processed".
+$mark_bulk = t_log_mark();
+$no_match  = t_ajax( $admin, 'ajax_bulk_mapper', [ 'bulk_action' => 'auto_map_sku', 'rows' => $bulk_rows ] );
+
+t_ok( 'request succeeded',          ! empty( $no_match['success'] ) );
+t_eq( 'nothing was mapped',         0, (int) $no_match['data']['processed'] );
+t_eq( 'skip reason recorded',       1, (int) ( $no_match['data']['skipped']['no_sku_match'] ?? 0 ) );
+t_contains( 'message explains why', 'no WooCommerce product has a matching SKU', [ $no_match['data']['message'] ] );
+t_absent( 'message is not a bare count', '0 rows processed.', [ $no_match['data']['message'] ] );
+t_ok( 'the run was logged', ! empty( t_log_since( $mark_bulk ) ) );
+
+// -- Unmap something that is not mapped: same treatment.
+$not_mapped = t_ajax( $admin, 'ajax_bulk_mapper', [ 'bulk_action' => 'unmap', 'rows' => $bulk_rows ] );
+
+t_eq( 'nothing was unmapped',       0, (int) $not_mapped['data']['processed'] );
+t_eq( 'skip reason recorded',       1, (int) ( $not_mapped['data']['skipped']['not_mapped'] ?? 0 ) );
+t_contains( 'message explains why', 'not currently mapped', [ $not_mapped['data']['message'] ] );
+
+// -- Auto-map WITH a matching SKU: must actually map.
+$bulk_wc = t_wc_simple( 'Bulk Target WC', 120.00, '', '', 0 );
+$bulk_product = wc_get_product( $bulk_wc );
+$bulk_product->set_sku( $bulk_code );
+$bulk_product->save();
+
+$mapped = t_ajax( $admin, 'ajax_bulk_mapper', [ 'bulk_action' => 'auto_map_sku', 'rows' => $bulk_rows ] );
+
+t_eq( 'one row mapped',        1, (int) $mapped['data']['processed'] );
+t_eq( 'no rows skipped',       0, (int) array_sum( (array) ( $mapped['data']['skipped'] ?? [] ) ) );
+t_contains( 'message confirms the change', 'row updated', [ $mapped['data']['message'] ] );
+t_eq( 'mapper row now points at the WC product', $bulk_wc, (int) Sellmo_Product_Mapping::get_row_by_id( $bulk_row )['wc_product_id'] );
+
+// -- Unmap it again: must actually unmap.
+$unmapped = t_ajax( $admin, 'ajax_bulk_mapper', [ 'bulk_action' => 'unmap', 'rows' => $bulk_rows ] );
+
+t_eq( 'one row unmapped', 1, (int) $unmapped['data']['processed'] );
+t_eq( 'mapper row no longer mapped', 0, (int) Sellmo_Product_Mapping::get_row_by_id( $bulk_row )['wc_product_id'] );
+
+// -- A bad request is still rejected.
+$bad = t_ajax( $admin, 'ajax_bulk_mapper', [ 'bulk_action' => 'not_an_action', 'rows' => $bulk_rows ] );
+t_eq( 'unknown action rejected', false, (bool) ( $bad['success'] ?? true ) );
+
+$empty = t_ajax( $admin, 'ajax_bulk_mapper', [ 'bulk_action' => 'unmap', 'rows' => [] ] );
+t_eq( 'empty selection rejected', false, (bool) ( $empty['success'] ?? true ) );
+
 exit( t_summary() );

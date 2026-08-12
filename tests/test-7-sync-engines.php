@@ -272,11 +272,31 @@ t_head( '7e. Real catalogue untouched' );
 
 $after_rows = (array) $wpdb->get_results( $wpdb->prepare( $snapshot_sql, T_PREFIX . '%' ), ARRAY_A );
 
-t_eq( 'same number of real rows', count( $before_rows ), count( $after_rows ) );
+// Key by POS id rather than compare by position. A row appearing mid-run (a
+// concurrent sync in the browser, a cron tick) must not shift every subsequent
+// comparison and fail the suite — what matters is that no row that existed
+// BEFORE was deleted or altered.
+$index_by_id = static function ( array $rows ): array {
+	$indexed = [];
+	foreach ( $rows as $row ) {
+		$indexed[ (string) $row['pos_product_id'] ] = $row;
+	}
+	return $indexed;
+};
+
+$before_by_id = $index_by_id( $before_rows );
+$after_by_id  = $index_by_id( $after_rows );
+
+$missing = array_diff( array_keys( $before_by_id ), array_keys( $after_by_id ) );
+t_eq( 'no pre-existing real row was deleted', [], array_values( $missing ) );
 
 $diffs = [];
-foreach ( $before_rows as $i => $before ) {
-	$after = $after_rows[ $i ] ?? [];
+foreach ( $before_by_id as $pos_id => $before ) {
+	$after = $after_by_id[ $pos_id ] ?? null;
+	if ( null === $after ) {
+		continue; // Already reported as missing above.
+	}
+
 	foreach ( $before as $field => $value ) {
 		// price is DECIMAL — compare numerically, not as a string.
 		$same = ( 'price' === $field )
@@ -290,5 +310,12 @@ foreach ( $before_rows as $i => $before ) {
 }
 
 t_ok( 'no real row was modified', empty( $diffs ), implode( "\n       ", $diffs ) );
+
+// A row that appeared during the run is not damage, but say so rather than
+// silently ignoring it — it explains any surprise in the numbers above.
+$appeared = array_diff( array_keys( $after_by_id ), array_keys( $before_by_id ) );
+if ( ! empty( $appeared ) ) {
+	echo '  note: ' . count( $appeared ) . " real row(s) appeared during the run (concurrent sync?).\n";
+}
 
 exit( t_summary() );

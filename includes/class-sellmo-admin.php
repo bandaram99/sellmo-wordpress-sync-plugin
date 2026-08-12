@@ -67,6 +67,7 @@ class Sellmo_Admin {
 
 		add_action( 'wp_ajax_sellmo_wc_mapper_import_variant',      [ $this, 'ajax_mapper_import_variant' ] );
 		add_action( 'wp_ajax_sellmo_wc_mapper_import_all_variants', [ $this, 'ajax_mapper_import_all_variants' ] );
+		add_action( 'wp_ajax_sellmo_wc_mapper_unmap_all_variants',  [ $this, 'ajax_mapper_unmap_all_variants' ] );
 		add_action( 'wp_ajax_sellmo_wc_map_variant',                [ $this, 'ajax_map_variant' ] );
 		add_action( 'wp_ajax_sellmo_wc_unmap_variant',              [ $this, 'ajax_unmap_variant' ] );
 	}
@@ -785,6 +786,8 @@ class Sellmo_Admin {
 					'mapperSelectRows'  => __( 'Please select at least one row.', 'sellmo-woocommerce' ),
 					'anotherShop'       => __( 'Another shop', 'sellmo-woocommerce' ),
 					'importAll'         => __( 'Import all to WooCommerce', 'sellmo-woocommerce' ),
+					'unmapAll'          => __( 'Unmap all from WooCommerce', 'sellmo-woocommerce' ),
+					'unmapping'         => __( 'Unmapping…', 'sellmo-woocommerce' ),
 					'showVariants'      => __( 'Show variants', 'sellmo-woocommerce' ),
 				],
 			]
@@ -1189,6 +1192,66 @@ class Sellmo_Admin {
 		Sellmo_Product_Variant_Store::set_wc_variation_id( $variant_id, null );
 
 		wp_send_json_success( [ 'message' => __( 'Variant unmapped.', 'sellmo-woocommerce' ) ] );
+	}
+
+	/**
+	 * AJAX: unlink every mapped variant of a parent from its WooCommerce variation.
+	 *
+	 * The counterpart to "Import all to WooCommerce". Only the link is removed —
+	 * the WooCommerce variations themselves are left in place, exactly as the
+	 * per-variant Unmap does, so nothing a merchant may have edited is destroyed.
+	 *
+	 * @since  1.5.0
+	 * @return void
+	 */
+	public function ajax_mapper_unmap_all_variants(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$mapping_id = absint( $_POST['mapping_id'] ?? 0 );
+		if ( $mapping_id <= 0 ) {
+			wp_send_json_error( [ 'message' => __( 'Invalid product reference.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$unmapped = 0;
+		foreach ( Sellmo_Product_Variant_Store::get_variants_for_product( $mapping_id ) as $variant ) {
+			if ( (int) ( $variant['wc_variation_id'] ?? 0 ) <= 0 ) {
+				continue;
+			}
+
+			Sellmo_Product_Variant_Store::set_wc_variation_id( (string) $variant['variant_id'], null );
+			$unmapped++;
+		}
+
+		if ( 0 === $unmapped ) {
+			wp_send_json_error( [ 'message' => __( 'No mapped variants to unmap.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$row = Sellmo_Product_Mapping::get_row_by_id( $mapping_id );
+
+		Sellmo_Logger::log(
+			'product',
+			'pos_to_wc',
+			'success',
+			sprintf(
+				'Unmapped all %d variant(s) from WooCommerce for "%s".',
+				$unmapped,
+				(string) ( $row['pos_product_name'] ?? '' )
+			),
+			(string) ( $row['pos_product_code'] ?? '' )
+		);
+
+		wp_send_json_success( [
+			'unmapped' => $unmapped,
+			'message'  => sprintf(
+				/* translators: %d: number of variants unmapped */
+				_n( '%d variant unmapped.', '%d variants unmapped.', $unmapped, 'sellmo-woocommerce' ),
+				$unmapped
+			),
+		] );
 	}
 
 	/**
@@ -1657,7 +1720,10 @@ class Sellmo_Admin {
 		}
 
 		$processed = 0;
-		$errors    = 0;
+		// Skipped rows are tallied by reason, not lumped into a bare error count —
+		// otherwise a run with nothing to do reports "0 rows processed." and the
+		// merchant cannot tell a broken button from an empty match.
+		$skipped = [];
 
 		foreach ( $rows as $row ) {
 			$row_data = is_array( $row ) ? $row : [];
@@ -1666,7 +1732,7 @@ class Sellmo_Admin {
 			$sellmo_name = sanitize_text_field( (string) ( $row_data['sellmo_name'] ?? '' ) );
 
 			if ( '' === $sellmo_id ) {
-				$errors++;
+				$skipped['no_reference'] = ( $skipped['no_reference'] ?? 0 ) + 1;
 				continue;
 			}
 
@@ -1674,14 +1740,14 @@ class Sellmo_Admin {
 				if ( Sellmo_Product_Mapping::remove_mapping_by_sellmo_id( $sellmo_id ) ) {
 					$processed++;
 				} else {
-					$errors++;
+					$skipped['not_mapped'] = ( $skipped['not_mapped'] ?? 0 ) + 1;
 				}
 				continue;
 			}
 
 			$wc_id = (int) wc_get_product_id_by_sku( $sellmo_code );
 			if ( $wc_id <= 0 ) {
-				$errors++;
+				$skipped['no_sku_match'] = ( $skipped['no_sku_match'] ?? 0 ) + 1;
 				continue;
 			}
 
@@ -1689,18 +1755,51 @@ class Sellmo_Admin {
 				$this->push_sellmo_image_to_wc( $sellmo_id, $sellmo_code, $wc_id );
 				$processed++;
 			} else {
-				$errors++;
+				$skipped['map_failed'] = ( $skipped['map_failed'] ?? 0 ) + 1;
 			}
 		}
 
+		$reasons = [
+			'no_reference' => __( 'no product reference', 'sellmo-woocommerce' ),
+			'not_mapped'   => __( 'not currently mapped', 'sellmo-woocommerce' ),
+			'no_sku_match' => __( 'no WooCommerce product has a matching SKU', 'sellmo-woocommerce' ),
+			'map_failed'   => __( 'the mapping could not be saved', 'sellmo-woocommerce' ),
+		];
+
+		$detail = [];
+		foreach ( $skipped as $reason => $count ) {
+			$detail[] = sprintf( '%d %s', $count, $reasons[ $reason ] ?? $reason );
+		}
+
+		$message = $processed > 0
+			? sprintf(
+				/* translators: %d: number of rows changed */
+				_n( '%d row updated.', '%d rows updated.', $processed, 'sellmo-woocommerce' ),
+				$processed
+			)
+			: __( 'Nothing changed.', 'sellmo-woocommerce' );
+
+		if ( ! empty( $detail ) ) {
+			$message .= ' ' . sprintf(
+				/* translators: %s: comma-separated list like "2 not currently mapped" */
+				__( 'Skipped: %s.', 'sellmo-woocommerce' ),
+				implode( ', ', $detail )
+			);
+		}
+
+		Sellmo_Logger::log(
+			'product',
+			'pos_to_wc',
+			$processed > 0 ? 'success' : 'skipped',
+			sprintf( 'Bulk mapper action "%s": %s', $action, $message )
+		);
+
 		wp_send_json_success( [
 			'processed' => $processed,
-			'errors'    => $errors,
-			'message'   => sprintf(
-				/* translators: %d: processed rows count */
-				_n( '%d row processed.', '%d rows processed.', $processed, 'sellmo-woocommerce' ),
-				$processed
-			),
+			// Kept for backwards compatibility with any existing consumer.
+			'errors'    => array_sum( $skipped ),
+			'skipped'   => $skipped,
+			'message'   => $message,
 		] );
 	}
 

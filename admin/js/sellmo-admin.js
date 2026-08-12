@@ -1194,6 +1194,40 @@
 			} );
 		} );
 
+		// Unmap every mapped variant of a parent in one call.
+		$( document ).on( 'click', '.sellmo-mapper-unmap-all-btn', function () {
+			var $btn      = $( this );
+			var $row      = $btn.closest( 'tr' );
+			var mappingId = parseInt( $row.data( 'mapping-id' ) || 0, 10 );
+
+			if ( ! mappingId ) {
+				return;
+			}
+
+			var origLabel = $btn.text();
+			$btn.prop( 'disabled', true ).text( i18n.unmapping || 'Unmapping…' );
+
+			$.post( ajaxUrl, {
+				action     : 'sellmo_wc_mapper_unmap_all_variants',
+				nonce      : nonce,
+				mapping_id : mappingId
+			} )
+			.done( function ( res ) {
+				if ( res && res.success ) {
+					loadMapperList( mapperPage );
+				} else {
+					// eslint-disable-next-line no-alert
+					window.alert( ( res.data && res.data.message ) || ( i18n.mapperActionError || 'Mapping action failed.' ) );
+					$btn.prop( 'disabled', false ).text( origLabel );
+				}
+			} )
+			.fail( function () {
+				// eslint-disable-next-line no-alert
+				window.alert( i18n.mapperActionError || 'Mapping action failed. Please try again.' );
+				$btn.prop( 'disabled', false ).text( origLabel );
+			} );
+		} );
+
 		// Unmap a variant — unlink it from its WooCommerce variation.
 		$( document ).on( 'click', '.sellmo-variant-unmap-btn', function () {
 			var $btn      = $( this );
@@ -1255,7 +1289,7 @@
 
 			$( '#sellmo-mapper-bulk-apply' ).prop( 'disabled', true );
 			$( '.sellmo-mapper-bulk-spinner' ).addClass( 'is-active' );
-			$( '#sellmo-mapper-bulk-result' ).text( '' ).removeClass( 'success error' );
+			$( '#sellmo-mapper-bulk-result' ).text( '' ).removeClass( 'success warning error' );
 
 			$.post( ajaxUrl, {
 				action      : 'sellmo_wc_bulk_mapper',
@@ -1265,7 +1299,12 @@
 			} )
 			.done( function ( res ) {
 				if ( res.success ) {
-					$( '#sellmo-mapper-bulk-result' ).addClass( 'success' ).text( ( res.data && res.data.message ) || '' );
+					// A run that changed nothing is reported amber, not green — the
+					// message explains why each row was skipped.
+					var changed = res.data && res.data.processed > 0;
+					$( '#sellmo-mapper-bulk-result' )
+						.addClass( changed ? 'success' : 'warning' )
+						.text( ( res.data && res.data.message ) || '' );
 					loadMapperList( mapperPage );
 				} else {
 					$( '#sellmo-mapper-bulk-result' )
@@ -1485,10 +1524,31 @@ var wcOption = selectedWcId > 0
 				// Simple product: one click creates the WooCommerce product and maps it.
 				actions += ' <button type="button" class="button button-small sellmo-mapper-import-btn">' + escHtml( i18n.importProduct || 'Import to WooCommerce' ) + '</button>';
 			}
-			// Variable product not yet mapped: import every in-shop variant at once.
-			// Hidden after mapping — remaining variants are imported per sub-row.
-			if ( hasVariants && 'mapped' !== status ) {
-				actions += ' <button type="button" class="button button-small sellmo-mapper-import-all-btn">' + escHtml( i18n.importAll || 'Import all to WooCommerce' ) + '</button>';
+			// Bulk variant actions are driven by the VARIANTS' own state, not the
+			// parent's. A parent can be mapped while all 50 of its variants are still
+			// unmapped (a simple product that became a variable one upstream), and in
+			// that case "Import all to WooCommerce" is exactly what is needed.
+			// Shown only from 2 rows up — for a single variant the per-row button
+			// already does the job.
+			if ( hasVariants ) {
+				var unmappedVariants = 0;
+				var mappedVariants   = 0;
+
+				$.each( variants, function ( _i, v ) {
+					if ( 'mapped' === String( v.status || 'not_mapped' ) ) {
+						mappedVariants++;
+					} else {
+						unmappedVariants++;
+					}
+				} );
+
+				if ( unmappedVariants >= 2 ) {
+					actions += ' <button type="button" class="button button-small sellmo-mapper-import-all-btn">' + escHtml( i18n.importAll || 'Import all to WooCommerce' ) + '</button>';
+				}
+
+				if ( mappedVariants >= 2 ) {
+					actions += ' <button type="button" class="button button-small sellmo-mapper-unmap-all-btn">' + escHtml( i18n.unmapAll || 'Unmap all from WooCommerce' ) + '</button>';
+				}
 			}
 			if ( wcEditUrl ) {
 				actions += ' <a class="button button-small" target="_blank" href="' + escHtml( wcEditUrl ) + '">' + escHtml( i18n.viewInWC || 'View in WC' ) + '</a>';

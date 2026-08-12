@@ -434,6 +434,10 @@
 	color: #065f46;
 }
 
+.sellmo-bulk-result.warning {
+	color: #92400e;
+}
+
 .sellmo-bulk-result.error {
 	color: #991b1b;
 }
