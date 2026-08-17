@@ -216,6 +216,26 @@ class Sellmo_Settings {
 		];
 	}
 
+	/**
+	 * The time zone plugin dates are displayed in.
+	 *
+	 * The configured Order Time Zone when one is set, otherwise the WordPress
+	 * time zone — the same fallback Sellmo_Order_Sync uses, so what the merchant
+	 * sees on the Dashboard matches the timestamps sent to the POS.
+	 *
+	 * @since  1.6.0
+	 * @return \DateTimeZone
+	 */
+	public static function display_timezone(): \DateTimeZone {
+		$id = (string) ( self::get( 'order_timezone' ) ?: '' );
+
+		if ( '' !== $id && in_array( $id, timezone_identifiers_list(), true ) ) {
+			return new \DateTimeZone( $id );
+		}
+
+		return wp_timezone();
+	}
+
 	public static function get_all_defaults(): array {
 		return [
 			'api_token'             => '',

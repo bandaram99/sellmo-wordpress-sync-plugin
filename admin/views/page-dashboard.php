@@ -37,7 +37,11 @@ $log_data  = Sellmo_Logger::get_logs( [ 'per_page' => 10, 'paged' => 1 ] );
 $log_items = $log_data['items'];
 
 /**
- * Format a UTC Unix timestamp for display using the site's timezone and formats.
+ * Format a UTC Unix timestamp for display in the configured time zone.
+ *
+ * Every date on this page is rendered in the time zone chosen in Settings
+ * (falling back to the WordPress one), so the Dashboard reads in the same
+ * clock the shop is operated in.
  *
  * @param  int $timestamp Unix timestamp (UTC).
  * @return string
@@ -48,12 +52,12 @@ if ( ! function_exists( 'sellmo_dashboard_format_ts' ) ) {
 			return '—';
 		}
 		$fmt = get_option( 'date_format' ) . ' ' . get_option( 'time_format' );
-		return (string) wp_date( $fmt, $timestamp );
+		return (string) wp_date( $fmt, $timestamp, Sellmo_Settings::display_timezone() );
 	}
 }
 
 /**
- * Format a UTC MySQL DATETIME string for display using the site's timezone.
+ * Format a UTC MySQL DATETIME string for display in the configured time zone.
  *
  * @param  string $mysql_datetime MySQL DATETIME in UTC.
  * @return string
@@ -68,7 +72,7 @@ if ( ! function_exists( 'sellmo_dashboard_format_dt' ) ) {
 			return esc_html( $mysql_datetime );
 		}
 		$fmt = get_option( 'date_format' ) . ' ' . get_option( 'time_format' );
-		return (string) wp_date( $fmt, $ts );
+		return (string) wp_date( $fmt, $ts, Sellmo_Settings::display_timezone() );
 	}
 }
 ?>

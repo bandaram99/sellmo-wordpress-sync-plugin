@@ -1277,7 +1277,9 @@
 				selected.push( {
 					sellmo_id   : String( $row.data( 'sellmo-id' ) || '' ),
 					sellmo_code : String( $row.data( 'sellmo-code' ) || '' ),
-					sellmo_name : String( $row.data( 'sellmo-name' ) || '' )
+					sellmo_name : String( $row.data( 'sellmo-name' ) || '' ),
+					// Needed by "Import & map all" to reach a row's variants.
+					mapping_id  : parseInt( $row.data( 'mapping-id' ) || 0, 10 )
 				} );
 			} );
 

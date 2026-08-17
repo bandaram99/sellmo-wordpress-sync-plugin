@@ -68,6 +68,7 @@ class Sellmo_Product_Variant_Sync {
 		$page               = 0;
 		$variants_stored    = 0;
 		$variants_removed   = 0;
+		$variations_added   = 0;
 		$products_with_vars = 0;
 		$skipped_no_row     = 0;
 
@@ -187,6 +188,23 @@ class Sellmo_Product_Variant_Sync {
 				// Drop variants deleted in the backoffice so the Product Mapper stops
 				// listing them (and their WooCommerce variation, if one was imported).
 				$variants_removed += $this->prune_absent_variants( $mapping_id, $live_variant_ids, $product );
+
+				// The mirror of the prune: variants ADDED in the backoffice become
+				// variations on the mapped WooCommerce product. Isolated so one bad
+				// product cannot abort the whole variant sync.
+				if ( ! empty( $live_variant_ids ) ) {
+					try {
+						$variations_added += ( new Sellmo_Product_Sync() )->sync_mapped_variations( $product );
+					} catch ( \Throwable $e ) {
+						Sellmo_Logger::log(
+							'product',
+							'pos_to_wc',
+							'error',
+							'Adding new variants to WooCommerce failed: ' . $e->getMessage(),
+							(string) ( $product['product_code'] ?? '' )
+						);
+					}
+				}
 			}
 
 			$cursor = $this->extract_cursor( $response );
@@ -198,9 +216,10 @@ class Sellmo_Product_Variant_Sync {
 			'pos_to_wc',
 			'success',
 			sprintf(
-				'Variant sync: %d variants stored across %d product(s) with variants; %d removed (deleted in POS); %d skipped (no mapping row).',
+				'Variant sync: %d variants stored across %d product(s) with variants; %d added to WooCommerce (new in POS); %d removed (deleted in POS); %d skipped (no mapping row).',
 				$variants_stored,
 				$products_with_vars - $skipped_no_row,
+				$variations_added,
 				$variants_removed,
 				$skipped_no_row
 			)

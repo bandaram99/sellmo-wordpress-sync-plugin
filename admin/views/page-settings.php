@@ -242,7 +242,7 @@ $webhook_url           = rest_url( 'sellmo-wc/v1/webhook' );
 								<?php
 								printf(
 									/* translators: %s: Brand display name. */
-									esc_html__( 'Time zone used for the order date and time sent to %s. Leave on the WordPress time zone unless your shop is in a different one.', 'sellmo-woocommerce' ),
+									esc_html__( 'Time zone used for the order date and time sent to %s, and for the dates shown on the Dashboard. Leave on the WordPress time zone unless your shop is in a different one.', 'sellmo-woocommerce' ),
 									esc_html( $brand_name )
 								);
 								?>

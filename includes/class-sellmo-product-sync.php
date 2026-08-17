@@ -352,8 +352,13 @@ class Sellmo_Product_Sync {
 
 			$this->log_field_changes( $product, $wc_product_id, $sellmo_product, $old_regular, $old_sale, $old_cats, $old_name );
 
+			// Variants added upstream since the last run have no variation yet —
+			// create them before repricing, so the new ones get priced too.
+			$this->sync_mapped_variations( $sellmo_product );
+
 			// Update each existing variation's price from its Sellmo variant.
 			// Variant stock flows through the stock loop; this covers price.
+			$product = wc_get_product( $wc_product_id ) ?: $product;
 			$this->update_mapped_variation_prices( $product, $sellmo_product );
 
 			$variant_count = isset( $sellmo_product['variants'] ) && is_array( $sellmo_product['variants'] )
@@ -586,6 +591,176 @@ class Sellmo_Product_Sync {
 		if ( $changed ) {
 			WC_Product_Variable::sync( $product->get_id() );
 		}
+	}
+
+	/**
+	 * Create WooCommerce variations for POS variants a mapped product lacks.
+	 *
+	 * The mapped-product update path only ever repriced variations that already
+	 * existed, so a variant added upstream to an already-mapped variable product
+	 * never reached the store. Deletions were already propagated — the variant
+	 * sync prunes them — and this closes the other half.
+	 *
+	 * Only variants sellable in the selected shop are created, matching what the
+	 * Product Mapper offers, and no existing variation is ever removed here.
+	 * Each new variation is recorded against its variant row so the Product
+	 * Mapper shows it as Mapped.
+	 *
+	 * @since  1.6.0
+	 * @param  array<string, mixed> $sellmo_product Full POS product payload.
+	 * @return int                                  Number of variations created.
+	 */
+	public function sync_mapped_variations( array $sellmo_product ): int {
+		$mapping = Sellmo_Product_Mapping::get_mapping_for_sellmo_product( $sellmo_product );
+		$wc_id   = is_array( $mapping ) ? (int) ( $mapping['wc_product_id'] ?? 0 ) : 0;
+		if ( $wc_id <= 0 ) {
+			return 0;
+		}
+
+		$variants = $this->filter_variants_for_parent(
+			$sellmo_product,
+			isset( $sellmo_product['variants'] ) && is_array( $sellmo_product['variants'] ) ? $sellmo_product['variants'] : []
+		);
+
+		$variants = array_values( array_filter(
+			$variants,
+			fn( $variant ): bool => is_array( $variant ) && $this->variant_in_selected_shop( $variant )
+		) );
+
+		if ( empty( $variants ) ) {
+			return 0;
+		}
+
+		$product = wc_get_product( $wc_id );
+		if ( ! $product instanceof WC_Product ) {
+			return 0;
+		}
+
+		$code = (string) ( $sellmo_product['product_code'] ?? '' );
+
+		// Nothing missing is the common case — settle it before touching the
+		// product, so a routine sync does not rewrite attributes every run.
+		$missing = array_values( array_filter(
+			$variants,
+			fn( array $variant ): bool => $this->find_variation_id_for_variant( $wc_id, $variant ) <= 0
+		) );
+
+		if ( empty( $missing ) ) {
+			return 0;
+		}
+
+		// A mapped product that is still simple is left alone — converting a
+		// merchant's product type is not something a background sync should do
+		// silently. The log says so, so the state is visible.
+		if ( ! $product instanceof WC_Product_Variable ) {
+			Sellmo_Logger::log(
+				'product',
+				'pos_to_wc',
+				'skipped',
+				sprintf(
+					'%d POS variant(s) not pushed: mapped WooCommerce product #%d is not a variable product. Re-import it from the Product Mapper to add them.',
+					count( $missing ),
+					$wc_id
+				),
+				$code
+			);
+			return 0;
+		}
+
+		// Registering the attributes with the FULL variant list is what makes a
+		// brand-new option value (a new size, a new colour) selectable — without
+		// it WooCommerce saves the variation with an empty attribute.
+		$option_labels     = $this->build_option_labels( $variants );
+		$attribute_options = $this->collect_variant_attributes( $variants, $option_labels );
+		$slug_map          = $this->register_product_attributes( $product, $attribute_options, $option_labels );
+
+		$created = 0;
+
+		foreach ( $missing as $variant ) {
+			try {
+				$variation_id = $this->update_or_create_variation( $product, $variant, $slug_map );
+			} catch ( \Throwable $e ) {
+				Sellmo_Logger::log(
+					'product',
+					'pos_to_wc',
+					'error',
+					sprintf( 'Could not add variant to WooCommerce product #%d: %s', $wc_id, $e->getMessage() ),
+					(string) ( $variant['product_code'] ?? $code )
+				);
+				continue;
+			}
+
+			if ( $variation_id <= 0 ) {
+				continue;
+			}
+
+			$created++;
+
+			// Link the variant row so the Product Mapper stops showing it as
+			// Not Mapped, and the stock sync can find the new variation.
+			$variant_id = (string) ( $variant['variant_id'] ?? '' );
+			if ( '' !== $variant_id ) {
+				Sellmo_Product_Variant_Store::set_wc_variation_id( $variant_id, $variation_id );
+			}
+
+			Sellmo_Logger::log(
+				'product',
+				'pos_to_wc',
+				'success',
+				sprintf(
+					'New POS variant added to WooCommerce product #%d as variation #%d.',
+					$wc_id,
+					$variation_id
+				),
+				(string) ( $variant['product_code'] ?? $code )
+			);
+		}
+
+		if ( $created > 0 ) {
+			$this->sync_parent_datastore( $product );
+			if ( function_exists( 'wc_delete_product_transients' ) ) {
+				wc_delete_product_transients( $wc_id );
+			}
+			WC_Product_Variable::sync( $wc_id );
+
+			// The /products payload carries no stock, so a brand-new variation would
+			// sit at zero until the next stock pass. Pull it now, exactly as the
+			// Product Mapper's manual import does.
+			// ponytail: one /inventory pull per product that actually gained a
+			// variant — rare. Hoist it to the caller if a big catalogue ever adds
+			// variants to many products in a single run.
+			( new Sellmo_Stock_Sync() )->sync_stock_for_wc_product( $wc_id );
+		}
+
+		return $created;
+	}
+
+	/**
+	 * Whether a POS variant is sellable in the selected shop.
+	 *
+	 * With no shop selected every variant is in scope, matching
+	 * Sellmo_Product_Mapping::is_in_selected_shop().
+	 *
+	 * @since  1.6.0
+	 * @param  array<string, mixed> $variant POS variant payload.
+	 * @return bool
+	 */
+	private function variant_in_selected_shop( array $variant ): bool {
+		$shop_ids = [];
+
+		foreach ( ( $variant['shops'] ?? [] ) as $shop ) {
+			if ( is_array( $shop ) && '' !== (string) ( $shop['shop_id'] ?? '' ) ) {
+				$shop_ids[] = (string) $shop['shop_id'];
+			}
+		}
+
+		// A variant with no shop list at all is treated as in scope — the same
+		// benefit of the doubt the rest of the sync gives shop-less payloads.
+		if ( empty( $shop_ids ) ) {
+			return true;
+		}
+
+		return Sellmo_Product_Mapping::is_in_selected_shop( implode( ',', $shop_ids ) );
 	}
 
 	/**
@@ -1354,7 +1529,13 @@ class Sellmo_Product_Sync {
 			$label = $option_labels[ $option_key ] ?? ( self::OPTION_ATTRIBUTE_LABELS[ $option_key ] ?? $option_key );
 			$slug  = sanitize_title( $label );
 
-			$attribute = $existing[ $slug ] ?? new WC_Product_Attribute();
+			// Always a FRESH attribute object, never the one already on the product.
+			// Mutating the existing instance leaves set_attributes() comparing an
+			// array of the same object references against itself: WC_Data::set_prop
+			// sees no change, records none, and save() silently drops the update — so
+			// a variant added upstream with a new option value ("l", a new colour)
+			// would never become selectable on the parent.
+			$attribute = new WC_Product_Attribute();
 			$attribute->set_id( 0 );
 			$attribute->set_name( $label );
 			$attribute->set_options( array_values( array_unique( $option_values ) ) );
@@ -1419,12 +1600,13 @@ class Sellmo_Product_Sync {
 	 * @param  WC_Product_Variable  $product       Parent variable product.
 	 * @param  array<string, mixed> $variant       Sellmo variant object.
 	 * @param  array<string, string> $slug_map     option_key => local attribute slug.
+	 * @return int                                 Saved variation id.
 	 */
 	private function update_or_create_variation(
 		WC_Product_Variable $product,
 		array $variant,
 		array $slug_map
-	): void {
+	): int {
 		$variant_code = (string) ( $variant['product_code'] ?? '' );
 		$variant_id   = (string) ( $variant['variant_id'] ?? '' );
 
@@ -1525,6 +1707,8 @@ class Sellmo_Product_Sync {
 		if ( $saved_id > 0 ) {
 			update_post_meta( $saved_id, '_salesplay_variant_id', $variant_id );
 		}
+
+		return (int) $saved_id;
 	}
 
 	/**

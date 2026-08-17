@@ -113,6 +113,7 @@ $mapper_stats = Sellmo_Product_Mapping::get_dashboard_stats();
 			<select id="sellmo-mapper-bulk-action">
 				<option value=""><?php esc_html_e( 'Bulk Actions', 'sellmo-woocommerce' ); ?></option>
 				<option value="auto_map_sku"><?php esc_html_e( 'Auto-map by matching SKU', 'sellmo-woocommerce' ); ?></option>
+				<option value="import_map"><?php esc_html_e( 'Import &amp; map all to WooCommerce (simple + variable)', 'sellmo-woocommerce' ); ?></option>
 				<option value="unmap"><?php esc_html_e( 'Unmap selected', 'sellmo-woocommerce' ); ?></option>
 			</select>
 			<button type="button" id="sellmo-mapper-bulk-apply" class="button action"><?php esc_html_e( 'Apply', 'sellmo-woocommerce' ); ?></button>

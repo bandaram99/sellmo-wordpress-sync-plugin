@@ -1201,6 +1201,9 @@ class Sellmo_Admin {
 	 * the WooCommerce variations themselves are left in place, exactly as the
 	 * per-variant Unmap does, so nothing a merchant may have edited is destroyed.
 	 *
+	 * The parent mapping goes with them: with no variant left pointing at the
+	 * WooCommerce product, a row still showing "Mapped" is just stale.
+	 *
 	 * @since  1.5.0
 	 * @return void
 	 */
@@ -1232,25 +1235,37 @@ class Sellmo_Admin {
 
 		$row = Sellmo_Product_Mapping::get_row_by_id( $mapping_id );
 
+		// Unlink the parent product too, so the row does not stay "Mapped" with
+		// nothing mapped under it.
+		$parent_unmapped = Sellmo_Product_Mapping::remove_mapping_by_sellmo_id( (string) ( $row['pos_product_id'] ?? '' ) );
+
 		Sellmo_Logger::log(
 			'product',
 			'pos_to_wc',
 			'success',
 			sprintf(
-				'Unmapped all %d variant(s) from WooCommerce for "%s".',
+				'Unmapped all %d variant(s)%s from WooCommerce for "%s".',
 				$unmapped,
+				$parent_unmapped ? ' and the parent product' : '',
 				(string) ( $row['pos_product_name'] ?? '' )
 			),
 			(string) ( $row['pos_product_code'] ?? '' )
 		);
 
+		$message = sprintf(
+			/* translators: %d: number of variants unmapped */
+			_n( '%d variant unmapped.', '%d variants unmapped.', $unmapped, 'sellmo-woocommerce' ),
+			$unmapped
+		);
+
+		if ( $parent_unmapped ) {
+			$message .= ' ' . __( 'The product itself was unmapped as well.', 'sellmo-woocommerce' );
+		}
+
 		wp_send_json_success( [
-			'unmapped' => $unmapped,
-			'message'  => sprintf(
-				/* translators: %d: number of variants unmapped */
-				_n( '%d variant unmapped.', '%d variants unmapped.', $unmapped, 'sellmo-woocommerce' ),
-				$unmapped
-			),
+			'unmapped'        => $unmapped,
+			'parent_unmapped' => $parent_unmapped,
+			'message'         => $message,
 		] );
 	}
 
@@ -1342,62 +1357,60 @@ class Sellmo_Admin {
 	}
 
 	/**
-	 * AJAX: import a Sellmo product into WooCommerce and auto-map it.
+	 * Import one Product Mapper row into WooCommerce and map it.
 	 *
-	 * Backs the "Import to WooCommerce" button on the Product Mapper page. Finds
-	 * the Sellmo product in the cached catalogue, creates the WooCommerce product
-	 * via Sellmo_Product_Sync::import_product(), then links the two with a mapping
-	 * row so the product immediately shows as Mapped.
+	 * One entry point for both product shapes: a row with in-shop variants goes
+	 * through the variant importer (every variant becomes a variation, and any
+	 * already imported survive), everything else is created as a single product
+	 * via Sellmo_Product_Sync::import_product() and linked with a mapping row.
 	 *
-	 * @since  1.1.0
-	 * @return void
+	 * Backs the per-row "Import to WooCommerce" button and the "Import & map all"
+	 * bulk action.
+	 *
+	 * @since  1.6.0
+	 * @param  string $sellmo_id   Sellmo product id.
+	 * @param  string $sellmo_code Sellmo product code.
+	 * @param  int    $mapping_id  Mapper row id; 0 looks it up from the ids above.
+	 * @return array{wc_id:int}|WP_Error
 	 */
-	public function ajax_mapper_import_product(): void {
-		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
-
-		if ( ! current_user_can( 'manage_woocommerce' ) ) {
-			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
-		}
-
-		$sellmo_id   = sanitize_text_field( wp_unslash( $_POST['sellmo_id'] ?? '' ) );
-		$sellmo_code = sanitize_text_field( wp_unslash( $_POST['sellmo_code'] ?? '' ) );
-
+	private function import_and_map_row( string $sellmo_id, string $sellmo_code, int $mapping_id = 0 ): array|\WP_Error {
 		if ( '' === $sellmo_id && '' === $sellmo_code ) {
-			wp_send_json_error( [ 'message' => __( 'Invalid product reference.', 'sellmo-woocommerce' ) ] );
+			return new \WP_Error( 'sellmo_no_reference', __( 'Invalid product reference.', 'sellmo-woocommerce' ) );
 		}
 
-		// Refuse if this Sellmo product is already mapped.
+		if ( $this->product_in_another_shop( $sellmo_id, $sellmo_code ) ) {
+			return new \WP_Error( 'sellmo_other_shop', __( 'This product belongs to another shop and cannot be imported into the selected shop.', 'sellmo-woocommerce' ) );
+		}
+
+		if ( $mapping_id <= 0 ) {
+			$mapping_id = Sellmo_Product_Mapping::get_id_by_sellmo( $sellmo_id, $sellmo_code );
+		}
+
+		// Variable product. Runs for an already-mapped parent too — its variants
+		// can still be unmapped, which is exactly what needs importing.
+		$variant_ids = [];
+		foreach ( $this->build_variant_rows_for_mapper( $mapping_id, 0 ) as $variant_row ) {
+			if ( '' !== (string) ( $variant_row['variant_id'] ?? '' ) ) {
+				$variant_ids[] = (string) $variant_row['variant_id'];
+			}
+		}
+
+		if ( ! empty( $variant_ids ) ) {
+			return $this->import_variants_for_parent( $mapping_id, $variant_ids );
+		}
+
+		// Simple product — refuse if this Sellmo product is already mapped.
 		$existing = '' !== $sellmo_id ? Sellmo_Product_Mapping::get_mapping_by_sellmo_id( $sellmo_id ) : null;
 		if ( null === $existing && '' !== $sellmo_code ) {
 			$existing = Sellmo_Product_Mapping::get_mapping_by_sellmo_code( $sellmo_code );
 		}
 		if ( is_array( $existing ) ) {
-			wp_send_json_error( [ 'message' => __( 'Product is already mapped.', 'sellmo-woocommerce' ) ] );
+			return new \WP_Error( 'sellmo_already_mapped', __( 'Product is already mapped.', 'sellmo-woocommerce' ) );
 		}
 
-		if ( $this->product_in_another_shop( $sellmo_id, $sellmo_code ) ) {
-			wp_send_json_error( [ 'message' => __( 'This product belongs to another shop and cannot be imported into the selected shop.', 'sellmo-woocommerce' ) ] );
-		}
-
-		// Locate the Sellmo product payload in the cached catalogue.
-		$all_products = $this->get_all_sellmo_products();
-		if ( is_wp_error( $all_products ) ) {
-			wp_send_json_error( [ 'message' => $all_products->get_error_message() ] );
-		}
-
-		$sellmo_product = null;
-		foreach ( $all_products as $p ) {
-			$p_id   = (string) ( $p['id'] ?? '' );
-			$p_code = (string) ( $p['product_code'] ?? '' );
-
-			if ( ( '' !== $sellmo_id && $p_id === $sellmo_id ) || ( '' !== $sellmo_code && $p_code === $sellmo_code ) ) {
-				$sellmo_product = $p;
-				break;
-			}
-		}
-
-		if ( null === $sellmo_product ) {
-			wp_send_json_error( [ 'message' => __( 'Product not found in Sellmo catalogue.', 'sellmo-woocommerce' ) ] );
+		$sellmo_product = $this->resolve_sellmo_payload( $sellmo_id, $sellmo_code );
+		if ( ! is_array( $sellmo_product ) ) {
+			return new \WP_Error( 'sellmo_no_payload', __( 'Product not found in Sellmo catalogue.', 'sellmo-woocommerce' ) );
 		}
 
 		// Create / update the WooCommerce product.
@@ -1405,7 +1418,7 @@ class Sellmo_Admin {
 		$new_id = $sync->import_product( $sellmo_product );
 
 		if ( $new_id <= 0 ) {
-			wp_send_json_error( [ 'message' => __( 'Import failed. Check the Sync Log for details.', 'sellmo-woocommerce' ) ] );
+			return new \WP_Error( 'sellmo_import_failed', __( 'Import failed. Check the Sync Log for details.', 'sellmo-woocommerce' ) );
 		}
 
 		// Auto-map the Sellmo product to the freshly imported WooCommerce product.
@@ -1414,10 +1427,11 @@ class Sellmo_Admin {
 		$map_name = (string) ( $sellmo_product['product_name'] ?? '' );
 
 		if ( ! Sellmo_Product_Mapping::upsert_mapping( $map_id, $map_code, $map_name, $new_id ) ) {
-			wp_send_json_error( [
-				'message' => __( 'Product imported, but automatic mapping failed (the WooCommerce product may already be mapped to another Sellmo product).', 'sellmo-woocommerce' ),
-				'wc_id'   => $new_id,
-			] );
+			return new \WP_Error(
+				'sellmo_map_failed',
+				__( 'Product imported, but automatic mapping failed (the WooCommerce product may already be mapped to another Sellmo product).', 'sellmo-woocommerce' ),
+				[ 'wc_id' => $new_id ]
+			);
 		}
 
 		// Populate stock from /inventory so the imported product (and, for variable
@@ -1432,6 +1446,37 @@ class Sellmo_Admin {
 			sprintf( 'Imported and auto-mapped "%s" to WooCommerce product #%d', $map_name, $new_id ),
 			$map_code
 		);
+
+		return [ 'wc_id' => $new_id ];
+	}
+
+	/**
+	 * AJAX: import a Sellmo product into WooCommerce and auto-map it.
+	 *
+	 * Backs the "Import to WooCommerce" button on the Product Mapper page.
+	 *
+	 * @since  1.1.0
+	 * @return void
+	 */
+	public function ajax_mapper_import_product(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$result = $this->import_and_map_row(
+			sanitize_text_field( wp_unslash( $_POST['sellmo_id'] ?? '' ) ),
+			sanitize_text_field( wp_unslash( $_POST['sellmo_code'] ?? '' ) ),
+			absint( $_POST['mapping_id'] ?? 0 )
+		);
+
+		if ( is_wp_error( $result ) ) {
+			$data = (array) ( $result->get_error_data() ?: [] );
+			wp_send_json_error( array_merge( $data, [ 'message' => $result->get_error_message() ] ) );
+		}
+
+		$new_id = (int) $result['wc_id'];
 
 		wp_send_json_success( [
 			'wc_id'    => $new_id,
@@ -1715,7 +1760,7 @@ class Sellmo_Admin {
 		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitized per field below.
 		$rows   = isset( $_POST['rows'] ) ? (array) wp_unslash( $_POST['rows'] ) : [];
 
-		if ( ! in_array( $action, [ 'unmap', 'auto_map_sku' ], true ) || empty( $rows ) ) {
+		if ( ! in_array( $action, [ 'unmap', 'auto_map_sku', 'import_map' ], true ) || empty( $rows ) ) {
 			wp_send_json_error( [ 'message' => __( 'Invalid bulk mapper request.', 'sellmo-woocommerce' ) ] );
 		}
 
@@ -1745,6 +1790,22 @@ class Sellmo_Admin {
 				continue;
 			}
 
+			// "Import & map all to WooCommerce" — creates what is missing for both
+			// simple and variable products, and skips what is already done.
+			// ponytail: runs inline, one row at a time. Batch it into a background
+			// queue if catalogues get large enough to hit the PHP time limit.
+			if ( 'import_map' === $action ) {
+				$result = $this->import_and_map_row( $sellmo_id, $sellmo_code, absint( $row_data['mapping_id'] ?? 0 ) );
+
+				if ( is_wp_error( $result ) ) {
+					$reason             = (string) $result->get_error_code();
+					$skipped[ $reason ] = ( $skipped[ $reason ] ?? 0 ) + 1;
+				} else {
+					$processed++;
+				}
+				continue;
+			}
+
 			$wc_id = (int) wc_get_product_id_by_sku( $sellmo_code );
 			if ( $wc_id <= 0 ) {
 				$skipped['no_sku_match'] = ( $skipped['no_sku_match'] ?? 0 ) + 1;
@@ -1764,6 +1825,15 @@ class Sellmo_Admin {
 			'not_mapped'   => __( 'not currently mapped', 'sellmo-woocommerce' ),
 			'no_sku_match' => __( 'no WooCommerce product has a matching SKU', 'sellmo-woocommerce' ),
 			'map_failed'   => __( 'the mapping could not be saved', 'sellmo-woocommerce' ),
+			// Import & map: WP_Error codes from import_and_map_row().
+			'sellmo_no_reference'     => __( 'no product reference', 'sellmo-woocommerce' ),
+			'sellmo_other_shop'       => __( 'the product belongs to another shop', 'sellmo-woocommerce' ),
+			'sellmo_already_mapped'   => __( 'already mapped', 'sellmo-woocommerce' ),
+			'sellmo_no_payload'       => __( 'no product data — run Sync Products Now first', 'sellmo-woocommerce' ),
+			'sellmo_no_parent'        => __( 'the product is no longer in the mapper', 'sellmo-woocommerce' ),
+			'sellmo_variant_missing'  => __( 'the variants were not found in the product data', 'sellmo-woocommerce' ),
+			'sellmo_import_failed'    => __( 'the import failed — check the Sync Log', 'sellmo-woocommerce' ),
+			'sellmo_map_failed'       => __( 'the mapping could not be saved', 'sellmo-woocommerce' ),
 		];
 
 		$detail = [];

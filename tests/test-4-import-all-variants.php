@@ -224,25 +224,34 @@ t_eq( '5 variants are mapped',   5, $states['mapped'] );
 t_eq( '0 variants are unmapped', 0, $states['unmapped'] );
 t_ok( 'with 2+ mapped variants the parent qualifies for "Unmap all"', $states['mapped'] >= 2 );
 
-// Unmap them all through the new endpoint — the mapped parent must then qualify
-// for "Import all" again, which is precisely the reported situation.
+// Unmap them all through the new endpoint. The parent must come away unmapped
+// too — a row left showing "Mapped" with nothing mapped under it is the bug
+// merchants reported.
 $mark_unmap = t_log_mark();
 $unmap_all  = t_ajax( $admin, 'ajax_mapper_unmap_all_variants', [ 'mapping_id' => $mapping_id ] );
 
 t_ok( 'unmap all succeeded',   ! empty( $unmap_all['success'] ), wp_json_encode( $unmap_all ) );
 t_eq( '5 variants unmapped',   5, (int) $unmap_all['data']['unmapped'] );
+t_eq( 'the parent was unmapped too', true, (bool) ( $unmap_all['data']['parent_unmapped'] ?? false ) );
+t_contains( 'message says so', 'unmapped as well', [ (string) $unmap_all['data']['message'] ] );
 t_ok( 'unmap all was logged',  ! empty( t_log_since( $mark_unmap ) ) );
 
 // The WooCommerce variations must survive — only the link is removed.
 t_eq( 'WooCommerce variations left intact', 5, count( wc_get_product( $wc_id )->get_children() ) );
+t_ok( 'the WooCommerce parent product survives', wc_get_product( $wc_id ) instanceof WC_Product_Variable );
+
+// The mapper row itself no longer points at anything.
+$row = Sellmo_Product_Mapping::get_row_by_id( $mapping_id );
+t_eq( 'mapper row has no WooCommerce product', 0, (int) ( $row['wc_product_id'] ?? 0 ) );
+t_eq( 'mapper row status is not mapped',       0, (int) ( $row['map_status'] ?? 1 ) );
 
 $listed = $row_for( t_ajax( $admin, 'ajax_get_mapper_list', [ 'search' => $code ] ), $code );
 $states = $variant_states( $listed );
 
-t_eq( 'parent is still mapped',     'mapped', (string) $listed['status'] );
+t_eq( 'parent is now unmapped',     'not_mapped', (string) $listed['status'] );
 t_eq( 'now 0 variants mapped',      0, $states['mapped'] );
 t_eq( 'now 5 variants unmapped',    5, $states['unmapped'] );
-t_ok( 'mapped parent with 2+ unmapped variants qualifies for "Import all"', $states['unmapped'] >= 2 );
+t_ok( 'a parent with 2+ unmapped variants qualifies for "Import all"', $states['unmapped'] >= 2 );
 
 // Unmapping again has nothing to do and must say so rather than silently pass.
 $again = t_ajax( $admin, 'ajax_mapper_unmap_all_variants', [ 'mapping_id' => $mapping_id ] );
@@ -252,6 +261,42 @@ t_contains( 'and explains why', 'No mapped variants', [ (string) ( $again['data'
 // A bad reference is rejected.
 $bad_ref = t_ajax( $admin, 'ajax_mapper_unmap_all_variants', [ 'mapping_id' => 0 ] );
 t_eq( 'zero mapping id rejected', false, (bool) ( $bad_ref['success'] ?? true ) );
+
+// -----------------------------------------------------------------------------
+// 4f-3. Unmap all → import all round trip, and the parent-not-mapped case
+// -----------------------------------------------------------------------------
+t_head( '4f-3. Round trip and a parent that is already unmapped' );
+
+// Everything is unmapped now; importing all must map the parent again.
+$reimport = t_ajax( $admin, 'ajax_mapper_import_all_variants', [ 'mapping_id' => $mapping_id ] );
+t_ok( 're-import after unmap all succeeded', ! empty( $reimport['success'] ), wp_json_encode( $reimport ) );
+
+$row = Sellmo_Product_Mapping::get_row_by_id( $mapping_id );
+t_ok( 'parent is mapped again',       (int) ( $row['wc_product_id'] ?? 0 ) > 0 );
+t_eq( 'and its status says so',       1, (int) ( $row['map_status'] ?? 0 ) );
+
+$states = $variant_states( $row_for( t_ajax( $admin, 'ajax_get_mapper_list', [ 'search' => $code ] ), $code ) );
+t_eq( 'all 5 variants mapped again', 5, $states['mapped'] );
+
+// Now unmap ONLY the parent, leaving the variants mapped. "Unmap all" must still
+// unlink every variant and simply report that there was no parent link to drop.
+$unmap_parent = t_ajax( $admin, 'ajax_unmap_product', [
+	'sellmo_id'   => $pos_id,
+	'sellmo_code' => $code,
+	'sellmo_name' => 'Import All Tee',
+] );
+t_ok( 'parent-only unmap succeeded', ! empty( $unmap_parent['success'] ), wp_json_encode( $unmap_parent ) );
+t_eq( 'variants are still mapped', 5, $variant_states( $row_for( t_ajax( $admin, 'ajax_get_mapper_list', [ 'search' => $code ] ), $code ) )['mapped'] );
+
+$orphans = t_ajax( $admin, 'ajax_mapper_unmap_all_variants', [ 'mapping_id' => $mapping_id ] );
+
+t_ok( 'unmap all still succeeded',        ! empty( $orphans['success'] ), wp_json_encode( $orphans ) );
+t_eq( '5 variants unmapped',              5, (int) $orphans['data']['unmapped'] );
+t_eq( 'no parent link was there to drop', false, (bool) ( $orphans['data']['parent_unmapped'] ?? true ) );
+t_absent( 'message does not claim otherwise', 'unmapped as well', [ (string) $orphans['data']['message'] ] );
+$final_row = Sellmo_Product_Mapping::get_row_by_id( $mapping_id );
+t_ok( 'the mapper row survives',      is_array( $final_row ) );
+t_eq( 'parent row is still unmapped', 0, (int) ( $final_row['wc_product_id'] ?? 0 ) );
 
 // A SIMPLE product has no variants, so neither bulk button applies.
 $simple_code = T_PREFIX . '-NOVAR-450';
