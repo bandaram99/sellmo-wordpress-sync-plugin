@@ -60,6 +60,7 @@ final class POS_Brand_Migrator {
 		'last_product_sync',
 		'last_stock_sync',
 		'last_order_sync',
+		'last_order_status_sync',
 		'mapper_merged',
 		'api_token',
 		'shop_id',
@@ -69,6 +70,7 @@ final class POS_Brand_Migrator {
 		'order_sync_enabled',
 		'stock_sync_interval',
 		'product_sync_interval',
+		'order_sync_interval',
 		'sync_categories',
 		'terminal_key',
 		'order_timezone',
@@ -79,7 +81,7 @@ final class POS_Brand_Migrator {
 	 *
 	 * @var string[]
 	 */
-	private const CRON_SUFFIXES = [ 'stock_sync', 'product_sync' ];
+	private const CRON_SUFFIXES = [ 'stock_sync', 'product_sync', 'order_status_sync' ];
 
 	/**
 	 * Meta-key suffixes owned by the plugin (postmeta), stored as _{slug}_{suffix}.
@@ -93,6 +95,8 @@ final class POS_Brand_Migrator {
 		'image_source_url',
 		'order_id',
 		'sync_error',
+		'pos_order_status',
+		'pos_order_status_name',
 	];
 
 	/**

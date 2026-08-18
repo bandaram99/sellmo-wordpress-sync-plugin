@@ -19,10 +19,11 @@ $conn_status  = (array) ( Sellmo_Settings::get( 'connection_status' ) ?: [] );
 $is_connected = $has_token && ! empty( $conn_status['success'] );
 
 // ── Sync metadata ─────────────────────────────────────────────────────────────
-$product_meta = (array) ( Sellmo_Settings::get( 'last_product_sync' ) ?: [] );
-$stock_meta   = (array) ( Sellmo_Settings::get( 'last_stock_sync' ) ?: [] );
-$order_meta   = (array) ( Sellmo_Settings::get( 'last_order_sync' ) ?: [] );
-$mapper_stats = Sellmo_Product_Mapping::get_dashboard_stats();
+$product_meta      = (array) ( Sellmo_Settings::get( 'last_product_sync' ) ?: [] );
+$stock_meta        = (array) ( Sellmo_Settings::get( 'last_stock_sync' ) ?: [] );
+$order_meta        = (array) ( Sellmo_Settings::get( 'last_order_sync' ) ?: [] );
+$order_status_meta = (array) ( Sellmo_Settings::get( 'last_order_status_sync' ) ?: [] );
+$mapper_stats      = Sellmo_Product_Mapping::get_dashboard_stats();
 
 // ── Feature toggles ───────────────────────────────────────────────────────────
 $product_enabled = 'yes' === (string) Sellmo_Settings::get( 'product_sync_enabled' );
@@ -30,7 +31,8 @@ $stock_enabled   = 'yes' === (string) Sellmo_Settings::get( 'stock_sync_enabled'
 $order_enabled   = 'yes' === (string) Sellmo_Settings::get( 'order_sync_enabled' );
 
 // ── Next scheduled stock sync ─────────────────────────────────────────────────
-$next_stock = wp_next_scheduled( POS_Brand::cron_hook( 'stock_sync' ) );
+$next_stock        = wp_next_scheduled( POS_Brand::cron_hook( 'stock_sync' ) );
+$next_order_status = wp_next_scheduled( Sellmo_Scheduler::order_hook() );
 
 // ── Recent activity ───────────────────────────────────────────────────────────
 $log_data  = Sellmo_Logger::get_logs( [ 'per_page' => 10, 'paged' => 1 ] );
@@ -324,6 +326,18 @@ if ( ! function_exists( 'sellmo_dashboard_format_dt' ) ) {
 							</span>
 						</td>
 					</tr>
+					<tr>
+						<th><?php esc_html_e( 'Direction', 'sellmo-woocommerce' ); ?></th>
+						<td>
+							<?php
+							printf(
+								/* translators: %s: Brand display name. */
+								esc_html__( 'WooCommerce ↔ %s (orders out, status back)', 'sellmo-woocommerce' ),
+								esc_html( $brand_name )
+							);
+							?>
+						</td>
+					</tr>
 					<?php if ( ! empty( $order_meta['time'] ) ) : ?>
 					<tr>
 						<th><?php esc_html_e( 'Last order', 'sellmo-woocommerce' ); ?></th>
@@ -340,7 +354,50 @@ if ( ! function_exists( 'sellmo_dashboard_format_dt' ) ) {
 						<td><em><?php esc_html_e( 'No orders synced yet.', 'sellmo-woocommerce' ); ?></em></td>
 					</tr>
 					<?php endif; ?>
+					<tr>
+						<th><?php esc_html_e( 'Last status pull', 'sellmo-woocommerce' ); ?></th>
+						<td><?php echo esc_html( sellmo_dashboard_format_ts( (int) ( $order_status_meta['time'] ?? 0 ) ) ); ?></td>
+					</tr>
+					<tr>
+						<th><?php esc_html_e( 'Next scheduled', 'sellmo-woocommerce' ); ?></th>
+						<td>
+							<?php
+							echo esc_html(
+								$next_order_status
+									? sellmo_dashboard_format_ts( (int) $next_order_status )
+									: __( 'Not scheduled', 'sellmo-woocommerce' )
+							);
+							?>
+						</td>
+					</tr>
+					<?php if ( ! empty( $order_status_meta['status'] ) ) : ?>
+					<tr>
+						<th><?php esc_html_e( 'Last result', 'sellmo-woocommerce' ); ?></th>
+						<td>
+							<?php
+							$o_status = (string) $order_status_meta['status'];
+							$o_count  = absint( $order_status_meta['count'] ?? 0 );
+
+							if ( 'error' === $o_status ) : ?>
+								<span class="sellmo-result-badge error">
+									<?php esc_html_e( 'Error — see the sync log', 'sellmo-woocommerce' ); ?>
+								</span>
+							<?php else : ?>
+								<span class="sellmo-result-badge success">
+									<?php printf( esc_html__( 'Success (%d updated)', 'sellmo-woocommerce' ), $o_count ); ?>
+								</span>
+							<?php endif; ?>
+						</td>
+					</tr>
+					<?php endif; ?>
 				</table>
+				<div class="sellmo-sync-actions">
+					<button type="button" id="sellmo-sync-order-status" class="button button-secondary">
+						<?php esc_html_e( 'Sync Order Status Now', 'sellmo-woocommerce' ); ?>
+					</button>
+					<span class="sellmo-sync-spinner spinner" style="float:none;margin:0 4px 0 0;"></span>
+					<span class="sellmo-sync-result" id="sellmo-sync-order-status-result"></span>
+				</div>
 			</div>
 		</div>
 

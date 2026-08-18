@@ -21,6 +21,7 @@ $stock_sync_enabled    = 'yes' === (string) Sellmo_Settings::get( 'stock_sync_en
 $order_sync_enabled    = 'yes' === (string) Sellmo_Settings::get( 'order_sync_enabled' );
 $stock_sync_interval   = (string) ( Sellmo_Settings::get( 'stock_sync_interval' ) ?: 'hourly' );
 $product_sync_interval = (string) ( Sellmo_Settings::get( 'product_sync_interval' ) ?: 'twicedaily' );
+$order_sync_interval   = Sellmo_Scheduler::order_interval();
 $webhook_secret        = (string) ( Sellmo_Settings::get( 'webhook_secret' ) ?: '' );
 $order_timezone        = (string) ( Sellmo_Settings::get( 'order_timezone' ) ?: '' );
 $webhook_url           = rest_url( 'sellmo-wc/v1/webhook' );
@@ -194,11 +195,20 @@ $webhook_url           = rest_url( 'sellmo-wc/v1/webhook' );
 								>
 								<?php
 								printf(
-									esc_html__( 'Enable order sync (WooCommerce → %s)', 'sellmo-woocommerce' ),
+									esc_html__( 'Enable order sync (WooCommerce ↔ %s)', 'sellmo-woocommerce' ),
 									esc_html( $brand_name )
 								);
 								?>
 							</label>
+							<p class="description">
+								<?php
+								printf(
+									/* translators: %s: Brand display name. */
+									esc_html__( 'Orders are pushed to %s when they reach Processing, and their status is pulled back on the schedule below.', 'sellmo-woocommerce' ),
+									esc_html( $brand_name )
+								);
+								?>
+							</p>
 						</td>
 					</tr>
 
@@ -296,6 +306,32 @@ $webhook_url           = rest_url( 'sellmo-wc/v1/webhook' );
 									<?php esc_html_e( 'Daily', 'sellmo-woocommerce' ); ?>
 								</option>
 							</select>
+						</td>
+					</tr>
+
+					<tr>
+						<th scope="row">
+							<label for="sellmo_wc_order_sync_interval">
+								<?php esc_html_e( 'Order Status Interval', 'sellmo-woocommerce' ); ?>
+							</label>
+						</th>
+						<td>
+							<select id="sellmo_wc_order_sync_interval" name="sellmo_wc_order_sync_interval">
+								<?php foreach ( Sellmo_Scheduler::order_interval_choices() as $interval_key => $interval_label ) : ?>
+									<option value="<?php echo esc_attr( $interval_key ); ?>" <?php selected( $order_sync_interval, $interval_key ); ?>>
+										<?php echo esc_html( $interval_label ); ?>
+									</option>
+								<?php endforeach; ?>
+							</select>
+							<p class="description">
+								<?php
+								printf(
+									/* translators: %s: Brand display name. */
+									esc_html__( 'How often to ask %s what happened to the orders sent from WooCommerce (Completed, Rejected, …).', 'sellmo-woocommerce' ),
+									esc_html( $brand_name )
+								);
+								?>
+							</p>
 						</td>
 					</tr>
 

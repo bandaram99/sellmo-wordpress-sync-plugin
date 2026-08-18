@@ -25,6 +25,43 @@ defined( 'ABSPATH' ) || exit;
 class Sellmo_Order_Sync {
 
 	/**
+	 * POS order_status code => WooCommerce order status.
+	 *
+	 * "0" (Pending) is deliberately absent: the POS has not acted on the order
+	 * yet, so WooCommerce keeps whatever the merchant set. Unlisted codes are
+	 * left alone for the same reason.
+	 *
+	 * @since 1.6.0
+	 * @var array<string, string>
+	 */
+	private const STATUS_MAP = [
+		'1' => 'processing', // Accepted / in progress.
+		'2' => 'completed',
+		'3' => 'cancelled',  // Rejected by the POS.
+	];
+
+	/**
+	 * Safety cap on /online_order_status pages fetched per run.
+	 *
+	 * @since 1.6.0
+	 */
+	private const MAX_STATUS_PAGES = 50;
+
+	/**
+	 * True while a POS status is being written onto a WooCommerce order.
+	 *
+	 * Applying an incoming status can move an order into Processing, which fires
+	 * woocommerce_order_status_processing — the very hook that pushes orders out.
+	 * Without this the return leg would bounce the order straight back to the POS.
+	 * Static because the hook runs on the globally registered instance, not this
+	 * one.
+	 *
+	 * @since 1.6.0
+	 * @var bool
+	 */
+	private static bool $applying_pos_status = false;
+
+	/**
 	 * Constructor.
 	 *
 	 * Registers the automatic status-change hook, meta box hooks, and the
@@ -63,6 +100,12 @@ class Sellmo_Order_Sync {
 	 */
 	public function sync_order( int $order_id, WC_Order $order ): void {
 		if ( 'yes' !== (string) Sellmo_Settings::get( 'order_sync_enabled' ) ) {
+			return;
+		}
+
+		// The status came FROM the POS a moment ago — pushing it back would be a
+		// loop, and a duplicate order for any push that never recorded an id.
+		if ( self::$applying_pos_status ) {
 			return;
 		}
 
@@ -259,6 +302,192 @@ class Sellmo_Order_Sync {
 		} else {
 			wp_send_json_error( [ 'message' => $result['message'] ] );
 		}
+	}
+
+	// -------------------------------------------------------------------------
+	// POS -> WooCommerce: order status pull
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Pull order statuses from the POS and apply them to WooCommerce orders.
+	 *
+	 * The return leg of the bi-directional order sync. Orders go out on
+	 * `woocommerce_order_status_processing`; the POS then accepts, completes or
+	 * rejects them, and GET /online_order_status reports that back. Backs the
+	 * "Sync Order Status Now" button and the order-status cron event.
+	 *
+	 * Only orders this plugin actually pushed are touched — a status row whose
+	 * reference belongs to another sales channel is ignored rather than applied
+	 * to whatever WooCommerce order happens to share that id.
+	 *
+	 * @since  1.6.0
+	 * @return array{ success: bool, count: int, checked: int, message: string }
+	 */
+	public function sync_order_statuses(): array {
+		$api     = new Sellmo_API();
+		$cursor  = '';
+		$page    = 0;
+		$checked = 0;
+		$updated = 0;
+
+		do {
+			$page++;
+			$response = $api->get_order_status( $cursor );
+
+			if ( is_wp_error( $response ) ) {
+				$message = $response->get_error_message();
+
+				Sellmo_Logger::log( 'order', 'pos_to_wc', 'error', $message );
+
+				Sellmo_Settings::set( 'last_order_status_sync', [
+					'time'   => time(),
+					'status' => 'error',
+					'count'  => $updated,
+				] );
+
+				return [ 'success' => false, 'count' => $updated, 'checked' => $checked, 'message' => $message ];
+			}
+
+			$rows = $response['order_status'] ?? $response['data'] ?? [];
+			if ( empty( $rows ) ) {
+				break;
+			}
+
+			foreach ( $rows as $row ) {
+				if ( ! is_array( $row ) ) {
+					continue;
+				}
+
+				$order = $this->resolve_order_for_status( $row );
+				if ( ! $order instanceof WC_Order ) {
+					continue;
+				}
+
+				$checked++;
+
+				if ( $this->apply_pos_status( $order, (string) ( $row['order_status'] ?? '' ), (string) ( $row['status_name'] ?? '' ) ) ) {
+					$updated++;
+				}
+			}
+
+			$cursor = (string) ( $response['cursor'] ?? '' );
+
+		} while ( '' !== $cursor && $page < self::MAX_STATUS_PAGES );
+
+		Sellmo_Settings::set( 'last_order_status_sync', [
+			'time'   => time(),
+			'status' => 'success',
+			'count'  => $updated,
+		] );
+
+		$message = sprintf(
+			/* translators: 1: orders updated, 2: orders checked */
+			__( '%1$d order status(es) updated, %2$d checked.', 'sellmo-woocommerce' ),
+			$updated,
+			$checked
+		);
+
+		Sellmo_Logger::log( 'order', 'pos_to_wc', 'success', $message );
+
+		return [ 'success' => true, 'count' => $updated, 'checked' => $checked, 'message' => $message ];
+	}
+
+	/**
+	 * Resolve the WooCommerce order a POS status row refers to.
+	 *
+	 * Matches on the reference this plugin sent with the order (the WooCommerce
+	 * order id), then confirms the order really was pushed from here — the POS
+	 * returns every online order it holds, including other channels' ids, and an
+	 * unrelated id must never rewrite a merchant's order.
+	 *
+	 * @since  1.6.0
+	 * @param  array<string, mixed> $row One /online_order_status entry.
+	 * @return WC_Order|null
+	 */
+	private function resolve_order_for_status( array $row ): ?WC_Order {
+		$reference = (string) ( $row['order_reference_id'] ?? '' );
+		if ( '' === $reference || ! ctype_digit( $reference ) ) {
+			return null;
+		}
+
+		$order = wc_get_order( (int) $reference );
+		if ( ! $order instanceof WC_Order ) {
+			return null;
+		}
+
+		// meta_exists(), not a value check: an order pushed before the POS returned
+		// an id carries the key with an empty value and is still ours.
+		if ( ! $order->meta_exists( '_sellmo_order_id' ) ) {
+			return null;
+		}
+
+		return $order;
+	}
+
+	/**
+	 * Apply one POS status to a WooCommerce order.
+	 *
+	 * Writes nothing when the POS status is unmapped (Pending leaves the order
+	 * alone) or when the order already carries it, so repeat runs are silent.
+	 *
+	 * @since  1.6.0
+	 * @param  WC_Order $order       Order to update.
+	 * @param  string   $status_id   POS order_status code.
+	 * @param  string   $status_name POS status_name, used in the order note.
+	 * @return bool                  True when the WooCommerce status changed.
+	 */
+	private function apply_pos_status( WC_Order $order, string $status_id, string $status_name ): bool {
+		$wc_status = self::STATUS_MAP[ $status_id ] ?? '';
+
+		// Unknown or Pending: nothing to do — the POS has not acted on it yet.
+		if ( '' === $wc_status ) {
+			return false;
+		}
+
+		// Already recorded this exact POS status: nothing changed upstream.
+		if ( (string) $order->get_meta( '_sellmo_pos_order_status' ) === $status_id ) {
+			return false;
+		}
+
+		$order->update_meta_data( '_sellmo_pos_order_status', $status_id );
+		$order->update_meta_data( '_sellmo_pos_order_status_name', $status_name );
+		$order->save();
+
+		$old_status = $order->get_status();
+
+		if ( $old_status === $wc_status ) {
+			return false;
+		}
+
+		self::$applying_pos_status = true;
+		try {
+			$order->update_status(
+				$wc_status,
+				sprintf(
+					/* translators: %s: POS status name, e.g. "Completed" */
+					__( 'Status from the POS: %s.', 'sellmo-woocommerce' ),
+					'' !== $status_name ? $status_name : $status_id
+				)
+			);
+		} finally {
+			self::$applying_pos_status = false;
+		}
+
+		Sellmo_Logger::log(
+			'order',
+			'pos_to_wc',
+			'success',
+			sprintf(
+				'Order #%d status %s → %s (POS: %s).',
+				$order->get_id(),
+				$old_status,
+				$wc_status,
+				'' !== $status_name ? $status_name : $status_id
+			),
+			(string) $order->get_id()
+		);
+
+		return true;
 	}
 
 	// -------------------------------------------------------------------------

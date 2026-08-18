@@ -51,6 +51,7 @@ class Sellmo_Admin {
 		add_action( 'wp_ajax_run_salesplay_sync',         [ $this, 'ajax_sync_products_now' ] );
 		add_action( 'wp_ajax_sellmo_wc_sync_products_now', [ $this, 'ajax_sync_products_now' ] );
 		add_action( 'wp_ajax_sellmo_wc_sync_stock_now',    [ $this, 'ajax_sync_stock_now' ] );
+		add_action( 'wp_ajax_sellmo_wc_sync_order_status', [ $this, 'ajax_sync_order_status_now' ] );
 
 		add_action( 'wp_ajax_sellmo_wc_get_products_list', [ $this, 'ajax_get_products_list' ] );
 		add_action( 'wp_ajax_sellmo_wc_refresh_products',  [ $this, 'ajax_refresh_products' ] );
@@ -435,6 +436,13 @@ class Sellmo_Admin {
 		$product_interval = sanitize_key( wp_unslash( $_POST['sellmo_wc_product_sync_interval'] ?? '' ) );
 		if ( in_array( $product_interval, [ 'twicedaily', 'daily' ], true ) ) {
 			Sellmo_Settings::set( 'product_sync_interval', $product_interval );
+		}
+
+		// Order status pull — validated against the schedules the plugin registers,
+		// so the dropdown and the cron event can never disagree.
+		$order_interval = sanitize_key( wp_unslash( $_POST['sellmo_wc_order_sync_interval'] ?? '' ) );
+		if ( array_key_exists( $order_interval, Sellmo_Scheduler::order_interval_choices() ) ) {
+			Sellmo_Settings::set( 'order_sync_interval', $order_interval );
 		}
 
 		// Order time zone — empty means "follow the WordPress time zone". Anything
@@ -2179,6 +2187,44 @@ class Sellmo_Admin {
 
 		wp_send_json_error( [
 			'message' => (string) ( $result['message'] ?? __( 'Stock sync failed.', 'sellmo-woocommerce' ) ),
+		] );
+	}
+
+	/**
+	 * AJAX: pull order statuses from the POS ("Sync Order Status Now").
+	 *
+	 * The return leg of the order sync — the same code the order-status cron
+	 * event runs, so the button and the schedule cannot drift apart.
+	 *
+	 * @since  1.6.0
+	 * @return void
+	 */
+	public function ajax_sync_order_status_now(): void {
+		check_ajax_referer( 'sellmo_wc_admin', 'nonce' );
+
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
+		}
+
+		if ( 'yes' !== (string) Sellmo_Settings::get( 'order_sync_enabled' ) ) {
+			wp_send_json_error( [ 'message' => __( 'Order sync is disabled in Settings.', 'sellmo-woocommerce' ) ] );
+		}
+
+		$result = ( new Sellmo_Order_Sync() )->sync_order_statuses();
+
+		if ( ! empty( $result['success'] ) ) {
+			wp_send_json_success( [
+				'message' => sprintf(
+					/* translators: 1: orders updated, 2: orders checked */
+					__( 'Order status sync complete. %1$d updated, %2$d checked.', 'sellmo-woocommerce' ),
+					(int) ( $result['count'] ?? 0 ),
+					(int) ( $result['checked'] ?? 0 )
+				),
+			] );
+		}
+
+		wp_send_json_error( [
+			'message' => (string) ( $result['message'] ?? __( 'Order status sync failed.', 'sellmo-woocommerce' ) ),
 		] );
 	}
 

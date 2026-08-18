@@ -326,6 +326,14 @@
 		);
 	} );
 
+	$( '#sellmo-sync-order-status' ).on( 'click', function () {
+		runManualSync(
+			'sellmo_wc_sync_order_status',
+			$( this ),
+			$( '#sellmo-sync-order-status-result' )
+		);
+	} );
+
 	// ── On page load ─────────────────────────────────────────────────────────
 
 	// If a token is already saved, populate the shop dropdown and categories

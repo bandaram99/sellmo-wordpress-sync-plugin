@@ -246,6 +246,7 @@ class Sellmo_Settings {
 			'order_sync_enabled'    => 'no',
 			'stock_sync_interval'   => 'hourly',
 			'product_sync_interval' => 'twicedaily',
+			'order_sync_interval'   => Sellmo_Scheduler::minute_schedule( 15 ),
 			'sync_categories'       => [],
 			'terminal_key'          => '',
 			'order_timezone'        => '',

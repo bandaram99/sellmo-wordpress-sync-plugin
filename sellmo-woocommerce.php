@@ -68,6 +68,7 @@ function sellmo_wc_deactivate(): void {
 	require_once SELLMO_WC_PATH . 'includes/class-pos-brand.php';
 	wp_clear_scheduled_hook( POS_Brand::cron_hook( 'stock_sync' ) );
 	wp_clear_scheduled_hook( POS_Brand::cron_hook( 'product_sync' ) );
+	wp_clear_scheduled_hook( POS_Brand::cron_hook( 'order_status_sync' ) );
 }
 register_deactivation_hook( __FILE__, 'sellmo_wc_deactivate' );
 

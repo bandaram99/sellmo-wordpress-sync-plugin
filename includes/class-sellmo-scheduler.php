@@ -41,6 +41,87 @@ class Sellmo_Scheduler {
 	private string $product_hook;
 
 	/**
+	 * WP-Cron hook name for the order-status pull (derived from the brand slug).
+	 *
+	 * @var string
+	 */
+	private string $order_hook;
+
+	/**
+	 * Extra cron intervals this plugin registers, in minutes.
+	 *
+	 * WordPress ships only hourly / twicedaily / daily. Order statuses change
+	 * while a customer waits, so the order pull needs minute-level choices.
+	 *
+	 * @since 1.6.0
+	 * @var array<int, int>
+	 */
+	private const MINUTE_INTERVALS = [ 5, 10, 15, 20, 30 ];
+
+	/**
+	 * Cron schedule name for an interval in minutes, e.g. "sellmo_wc_every_5min".
+	 *
+	 * @since  1.6.0
+	 * @param  int $minutes Interval length.
+	 * @return string
+	 */
+	public static function minute_schedule( int $minutes ): string {
+		return POS_Brand::cron_hook( 'every_' . $minutes . 'min' );
+	}
+
+	/**
+	 * Every schedule the order sync may be set to: name => human label.
+	 *
+	 * Used by the settings dropdown and by the save handler to validate what
+	 * comes back, so the two can never drift apart.
+	 *
+	 * @since  1.6.0
+	 * @return array<string, string>
+	 */
+	public static function order_interval_choices(): array {
+		$choices = [];
+
+		foreach ( self::MINUTE_INTERVALS as $minutes ) {
+			$choices[ self::minute_schedule( $minutes ) ] = sprintf(
+				/* translators: %d: number of minutes */
+				_n( 'Every %d minute', 'Every %d minutes', $minutes, 'sellmo-woocommerce' ),
+				$minutes
+			);
+		}
+
+		$choices['hourly']     = __( 'Hourly', 'sellmo-woocommerce' );
+		$choices['twicedaily'] = __( 'Twice Daily', 'sellmo-woocommerce' );
+		$choices['daily']      = __( 'Daily', 'sellmo-woocommerce' );
+
+		return $choices;
+	}
+
+	/**
+	 * Register the plugin's minute-level intervals with WP-Cron.
+	 *
+	 * Filter callback for `cron_schedules`; without it wp_schedule_event()
+	 * silently refuses an unknown recurrence and nothing is ever scheduled.
+	 *
+	 * @since  1.6.0
+	 * @param  array<string, array{interval:int, display:string}> $schedules Existing schedules.
+	 * @return array<string, array{interval:int, display:string}>
+	 */
+	public function register_cron_intervals( array $schedules ): array {
+		foreach ( self::MINUTE_INTERVALS as $minutes ) {
+			$schedules[ self::minute_schedule( $minutes ) ] = [
+				'interval' => $minutes * MINUTE_IN_SECONDS,
+				'display'  => sprintf(
+					/* translators: %d: number of minutes */
+					_n( 'Every %d minute', 'Every %d minutes', $minutes, 'sellmo-woocommerce' ),
+					$minutes
+				),
+			];
+		}
+
+		return $schedules;
+	}
+
+	/**
 	 * Constructor.
 	 *
 	 * Registers cron callback hooks and settings-change hooks, then ensures
@@ -51,16 +132,23 @@ class Sellmo_Scheduler {
 	public function __construct() {
 		$this->stock_hook   = POS_Brand::cron_hook( 'stock_sync' );
 		$this->product_hook = POS_Brand::cron_hook( 'product_sync' );
+		$this->order_hook   = POS_Brand::cron_hook( 'order_status_sync' );
+
+		// Minute-level recurrences must exist before anything is scheduled on one.
+		add_filter( 'cron_schedules', [ $this, 'register_cron_intervals' ] ); // phpcs:ignore WordPress.WP.CronInterval.ChangeDetected
 
 		// Register the actual cron callbacks that WordPress will invoke.
 		add_action( $this->stock_hook,   [ $this, 'run_stock_sync' ] );
 		add_action( $this->product_hook, [ $this, 'run_product_sync' ] );
+		add_action( $this->order_hook,   [ $this, 'run_order_status_sync' ] );
 
 		// Reschedule whenever the relevant settings options change.
 		add_action( 'update_option_' . POS_Brand::option( 'stock_sync_enabled' ),    [ $this, 'reschedule_stock' ] );
 		add_action( 'update_option_' . POS_Brand::option( 'stock_sync_interval' ),   [ $this, 'reschedule_stock' ] );
 		add_action( 'update_option_' . POS_Brand::option( 'product_sync_enabled' ),  [ $this, 'reschedule_product' ] );
 		add_action( 'update_option_' . POS_Brand::option( 'product_sync_interval' ), [ $this, 'reschedule_product' ] );
+		add_action( 'update_option_' . POS_Brand::option( 'order_sync_enabled' ),    [ $this, 'reschedule_order' ] );
+		add_action( 'update_option_' . POS_Brand::option( 'order_sync_interval' ),   [ $this, 'reschedule_order' ] );
 
 		// On every request, ensure events are scheduled if they should be but aren't.
 		// This recovers from deactivation/reactivation cycles and fresh installs.
@@ -83,6 +171,31 @@ class Sellmo_Scheduler {
 	public function register_sync_schedules(): void {
 		$this->maybe_schedule_stock();
 		$this->maybe_schedule_product();
+		$this->maybe_schedule_order();
+	}
+
+	/**
+	 * The order-status cron hook name.
+	 *
+	 * @since  1.6.0
+	 * @return string
+	 */
+	public static function order_hook(): string {
+		return POS_Brand::cron_hook( 'order_status_sync' );
+	}
+
+	/**
+	 * The configured order-status interval, falling back to every 15 minutes.
+	 *
+	 * @since  1.6.0
+	 * @return string
+	 */
+	public static function order_interval(): string {
+		$interval = (string) ( Sellmo_Settings::get( 'order_sync_interval' ) ?: '' );
+
+		return array_key_exists( $interval, self::order_interval_choices() )
+			? $interval
+			: self::minute_schedule( 15 );
 	}
 
 	/**
@@ -97,6 +210,7 @@ class Sellmo_Scheduler {
 	public function clear_sync_schedules(): void {
 		wp_clear_scheduled_hook( $this->stock_hook );
 		wp_clear_scheduled_hook( $this->product_hook );
+		wp_clear_scheduled_hook( $this->order_hook );
 	}
 
 	// -------------------------------------------------------------------------
@@ -133,6 +247,20 @@ class Sellmo_Scheduler {
 		if ( 'yes' === (string) Sellmo_Settings::get( 'product_sync_enabled' ) ) {
 			$interval = (string) ( Sellmo_Settings::get( 'product_sync_interval' ) ?: 'twicedaily' );
 			wp_schedule_event( time() + 60, $interval, $this->product_hook );
+		}
+	}
+
+	/**
+	 * Reschedule the order-status pull after a settings change.
+	 *
+	 * @since  1.6.0
+	 * @return void
+	 */
+	public function reschedule_order(): void {
+		wp_clear_scheduled_hook( $this->order_hook );
+
+		if ( 'yes' === (string) Sellmo_Settings::get( 'order_sync_enabled' ) ) {
+			wp_schedule_event( time() + 60, self::order_interval(), $this->order_hook );
 		}
 	}
 
@@ -183,6 +311,23 @@ class Sellmo_Scheduler {
 		( new Sellmo_Product_Mapper_Sync() )->run_incremental_sync();
 	}
 
+	/**
+	 * WP-Cron callback for the order-status pull.
+	 *
+	 * Runs the same code as the "Sync Order Status Now" button, so scheduled and
+	 * manual runs cannot drift. Gated by the order sync toggle.
+	 *
+	 * @since  1.6.0
+	 * @return void
+	 */
+	public function run_order_status_sync(): void {
+		if ( 'yes' !== (string) Sellmo_Settings::get( 'order_sync_enabled' ) ) {
+			return;
+		}
+
+		( new Sellmo_Order_Sync() )->sync_order_statuses();
+	}
+
 	// -------------------------------------------------------------------------
 	// Private scheduling helpers
 	// -------------------------------------------------------------------------
@@ -223,6 +368,23 @@ class Sellmo_Scheduler {
 			wp_schedule_event( time() + 60, $interval, $this->product_hook );
 		} elseif ( ! $enabled && $scheduled ) {
 			wp_clear_scheduled_hook( $this->product_hook );
+		}
+	}
+
+	/**
+	 * Schedule the order-status pull if it should be running but isn't yet.
+	 *
+	 * @since  1.6.0
+	 * @return void
+	 */
+	private function maybe_schedule_order(): void {
+		$enabled   = 'yes' === (string) Sellmo_Settings::get( 'order_sync_enabled' );
+		$scheduled = (bool) wp_next_scheduled( $this->order_hook );
+
+		if ( $enabled && ! $scheduled ) {
+			wp_schedule_event( time() + 60, self::order_interval(), $this->order_hook );
+		} elseif ( ! $enabled && $scheduled ) {
+			wp_clear_scheduled_hook( $this->order_hook );
 		}
 	}
 }

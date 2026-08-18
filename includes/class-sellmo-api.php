@@ -480,4 +480,32 @@ class Sellmo_API {
 	public function create_order( array $order_data ): array|\WP_Error {
 		return $this->make_request( 'POST', '/online_orders', $order_data );
 	}
+
+	/**
+	 * Fetch a page of order statuses from the POS.
+	 *
+	 * The return half of the order sync: SalesPlay reports what happened to each
+	 * order that was pushed (Pending / Completed / Rejected …) so WooCommerce can
+	 * follow. Like /products and /inventory this is a GET whose cursor only
+	 * advances when sent in the JSON body.
+	 *
+	 * Never cached — a status the merchant is waiting on must be read live.
+	 *
+	 * @since  1.6.0
+	 * @param  string $cursor Optional pagination cursor from a previous response.
+	 * @return array<string, mixed>|WP_Error
+	 */
+	public function get_order_status( string $cursor = '' ): array|\WP_Error {
+		return $this->request_get_with_body(
+			'/online_order_status',
+			[
+				'system_unique_ids' => '',
+				'created_at_min'    => '',
+				'created_at_max'    => '',
+				'limit'             => '250',
+				'cursor'            => $cursor,
+			],
+			'order'
+		);
+	}
 }
