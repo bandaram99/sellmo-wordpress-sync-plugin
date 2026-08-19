@@ -143,6 +143,24 @@ $order = wc_get_order( $order_id );
 t_eq( 'POS order id stored on the order', 'POS-ORDER-9001', (string) $order->get_meta( '_sellmo_order_id' ) );
 t_eq( 'no sync error recorded',           '',               (string) $order->get_meta( '_sellmo_sync_error' ) );
 
+// The POS now owns the order: WooCommerce holds it until /online_order_status
+// reports back (test-11 covers the return leg moving it on from here).
+t_eq( 'pushed order put on hold', 'on-hold', $order->get_status() );
+
+// A re-push of an order the POS has already reported on must not drag it back.
+// Its own order, so the hold never touches the stock fixture below.
+$reported = wc_create_order();
+$reported->update_meta_data( '_sellmo_pos_order_status', '2' );
+$reported->set_status( 'completed' );
+$reported->save();
+$reported_id = $reported->get_id();
+t_defer( static function () use ( $reported_id ): void {
+	wp_delete_post( $reported_id, true );
+} );
+
+t_call( $order_sync, 'push_order', [ $reported, true ] );
+t_eq( 're-push leaves a POS-reported order alone', 'completed', wc_get_order( $reported_id )->get_status() );
+
 $notes = wc_get_order_notes( [ 'order_id' => $order_id, 'limit' => 10 ] );
 $note_text = implode( ' | ', array_map( static fn( $n ): string => $n->content, $notes ) );
 t_ok( 'an order note records the sync', false !== strpos( $note_text, 'POS-ORDER-9001' ), $note_text );
@@ -155,12 +173,14 @@ t_contains( 'success written to the sync log', 'POS-ORDER-9001', $logs );
 // -----------------------------------------------------------------------------
 t_head( '6d. Inventory reduction' );
 
-t_eq( 'stock before reduction', 10, (int) wc_get_product( $wc_id )->get_stock_quantity() );
+// The push put the order on hold, and WooCommerce reduces stock on that
+// transition — so the 3 ordered units are already gone by this point.
+t_eq( 'WooCommerce stock reduced by 3', 7, (int) wc_get_product( $wc_id )->get_stock_quantity() );
 
 // This is what WooCommerce core fires when an order reaches processing.
 wc_maybe_reduce_stock_levels( $order_id );
 
-t_eq( 'WooCommerce stock reduced by 3', 7, (int) wc_get_product( $wc_id )->get_stock_quantity() );
+t_eq( 'processing does not reduce it again', 7, (int) wc_get_product( $wc_id )->get_stock_quantity() );
 
 // Reduction is guarded against running twice for the same order.
 wc_maybe_reduce_stock_levels( $order_id );

@@ -539,6 +539,13 @@ class Sellmo_Order_Sync {
 		$order->delete_meta_data( '_sellmo_sync_error' );
 		$order->save();
 
+		// The POS owns the order from here: hold it in WooCommerce until GET
+		// /online_order_status reports back what the POS did with it. Skipped once
+		// the POS has reported a status, so re-syncing never drags an order back.
+		if ( ! $order->meta_exists( '_sellmo_pos_order_status' ) && 'on-hold' !== $order->get_status() ) {
+			$order->update_status( 'on-hold', __( 'Sent to the POS - awaiting POS status.', 'sellmo-woocommerce' ) );
+		}
+
 		$note_prefix = $is_manual ? __( 'Manually synced to Sellmo.', 'sellmo-woocommerce' ) : __( 'Synced to Sellmo.', 'sellmo-woocommerce' );
 		/* translators: %s: Sellmo order ID */
 		$order->add_order_note( $note_prefix . ( $sellmo_id ? ' ' . sprintf( __( 'Sellmo order ID: %s', 'sellmo-woocommerce' ), $sellmo_id ) : '' ) );
