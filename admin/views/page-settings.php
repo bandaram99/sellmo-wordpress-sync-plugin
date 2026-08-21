@@ -22,9 +22,7 @@ $order_sync_enabled    = 'yes' === (string) Sellmo_Settings::get( 'order_sync_en
 $stock_sync_interval   = (string) ( Sellmo_Settings::get( 'stock_sync_interval' ) ?: 'hourly' );
 $product_sync_interval = (string) ( Sellmo_Settings::get( 'product_sync_interval' ) ?: 'twicedaily' );
 $order_sync_interval   = Sellmo_Scheduler::order_interval();
-$webhook_secret        = (string) ( Sellmo_Settings::get( 'webhook_secret' ) ?: '' );
 $order_timezone        = (string) ( Sellmo_Settings::get( 'order_timezone' ) ?: '' );
-$webhook_url           = rest_url( 'sellmo-wc/v1/webhook' );
 ?>
 <div class="wrap sellmo-settings-wrap">
 
@@ -368,68 +366,6 @@ $webhook_url           = rest_url( 'sellmo-wc/v1/webhook' );
 
 				</tbody>
 			</table>
-		</div>
-
-		<?php /* ── E) Webhook Configuration ─────────────────────────────── */ ?>
-		<div class="sellmo-card">
-			<h2><?php esc_html_e( 'Webhook Configuration - Under Development', 'sellmo-woocommerce' ); ?></h2>
-			<!-- <table class="form-table" role="presentation">
-				<tbody>
-
-					<tr>
-						<th scope="row"><?php esc_html_e( 'Webhook URL', 'sellmo-woocommerce' ); ?></th>
-						<td>
-							<div class="sellmo-token-wrap">
-								<input
-									type="text"
-									id="sellmo-webhook-url"
-									class="regular-text sellmo-readonly"
-									readonly
-									value="<?php echo esc_attr( $webhook_url ); ?>"
-									onclick="this.select();"
-								>
-								<button type="button" id="sellmo-copy-webhook-url" class="button">
-									<?php esc_html_e( 'Copy', 'sellmo-woocommerce' ); ?>
-								</button>
-							</div>
-							<p class="description">
-								<?php esc_html_e( 'Enter this URL in the Sellmo backoffice under Integrations > Webhooks.', 'sellmo-woocommerce' ); ?>
-							</p>
-						</td>
-					</tr>
-
-					<tr>
-						<th scope="row">
-							<label for="sellmo_wc_webhook_secret">
-								<?php esc_html_e( 'Webhook Secret', 'sellmo-woocommerce' ); ?>
-							</label>
-						</th>
-						<td>
-							<div class="sellmo-token-wrap">
-								<input
-									type="text"
-									id="sellmo_wc_webhook_secret"
-									name="sellmo_wc_webhook_secret"
-									class="regular-text"
-									value="<?php echo esc_attr( $webhook_secret ); ?>"
-									placeholder="<?php esc_attr_e( 'No secret configured', 'sellmo-woocommerce' ); ?>"
-								>
-								<button type="button" id="sellmo-generate-secret" class="button">
-									<?php esc_html_e( 'Generate', 'sellmo-woocommerce' ); ?>
-								</button>
-								<button type="button" id="sellmo-copy-webhook-secret" class="button">
-									<?php esc_html_e( 'Copy', 'sellmo-woocommerce' ); ?>
-								</button>
-							</div>
-							<p id="sellmo-secret-notice" class="description sellmo-notice-inline" style="display:none;"></p>
-							<p class="description">
-								<?php esc_html_e( 'Used to validate incoming webhooks via HMAC SHA256. Copy this value to the Sellmo backoffice.', 'sellmo-woocommerce' ); ?>
-							</p>
-						</td>
-					</tr>
-
-				</tbody>
-			</table> -->
 		</div>
 
 		<?php submit_button( __( 'Save Settings', 'sellmo-woocommerce' ) ); ?>

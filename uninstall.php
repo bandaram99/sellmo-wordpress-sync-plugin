@@ -20,7 +20,7 @@ defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 // Plugin constants are not defined during uninstall — load the brand engine
 // directly so table/option/cron names resolve to the configured slug.
 require_once __DIR__ . '/includes/class-pos-brand.php';
-require_once __DIR__ . '/includes/class-sellmo-cleanup.php';
+require_once __DIR__ . '/includes/class-cleanup.php';
 
 global $wpdb;
 

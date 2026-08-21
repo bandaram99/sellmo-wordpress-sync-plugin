@@ -2,7 +2,7 @@
 /**
  * White-label build script.
  *
- *   php build.php <brand>        e.g.  php build.php salespay
+ *   php build.php <brand>        e.g.  php build.php salesplay
  *
  * Reads .env.<brand>, stages a copy of the plugin into build/<slug>-woocommerce/,
  * fills the {{PLACEHOLDERS}} in the header + readme + PHP (including the BRAND_*
@@ -27,6 +27,12 @@ const EXCLUDE = [
     '.git', '.github', '.gitignore', 'build', 'build.php', 'node_modules',
     'vendor', '.env', '.env1', '.env copy.example',
     // .env.* brand profiles are matched by prefix below.
+    // Development-only — never ship these to WordPress.org. The test suite
+    // bootstraps WordPress from a hard-coded local path and mutates catalogue
+    // data, and the .md docs describe the internal white-label build system.
+    // Every *.md is excluded by pattern below, so a doc added later cannot
+    // silently end up in a package; readme.txt is the only readme wp.org reads.
+    'tests',
 ];
 
 // Header/readme placeholder defaults, overridden by the brand file.
@@ -104,7 +110,9 @@ function copy_tree(string $src, string $dest): void {
         if ('.' === $entry || '..' === $entry) {
             continue;
         }
-        if (in_array($entry, EXCLUDE, true) || str_starts_with($entry, '.env.')) {
+        if (in_array($entry, EXCLUDE, true)
+            || str_starts_with($entry, '.env.')
+            || (!is_dir("$src/$entry") && str_ends_with(strtolower($entry), '.md'))) {
             continue;
         }
         $from = "$src/$entry";
@@ -136,6 +144,94 @@ function apply_placeholders(string $dir, array $map): void {
         }
         file_put_contents($f->getPathname(), strtr($body, $tokens));
     }
+}
+
+/** Every file under $dir with one of the given extensions. */
+function files_with_ext(string $dir, array $ext): array {
+    $out = [];
+    $it  = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS)
+    );
+    foreach ($it as $f) {
+        if (in_array(strtolower($f->getExtension()), $ext, true)) {
+            $out[] = $f->getPathname();
+        }
+    }
+    return $out;
+}
+
+/**
+ * Rewrite the plugin's global PHP/JS identifiers to this brand's own namespace.
+ *
+ * Two plugins built from this source would otherwise declare the same classes,
+ * functions, constants, AJAX actions, nonce, REST namespace and script handles,
+ * and could not be activated on the same site — the second one fatals on a
+ * duplicate class declaration. Renaming happens in the staging copy only, so
+ * the source keeps one canonical naming for the IDE, the tests and i18n.
+ *
+ * Deliberately NOT renamed, because they name STORED data rather than code:
+ *   - `_sellmo_*` post-meta keys (renaming orphans every mapped product)
+ *   - `sellmo_id` / `sellmo_code` / `sellmo_product*` payload and row keys
+ *   - the bare legacy slug `'sellmo'` used by POS_Brand_Migrator
+ *   - `sellmo_to_wc` / `wc_to_sellmo` legacy sync-log direction values
+ * Every rule below is anchored so it cannot reach them.
+ *
+ * @param string $dir   Staging directory.
+ * @param array  $rules Ordered [pattern => replacement]; regex, applied in order.
+ */
+function rename_identifiers(string $dir, array $rules): int {
+    $touched = 0;
+    foreach (files_with_ext($dir, ['php', 'js', 'css']) as $file) {
+        $body = (string) file_get_contents($file);
+        $new  = preg_replace(array_keys($rules), array_values($rules), $body);
+        if (null === $new) {
+            fail("Identifier rewrite failed in $file");
+        }
+        if ($new !== $body) {
+            file_put_contents($file, $new);
+            $touched++;
+        }
+    }
+    return $touched;
+}
+
+/** Rename staged files whose basename starts with $from, so paths match the rewritten references. */
+function rename_prefixed_files(string $dir, string $from, string $to): int {
+    if ($from === $to) {
+        return 0;
+    }
+    $renamed = 0;
+    foreach (files_with_ext($dir, ['php', 'js', 'css']) as $file) {
+        $base = basename($file);
+        if (str_starts_with($base, $from)) {
+            $target = dirname($file) . '/' . $to . substr($base, strlen($from));
+            if (!rename($file, $target)) {
+                fail("Could not rename $file");
+            }
+            $renamed++;
+        }
+    }
+    return $renamed;
+}
+
+/**
+ * Keep only this brand's artwork. A competitor's logo inside the package is
+ * confusing at review and raises a licensing question nobody needs to answer.
+ */
+function prune_images(string $dir, string $logo): int {
+    $keep    = '' === $logo ? '' : basename($logo);
+    $removed = 0;
+    foreach (glob("$dir/admin/images/*") ?: [] as $img) {
+        if ('' !== $keep && basename($img) === $keep) {
+            continue;
+        }
+        unlink($img);
+        $removed++;
+    }
+    if ('' !== $keep && !is_file("$dir/admin/images/$keep")) {
+        fail("BRAND_LOGO names $keep, but no such file was staged.");
+    }
+    return $removed;
 }
 
 /** [localPath => absolutePath] for every file under $dir, keyed under its basename. */
@@ -231,7 +327,9 @@ $slug = strtolower(preg_replace('/[^a-z0-9_]/i', '', $env['BRAND_SLUG'] ?? $bran
 if ('' === $slug) {
     fail("BRAND_SLUG missing/invalid in $envFile");
 }
-$pkg = "$slug-woocommerce";
+// The package name is the bare brand slug. "woocommerce" is an Automattic
+// trademark and wp.org routinely asks for it to be dropped from plugin slugs.
+$pkg = $slug;
 
 // Placeholder map: DEFAULTS as the base, then every non-empty key from the
 // brand file (BUILD block AND BRAND_* block), so {{BRAND_NAME}}, {{BRAND_SLUG}},
@@ -245,22 +343,69 @@ rrmdir($stage);
 copy_tree(ROOT, $stage);
 step("Copied source → build/$pkg/");
 
+// The text domain is not a free choice: WordPress.org requires it to equal the
+// plugin slug, or directory language packs never load.
+$map['TEXT_DOMAIN'] = $pkg;
+
 // Fill placeholders in header + readme files.
 apply_placeholders($stage, $map);
 step('Replaced placeholders in .php / .txt / .md');
 
-// No runtime .env is shipped: the BRAND_* values are baked into the PHP by the
-// placeholder pass above (POS_Brand::DEFAULTS). A .env only exists as an
-// optional override for rebranding a live install (see POS_Brand).
+// Ship only this brand's artwork. Must run BEFORE the file rename below, or the
+// other brand's icon would be renamed on top of this brand's.
+$dropped = prune_images($stage, $map['BRAND_LOGO'] ?? '');
+step("Pruned {$dropped} foreign brand image(s)");
 
-// Rename the main plugin file to match the slug.
+// Give this brand its own global namespace (see rename_identifiers()).
+$ns   = preg_replace('/[^A-Za-z0-9]/', '', $map['BRAND_NAMESPACE'] ?? '') ?: 'POS';
+$up   = strtoupper($slug);
+$rules = [
+    // Constants: SELLMO_WC_PATH -> SALESPLAY_WC_PATH
+    '/\bSELLMO_WC_/'        => $up . '_WC_',
+    // Classes: Sellmo_Api -> SalesPlay_Api. The lookahead requires an uppercase
+    // letter, so lowercase data keys (sellmo_id, _sellmo_sync_enabled) never match.
+    '/\bSellmo_(?=[A-Z])/'  => $ns . '_',
+    // Generic brand engine -> this brand (also covers POS_Brand_Migrator).
+    '/\bPOS_Brand/'         => $ns . '_Brand',
+    // Global functions, AJAX actions, nonce, cron hooks, form field names.
+    // No \b here: these appear inside 'wp_ajax_sellmo_wc_x', and an underscore
+    // is a word character, so \b would skip exactly the hook names that matter
+    // while still renaming the JS side — silently breaking every AJAX call.
+    '/sellmo_wc_/'          => $slug . '_wc_',
+    '/sellmo_dashboard_/'   => $slug . '_dashboard_',
+    // Legacy alias action, brand-named in source and identical in both builds.
+    '/run_salesplay_sync/'  => 'run_' . $slug . '_sync',
+    // Text domain — must equal the slug (checked by test-15).
+    '/sellmo-woocommerce/'  => $pkg,
+    // REST namespace, script/style handles, CSS classes, DOM ids.
+    '/\bsellmo-/'           => $slug . '-',
+    // wp_localize_script object names — these become window globals, so two
+    // packages sharing them would clobber each other's admin config.
+    '/\bsellmoAdmin\b/'      => $slug . 'Admin',
+    '/\bsellmoMapperSelect2\b/' => $slug . 'MapperSelect2',
+];
+$touched = rename_identifiers($stage, $rules);
+step("Rewrote identifiers in {$touched} file(s) -> {$ns}_* / {$slug}_*");
+
+// Rename the main plugin file to match the slug. Must happen BEFORE the asset
+// sweep below, which would otherwise rewrite sellmo-woocommerce.php itself.
 $mainSrc = "$stage/sellmo-woocommerce.php";
-if (is_file($mainSrc) && "$slug-woocommerce" !== 'sellmo-woocommerce') {
+if (is_file($mainSrc) && "$pkg.php" !== 'sellmo-woocommerce.php') {
     if (!rename($mainSrc, "$stage/$pkg.php")) {
         fail('Could not rename main plugin file');
     }
     step("Renamed main file → $pkg.php");
 }
+
+// Asset filenames carry the same prefix as the handles that reference them.
+$moved = rename_prefixed_files($stage, 'sellmo-', $slug . '-');
+if ($moved > 0) {
+    step("Renamed {$moved} asset file(s) to the {$slug}- prefix");
+}
+
+// No runtime .env is shipped: the BRAND_* values are baked into the PHP by the
+// placeholder pass above (POS_Brand::DEFAULTS). A .env only exists as an
+// optional override for rebranding a live install (see POS_Brand).
 
 // Zip it.
 $zipPath = BUILD_DIR . "/$pkg.zip";

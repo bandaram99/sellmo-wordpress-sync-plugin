@@ -646,13 +646,6 @@ class Sellmo_Admin {
 			echo '</p></div>';
 		}
 
-		// Warning: webhook secret is shorter than 32 characters.
-		$wh_secret = (string) ( Sellmo_Settings::get( 'webhook_secret' ) ?: '' );
-		if ( '' !== $wh_secret && mb_strlen( $wh_secret ) < 32 ) {
-			echo '<div class="notice notice-warning is-dismissible"><p>' .
-				esc_html( sprintf( __( '%s: Your webhook secret is shorter than 32 characters. Use the Generate button on the Settings page to create a secure secret.', 'sellmo-woocommerce' ), $brand_name ) ) .
-				'</p></div>';
-		}
 
 		if ( '1' === sanitize_key( $_GET['sellmo_saved'] ?? '' ) ) {
 			$conn = sanitize_key( $_GET['sellmo_conn'] ?? '' );

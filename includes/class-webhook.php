@@ -57,8 +57,11 @@ class Sellmo_Webhook {
 	/**
 	 * Register POST /wp-json/sellmo-wc/v1/webhook with the WordPress REST API.
 	 *
-	 * Authentication is performed via HMAC signature check inside handle_webhook()
-	 * rather than by WordPress user auth, so permission_callback always returns true.
+	 * Callers are POS servers, not logged-in WordPress users, so authentication
+	 * cannot use cookie/nonce auth. permission_callback therefore returns true and
+	 * handle_webhook() performs the real check: a mandatory HMAC SHA256 signature
+	 * verified against the shared secret. Requests are rejected when the secret is
+	 * missing, so the route is never open.
 	 *
 	 * @since  1.0.0
 	 * @return void
@@ -73,6 +76,37 @@ class Sellmo_Webhook {
 				'permission_callback' => '__return_true',
 			]
 		);
+	}
+
+	// -------------------------------------------------------------------------
+	// Shared secret
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Return the webhook shared secret, generating one on first use.
+	 *
+	 * The secret is what authenticates incoming webhooks, so it must never be
+	 * empty. It is created on activation, and lazily here for installs that
+	 * pre-date that behaviour. The merchant copies the value from the settings
+	 * screen into the POS backoffice; until they do, unsigned requests fail the
+	 * signature check, which is the safe direction to fail in.
+	 *
+	 * @since  1.0.2
+	 * @return string The secret, or '' if it could not be stored.
+	 */
+	public static function ensure_secret(): string {
+		$secret = (string) ( Sellmo_Settings::get( 'webhook_secret' ) ?: '' );
+
+		if ( '' !== $secret ) {
+			return $secret;
+		}
+
+		// 64 chars, no special characters — it is used as an HMAC key and gets
+		// copy-pasted into the POS backoffice by hand.
+		$secret = wp_generate_password( 64, false, false );
+		Sellmo_Settings::set( 'webhook_secret', $secret );
+
+		return (string) ( Sellmo_Settings::get( 'webhook_secret' ) ?: '' );
 	}
 
 	// -------------------------------------------------------------------------
@@ -93,21 +127,33 @@ class Sellmo_Webhook {
 	public function handle_webhook( WP_REST_Request $request ): WP_REST_Response {
 		$raw_body  = $request->get_body();
 		$signature = (string) ( $request->get_header( 'X-Sellmo-Signature' ) ?? '' );
-		$secret    = (string) ( Sellmo_Settings::get( 'webhook_secret' ) ?: '' );
+		$secret    = self::ensure_secret();
 
-		if ( '' !== $secret ) {
-			$expected = hash_hmac( 'sha256', $raw_body, $secret );
+		// No secret means the endpoint cannot authenticate anyone — refuse rather
+		// than fall through and process an unsigned payload. ensure_secret() only
+		// returns '' if the option could not be written.
+		if ( '' === $secret ) {
+			Sellmo_Logger::log(
+				'webhook',
+				'pos_to_wc',
+				'error',
+				'Webhook rejected: no webhook secret is configured.'
+			);
 
-			if ( ! hash_equals( $expected, $signature ) ) {
-				Sellmo_Logger::log(
-					'webhook',
-					'pos_to_wc',
-					'error',
-					'Webhook rejected: invalid signature.'
-				);
+			return new WP_REST_Response( [ 'message' => 'Webhook not configured.' ], 401 );
+		}
 
-				return new WP_REST_Response( [ 'message' => 'Invalid signature.' ], 401 );
-			}
+		$expected = hash_hmac( 'sha256', $raw_body, $secret );
+
+		if ( ! hash_equals( $expected, $signature ) ) {
+			Sellmo_Logger::log(
+				'webhook',
+				'pos_to_wc',
+				'error',
+				'Webhook rejected: invalid signature.'
+			);
+
+			return new WP_REST_Response( [ 'message' => 'Invalid signature.' ], 401 );
 		}
 
 		$payload = json_decode( $raw_body, true );

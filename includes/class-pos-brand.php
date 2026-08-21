@@ -172,7 +172,7 @@ final class POS_Brand {
 	 * ------------------------------------------------------------------- */
 
 	/**
-	 * Visible brand name, e.g. "SalesPay".
+	 * Visible brand name, e.g. "SalesPlay".
 	 *
 	 * @return string
 	 */
@@ -181,7 +181,7 @@ final class POS_Brand {
 	}
 
 	/**
-	 * Class-name prefix for NEW code / log tags, e.g. "SalesPay".
+	 * Class-name prefix for NEW code / log tags, e.g. "SalesPlay".
 	 *
 	 * @return string
 	 */
@@ -190,7 +190,7 @@ final class POS_Brand {
 	}
 
 	/**
-	 * Log line prefix without brackets, e.g. "SalesPay".
+	 * Log line prefix without brackets, e.g. "SalesPlay".
 	 *
 	 * @return string
 	 */
@@ -232,7 +232,7 @@ final class POS_Brand {
 	}
 
 	/**
-	 * Plugin title shown on the admin Plugins screen, e.g. "SalesPay POS
+	 * Plugin title shown on the admin Plugins screen, e.g. "SalesPlay POS
 	 * Integration".
 	 *
 	 * Uses BRAND_PLUGIN_NAME when set; otherwise derives from name() by

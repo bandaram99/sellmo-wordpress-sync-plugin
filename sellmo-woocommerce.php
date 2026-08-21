@@ -41,9 +41,15 @@ define( 'SELLMO_WC_BASENAME', plugin_basename( __FILE__ ) );
 function sellmo_wc_activate(): void {
 	require_once SELLMO_WC_PATH . 'includes/class-pos-brand.php';
 	require_once SELLMO_WC_PATH . 'includes/class-pos-brand-migrator.php';
-	require_once SELLMO_WC_PATH . 'includes/class-sellmo-logger.php';
-	require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-mapping.php';
-	require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-variant-store.php';
+	require_once SELLMO_WC_PATH . 'includes/class-logger.php';
+	require_once SELLMO_WC_PATH . 'includes/class-product-mapping.php';
+	require_once SELLMO_WC_PATH . 'includes/class-product-variant-store.php';
+	require_once SELLMO_WC_PATH . 'includes/class-settings.php';
+	require_once SELLMO_WC_PATH . 'includes/class-webhook.php';
+
+	// The webhook route authenticates by HMAC only, so a secret must exist before
+	// the route can ever be served — otherwise the endpoint would be unauthenticated.
+	Sellmo_Webhook::ensure_secret();
 
 	Sellmo_Product_Variant_Store::create_table();
 	Sellmo_Logger::create_table();
@@ -144,31 +150,36 @@ add_action(
 			// migrate tables/options/meta/cron in place before the app runs.
 			add_action( 'admin_init', [ 'POS_Brand_Migrator', 'maybe_migrate' ] );
 
-			require_once SELLMO_WC_PATH . 'includes/class-sellmo-settings.php';
-		require_once SELLMO_WC_PATH . 'includes/class-sellmo-logger.php';
+			require_once SELLMO_WC_PATH . 'includes/class-settings.php';
+		require_once SELLMO_WC_PATH . 'includes/class-logger.php';
 
 			// One-time rewrite of legacy brand-named sync-log direction values.
 			add_action( 'admin_init', [ 'Sellmo_Logger', 'maybe_migrate_directions' ] );
-		require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-mapping.php';
+		require_once SELLMO_WC_PATH . 'includes/class-product-mapping.php';
 
 			// One-time repair of product names corrupted by the pre-fix bulk mapper.
 			add_action( 'admin_init', [ 'Sellmo_Product_Mapping', 'maybe_clean_names' ] );
 
-		require_once SELLMO_WC_PATH . 'includes/class-sellmo-cleanup.php';
-		require_once SELLMO_WC_PATH . 'includes/class-sellmo-api.php';
-		require_once SELLMO_WC_PATH . 'includes/class-sellmo-admin.php';
-		require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-sync.php';
-		require_once SELLMO_WC_PATH . 'includes/class-sellmo-stock-sync.php';
-		require_once SELLMO_WC_PATH . 'includes/class-sellmo-order-sync.php';
-		require_once SELLMO_WC_PATH . 'includes/class-sellmo-webhook.php';
-		require_once SELLMO_WC_PATH . 'includes/class-sellmo-scheduler.php';
-		require_once SELLMO_WC_PATH . 'includes/class-sellmo-plugin.php';
-		require_once SELLMO_WC_PATH . 'includes/class-sellmo-sync-guard.php';
-		require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-variant-store.php';
-		require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-mapper-sync.php';
-		require_once SELLMO_WC_PATH . 'includes/class-sellmo-product-variant-sync.php';
-		require_once SELLMO_WC_PATH . 'includes/class-sellmo-mapper-ajax.php';
-		require_once SELLMO_WC_PATH . 'includes/class-sellmo-stock-sync-pagination.php';
+		require_once SELLMO_WC_PATH . 'includes/class-cleanup.php';
+		require_once SELLMO_WC_PATH . 'includes/class-api.php';
+		require_once SELLMO_WC_PATH . 'includes/class-admin.php';
+		require_once SELLMO_WC_PATH . 'includes/class-product-sync.php';
+		require_once SELLMO_WC_PATH . 'includes/class-stock-sync.php';
+		require_once SELLMO_WC_PATH . 'includes/class-order-sync.php';
+		require_once SELLMO_WC_PATH . 'includes/class-webhook.php';
+
+			// Back-fill the shared secret on installs activated before it was
+			// generated at activation time. Admin-side only — never on a
+			// front-end or REST request.
+			add_action( 'admin_init', [ 'Sellmo_Webhook', 'ensure_secret' ] );
+		require_once SELLMO_WC_PATH . 'includes/class-scheduler.php';
+		require_once SELLMO_WC_PATH . 'includes/class-plugin.php';
+		require_once SELLMO_WC_PATH . 'includes/class-sync-guard.php';
+		require_once SELLMO_WC_PATH . 'includes/class-product-variant-store.php';
+		require_once SELLMO_WC_PATH . 'includes/class-product-mapper-sync.php';
+		require_once SELLMO_WC_PATH . 'includes/class-product-variant-sync.php';
+		require_once SELLMO_WC_PATH . 'includes/class-mapper-ajax.php';
+		require_once SELLMO_WC_PATH . 'includes/class-stock-sync-pagination.php';
 
 		Sellmo_Plugin::get_instance();
 	}

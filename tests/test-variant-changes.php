@@ -10,7 +10,7 @@
 
 define( 'ABSPATH', __DIR__ );
 
-require_once __DIR__ . '/../includes/class-sellmo-product-mapping.php';
+require_once __DIR__ . '/../includes/class-product-mapping.php';
 
 $diff = static function ( array $old, array $new ): array {
 	$method = new ReflectionMethod( 'Sellmo_Product_Mapping', 'variant_changes' );
