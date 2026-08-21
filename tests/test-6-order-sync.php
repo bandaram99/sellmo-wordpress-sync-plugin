@@ -62,6 +62,22 @@ t_eq( 'terminal key forwarded',             'ZZTEST-TERMINAL',  (string) $payloa
 t_eq( 'customer first name',                'Ada',              (string) $payload['customer_first_name'] );
 t_eq( 'customer last name',                 'Lovelace',         (string) $payload['customer_last_name'] );
 t_eq( 'customer email',                     'ada@example.test', (string) $payload['customer_email'] );
+
+// An order with no billing email must OMIT the key rather than send "". The POS
+// validates the format of whatever it receives and answers HTTP 400
+// "Invalid email format", rejecting the entire order — and the sync then retries
+// and fails on every run. Orders legitimately have no email: phone orders,
+// admin-created orders, checkouts with the field made optional.
+$no_email = wc_get_order( $order_id );
+$no_email->set_billing_email( '' );
+$no_email->save();
+
+$bare = t_call( $order_sync, 'build_payload', [ $no_email ] );
+t_ok( 'no billing email -> customer_email key is omitted, not empty', ! array_key_exists( 'customer_email', $bare ) );
+t_eq( 'the rest of the payload is unaffected', (string) $order_id, (string) $bare['order_reference_id'] );
+
+$no_email->set_billing_email( 'ada@example.test' );
+$no_email->save();
 t_eq( 'customer note forwarded',            'Leave at reception', (string) $payload['order_comment'] );
 t_eq( 'one line item',                      1,                  count( $payload['order_items'] ) );
 

@@ -970,3 +970,13 @@
 .sellmo-mapper-product-cell {
 	overflow: visible;
 }
+
+/* Sync-log error row highlight (was an inline style; a class can be escaped). */
+.sellmo-log-row-error {
+	background: #fff5f5;
+}
+
+/* Utility: hide an element without an inline style attribute. */
+.sellmo-hidden {
+	display: none;
+}

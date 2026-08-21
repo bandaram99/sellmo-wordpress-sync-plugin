@@ -25,6 +25,32 @@ defined( 'ABSPATH' ) || exit;
 class Sellmo_Sync_Guard {
 
 	/**
+	 * Ask PHP for more execution time, when the host allows it.
+	 *
+	 * A bare set_time_limit() call is flagged by the WordPress.org Plugin Check
+	 * and is not portable: hosts routinely disable the function outright, and it
+	 * is a no-op in PHP safe mode. Neither case should be fatal here — the sync
+	 * engines are batched and resume on the next run — so a refused extension is
+	 * simply ignored.
+	 *
+	 * @since  1.1.0
+	 * @param  int $seconds Requested limit, in seconds. 0 means no limit.
+	 * @return bool True if the limit was raised, false if the host refused.
+	 */
+	public static function extend_time_limit( int $seconds ): bool {
+		if ( ! function_exists( 'set_time_limit' ) ) {
+			return false;
+		}
+
+		$disabled = array_map( 'trim', explode( ',', (string) ini_get( 'disable_functions' ) ) );
+		if ( in_array( 'set_time_limit', $disabled, true ) ) {
+			return false;
+		}
+
+		return @set_time_limit( $seconds ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- a refused limit is not an error here.
+	}
+
+	/**
 	 * Run a sync callable behind a try-catch + WP_Error guard.
 	 *
 	 * Any thrown Throwable or returned WP_Error is logged via Sellmo_Logger and

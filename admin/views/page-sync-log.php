@@ -226,8 +226,7 @@ $pagination_html = static function () use ( $paged, $total_pages, $paged_url ): 
 				</span>
 			<?php endif; ?>
 			<?php
-			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-			echo $pagination_html();
+			echo wp_kses_post( $pagination_html() );
 			?>
 		</div>
 	</div>
@@ -299,21 +298,22 @@ $pagination_html = static function () use ( $paged, $total_pages, $paged_url ): 
 						: esc_html( $row_message );
 				}
 
-				// Highlight error rows.
-				$row_class = 'error' === $row_status ? ' style="background:#fff5f5;"' : '';
+				// Highlight error rows. A CSS class rather than an inline style, so the
+				// value can be escaped as an attribute instead of echoed as raw markup.
+				$row_class = 'error' === $row_status ? 'sellmo-log-row-error' : '';
 			?>
-			<tr<?php echo $row_class; // safe — only colour string ?>>
-				<td class="column-date sellmo-log-time"><?php echo $display_date; // pre-escaped ?></td>
+			<tr class="<?php echo esc_attr( $row_class ); ?>">
+				<td class="column-date sellmo-log-time"><?php echo wp_kses_post( $display_date ); ?></td>
 				<?php if ( '' === $active_tab || 'errors' === $active_tab ) : ?>
 				<td class="column-type">
-					<span class="sellmo-type-badge <?php echo esc_attr( $row_type ); ?>"><?php echo $type_label; // pre-escaped ?></span>
+					<span class="sellmo-type-badge <?php echo esc_attr( $row_type ); ?>"><?php echo wp_kses_post( $type_label ); ?></span>
 				</td>
 				<?php endif; ?>
 				<td class="column-status">
-					<span class="sellmo-result-badge <?php echo esc_attr( $status_css ); ?>"><?php echo $status_label; // pre-escaped ?></span>
+					<span class="sellmo-result-badge <?php echo esc_attr( $status_css ); ?>"><?php echo wp_kses_post( $status_label ); ?></span>
 				</td>
-				<td class="column-item"><?php echo $item_html; // pre-escaped ?></td>
-				<td class="column-message"><?php echo $msg_html; // pre-escaped ?></td>
+				<td class="column-item"><?php echo wp_kses_post( $item_html ); ?></td>
+				<td class="column-message"><?php echo wp_kses_post( $msg_html ); ?></td>
 			</tr>
 			<?php endforeach; ?>
 		<?php endif; ?>
@@ -351,10 +351,9 @@ $pagination_html = static function () use ( $paged, $total_pages, $paged_url ): 
 
 		</div>
 
-		<div class="alignright tablenav-pages" <?php echo $total_pages <= 1 ? 'style="display:none"' : ''; ?>>
+		<div class="alignright tablenav-pages<?php echo esc_attr( $total_pages <= 1 ? ' sellmo-hidden' : '' ); ?>">
 			<?php
-			// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-			echo $pagination_html();
+			echo wp_kses_post( $pagination_html() );
 			?>
 		</div>
 

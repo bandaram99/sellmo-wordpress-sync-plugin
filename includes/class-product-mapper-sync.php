@@ -40,7 +40,7 @@ class Sellmo_Product_Mapper_Sync {
 	 * @return array{ success: bool, count: int, message: string }
 	 */
 	public function run_incremental_sync(): array {
-		set_time_limit( 300 );
+		Sellmo_Sync_Guard::extend_time_limit( 300 );
 
 		$result = Sellmo_Sync_Guard::run(
 			fn(): array => $this->do_delta_sync(),
@@ -72,7 +72,8 @@ class Sellmo_Product_Mapper_Sync {
 			return [
 				'success' => false,
 				'count'   => 0,
-				'message' => __( 'SalesPlay API token is not configured.', 'sellmo-woocommerce' ),
+				/* translators: %s: POS brand name, e.g. SalesPlay. */
+				'message' => sprintf( __( '%s API token is not configured.', 'sellmo-woocommerce' ), POS_Brand::name() ),
 			];
 		}
 

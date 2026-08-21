@@ -18,7 +18,7 @@ Product sync, stock sync, and order sync between WooCommerce and your POS.
 
 == External services ==
 
-This plugin connects to the {{BRAND_NAME}} POS backend (powered by SalesPlay POS) to synchronise your store data. This connection is required for the plugin to function — without it, no products, stock, or orders can be synced.
+This plugin connects to the {{BRAND_NAME}} POS backend to synchronise your store data. This connection is required for the plugin to function — without it, no products, stock, or orders can be synced.
 
 Requests are made to: {{API_BASE}}
 

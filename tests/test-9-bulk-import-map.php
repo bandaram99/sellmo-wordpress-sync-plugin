@@ -243,11 +243,11 @@ t_ok( 'dashboard shows the time in the selected zone', false !== strpos( $html, 
 t_ok( 'dashboard does not show the site-zone time',    false === strpos( $html, $expected_site ), "unexpected: {$expected_site}" );
 
 // The helpers themselves — the Unix-timestamp and MySQL-DATETIME paths.
-t_eq( 'timestamp helper uses the selected zone', $expected_tz, sellmo_dashboard_format_ts( $stamp ) );
+t_eq( 'timestamp helper uses the selected zone', $expected_tz, t_fn( 'sellmo_dashboard_format_ts' )( $stamp ) );
 t_eq(
 	'MySQL datetime helper uses the selected zone',
 	$expected_tz,
-	sellmo_dashboard_format_dt( gmdate( 'Y-m-d H:i:s', $stamp ) )
+	t_fn( 'sellmo_dashboard_format_dt' )( gmdate( 'Y-m-d H:i:s', $stamp ) )
 );
 
 // -----------------------------------------------------------------------------
@@ -257,7 +257,7 @@ t_head( '9h. Fallback to the WordPress time zone' );
 
 Sellmo_Settings::set( 'order_timezone', '' );
 t_eq( 'unset falls back to the site zone', wp_timezone()->getName(), Sellmo_Settings::display_timezone()->getName() );
-t_eq( 'helper falls back too',             $expected_site,           sellmo_dashboard_format_ts( $stamp ) );
+t_eq( 'helper falls back too',             $expected_site,           t_fn( 'sellmo_dashboard_format_ts' )( $stamp ) );
 
 Sellmo_Settings::set( 'order_timezone', 'Mars/Olympus_Mons' );
 t_eq( 'an invalid zone falls back too', wp_timezone()->getName(), Sellmo_Settings::display_timezone()->getName() );
@@ -268,8 +268,8 @@ t_eq( 'an invalid zone falls back too', wp_timezone()->getName(), Sellmo_Setting
 t_head( '9i. Empty values' );
 
 Sellmo_Settings::set( 'order_timezone', $tz_id );
-t_eq( 'zero timestamp',      '—', sellmo_dashboard_format_ts( 0 ) );
-t_eq( 'empty datetime',      '—', sellmo_dashboard_format_dt( '' ) );
-t_eq( 'zero datetime',       '—', sellmo_dashboard_format_dt( '0000-00-00 00:00:00' ) );
+t_eq( 'zero timestamp',      '—', t_fn( 'sellmo_dashboard_format_ts' )( 0 ) );
+t_eq( 'empty datetime',      '—', t_fn( 'sellmo_dashboard_format_dt' )( '' ) );
+t_eq( 'zero datetime',       '—', t_fn( 'sellmo_dashboard_format_dt' )( '0000-00-00 00:00:00' ) );
 
 exit( t_summary() );

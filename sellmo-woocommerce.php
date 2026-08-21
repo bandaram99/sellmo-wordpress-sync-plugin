@@ -111,6 +111,11 @@ add_action(
 	'plugins_loaded',
 	function (): void {
 		if ( ! class_exists( 'WooCommerce' ) ) {
+			// The brand engine is normally loaded further down, after this check.
+			// Load it here too so the notice names THIS package's product rather
+			// than a hard-coded one — it is the first thing a merchant sees.
+			require_once SELLMO_WC_PATH . 'includes/class-pos-brand.php';
+
 			add_action(
 				'admin_notices',
 				function (): void {
@@ -120,8 +125,9 @@ add_action(
 							<?php
 							echo wp_kses(
 								sprintf(
-									/* translators: %s: WooCommerce plugin link */
-									__( '<strong>Sellmo POS Integration</strong> requires %s to be installed and active.', 'sellmo-woocommerce' ),
+									/* translators: 1: this plugin's name. 2: WooCommerce plugin link. */
+									__( '<strong>%1$s</strong> requires %2$s to be installed and active.', 'sellmo-woocommerce' ),
+									POS_Brand::plugin_name(),
 									'<a href="https://woocommerce.com/" target="_blank" rel="noopener noreferrer">WooCommerce</a>'
 								),
 								[

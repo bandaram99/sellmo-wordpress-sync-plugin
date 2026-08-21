@@ -74,14 +74,13 @@ $order_timezone        = (string) ( Sellmo_Settings::get( 'order_timezone' ) ?: 
 								<button type="button" id="sellmo-toggle-token" class="button">
 									<?php esc_html_e( 'Show', 'sellmo-woocommerce' ); ?>
 								</button>
-								<button type="button" id="sellmo-test-connection" class="button" <?php echo $has_token ? '' : 'disabled'; ?>>
+								<button type="button" id="sellmo-test-connection" class="button" <?php disabled( $has_token, false ); ?>>
 									<?php esc_html_e( 'Test Connection', 'sellmo-woocommerce' ); ?>
 								</button>
 							</div>
 							<span
 								id="sellmo-connection-status"
-								class="sellmo-connection-badge<?php echo $has_token ? '' : ' disconnected'; ?>"
-								style="<?php echo $has_token ? '' : ''; ?>"
+								class="sellmo-connection-badge<?php echo esc_attr( $has_token ? '' : ' disconnected' ); ?>"
 							></span>
 							<p class="description">
 								<?php

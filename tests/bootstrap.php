@@ -27,9 +27,100 @@ if ( 'cli' !== PHP_SAPI ) {
 
 require_once T_WP_LOAD;
 
-if ( ! class_exists( 'Sellmo_Product_Mapping' ) ) {
-	fwrite( STDERR, "Plugin not active — activate it before running the tests.\n" );
-	exit( 1 );
+/**
+ * Bridge the source class names onto whatever brand is actually installed.
+ *
+ * The suites are written against the source naming (Sellmo_*, POS_Brand,
+ * SELLMO_WC_*, sellmo_wc_* hooks). A BUILT package renames all of those to its
+ * own brand prefix so two packages can coexist (see build.php), which means the
+ * site may be running SalesPlay_Product_Mapping rather than Sellmo_*.
+ *
+ * Rather than rewrite every assertion, alias the source names onto the loaded
+ * ones. The suites then run unchanged against the source tree OR any built
+ * brand — which is the more useful guarantee, since it is the built package
+ * that actually ships.
+ */
+function t_bridge_brand_names(): void {
+	if ( class_exists( 'Sellmo_Product_Mapping' ) ) {
+		return; // Source naming — nothing to bridge.
+	}
+
+	$prefix = '';
+	foreach ( get_declared_classes() as $class ) {
+		if ( preg_match( '/^(.+)_Product_Variant_Store$/', $class, $m ) ) {
+			$prefix = $m[1];
+			break;
+		}
+	}
+
+	if ( '' === $prefix ) {
+		fwrite( STDERR, "Plugin not active — activate it before running the tests.
+" );
+		exit( 1 );
+	}
+
+	foreach ( get_declared_classes() as $class ) {
+		if ( 0 !== strpos( $class, $prefix . '_' ) ) {
+			continue;
+		}
+		$alias = 'Sellmo_' . substr( $class, strlen( $prefix ) + 1 );
+		if ( ! class_exists( $alias, false ) ) {
+			class_alias( $class, $alias );
+		}
+	}
+
+	// The brand engine keeps its generic source name in the tests.
+	foreach ( [ '_Brand' => 'POS_Brand', '_Brand_Migrator' => 'POS_Brand_Migrator' ] as $suffix => $alias ) {
+		if ( class_exists( $prefix . $suffix ) && ! class_exists( $alias, false ) ) {
+			class_alias( $prefix . $suffix, $alias );
+		}
+	}
+
+	// The path constant follows the same rename.
+	$upper = strtoupper( $prefix );
+	if ( ! defined( 'SELLMO_WC_PATH' ) && defined( $upper . '_WC_PATH' ) ) {
+		define( 'SELLMO_WC_PATH', constant( $upper . '_WC_PATH' ) );
+	}
+
+	define( 'T_HOOK_PREFIX', strtolower( $prefix ) . '_wc_' );
+	define( 'T_BRAND_SLUG', strtolower( $prefix ) );
+
+	echo "  (running against the \"{$prefix}\" build — source names aliased)
+";
+}
+
+t_bridge_brand_names();
+
+/** Hook / nonce / AJAX-action prefix of the installed package. */
+if ( ! defined( 'T_HOOK_PREFIX' ) ) {
+	define( 'T_HOOK_PREFIX', 'sellmo_wc_' );
+}
+if ( ! defined( 'T_BRAND_SLUG' ) ) {
+	define( 'T_BRAND_SLUG', 'sellmo' );
+}
+
+/** Translate a source hook or nonce name to the installed package's equivalent. */
+function t_hook( string $source_name ): string {
+	return str_replace( 'sellmo_wc_', T_HOOK_PREFIX, $source_name );
+}
+
+/**
+ * Resolve a source global-function name to the installed package's equivalent.
+ *
+ * These are declared lazily inside the view files, so this must run at call
+ * time rather than during the bridge.
+ */
+function t_fn( string $source_name ): string {
+	if ( function_exists( $source_name ) ) {
+		return $source_name;
+	}
+	$renamed = preg_replace( '/^sellmo_/', T_BRAND_SLUG . '_', $source_name );
+	return function_exists( $renamed ) ? $renamed : $source_name;
+}
+
+/** REST namespace of the installed package, e.g. "sellmo-wc/v1" or "salesplay-wc/v1". */
+function t_rest_namespace(): string {
+	return rtrim( str_replace( '_', '-', T_HOOK_PREFIX ), '-' ) . '/v1';
 }
 
 // -----------------------------------------------------------------------------
@@ -160,7 +251,9 @@ final class T_Died extends \Exception {}
  * @param  string $nonce_action Nonce action the handler verifies.
  * @return array                Decoded response, or ['_raw' => output] if not JSON.
  */
-function t_ajax( object $handler, string $method, array $post = [], string $nonce_action = 'sellmo_wc_admin' ): array {
+function t_ajax( object $handler, string $method, array $post = [], string $nonce_action = '' ): array {
+	// Empty means "this package's admin nonce", whatever brand prefix it carries.
+	$nonce_action = '' === $nonce_action ? t_hook( 'sellmo_wc_admin' ) : t_hook( $nonce_action );
 	if ( ! defined( 'DOING_AJAX' ) ) {
 		define( 'DOING_AJAX', true );
 	}

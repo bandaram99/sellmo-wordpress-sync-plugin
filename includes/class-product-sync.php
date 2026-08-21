@@ -108,7 +108,7 @@ class Sellmo_Product_Sync {
 	 * @return array{ success: bool, count: int, message: string }
 	 */
 	public function run_manual_sync(): array {
-		set_time_limit( 300 );
+		Sellmo_Sync_Guard::extend_time_limit( 300 );
 
 		return $this->run_full_sync( false );
 	}
@@ -120,7 +120,7 @@ class Sellmo_Product_Sync {
 	 * @return array{ success: bool, count: int, message: string, trace?: array<string, mixed>, error?: array<string, mixed> }
 	 */
 	public function run_ajax_trace_sync(): array {
-		set_time_limit( 300 );
+		Sellmo_Sync_Guard::extend_time_limit( 300 );
 
 		return $this->run_full_sync( true );
 	}

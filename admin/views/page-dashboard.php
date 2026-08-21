@@ -92,7 +92,7 @@ if ( ! function_exists( 'sellmo_dashboard_format_dt' ) ) {
 	<div class="sellmo-card">
 		<h2><?php esc_html_e( 'Connection Status', 'sellmo-woocommerce' ); ?></h2>
 		<div class="sellmo-card-body sellmo-connection-row">
-			<span class="sellmo-connection-badge <?php echo $is_connected ? 'connected' : 'disconnected'; ?>">
+			<span class="sellmo-connection-badge <?php echo esc_attr( $is_connected ? 'connected' : 'disconnected' ); ?>">
 				<?php
 				echo $is_connected
 					? esc_html__( 'Connected', 'sellmo-woocommerce' )
@@ -199,7 +199,7 @@ if ( ! function_exists( 'sellmo_dashboard_format_dt' ) ) {
 					<tr>
 						<th><?php esc_html_e( 'Status', 'sellmo-woocommerce' ); ?></th>
 						<td>
-							<span class="sellmo-toggle-badge <?php echo $product_enabled ? 'enabled' : 'disabled'; ?>">
+							<span class="sellmo-toggle-badge <?php echo esc_attr( $product_enabled ? 'enabled' : 'disabled' ); ?>">
 								<?php echo $product_enabled
 									? esc_html__( 'Enabled', 'sellmo-woocommerce' )
 									: esc_html__( 'Disabled', 'sellmo-woocommerce' );
@@ -251,7 +251,7 @@ if ( ! function_exists( 'sellmo_dashboard_format_dt' ) ) {
 					<tr>
 						<th><?php esc_html_e( 'Status', 'sellmo-woocommerce' ); ?></th>
 						<td>
-							<span class="sellmo-toggle-badge <?php echo $stock_enabled ? 'enabled' : 'disabled'; ?>">
+							<span class="sellmo-toggle-badge <?php echo esc_attr( $stock_enabled ? 'enabled' : 'disabled' ); ?>">
 								<?php echo $stock_enabled
 									? esc_html__( 'Enabled', 'sellmo-woocommerce' )
 									: esc_html__( 'Disabled', 'sellmo-woocommerce' );
@@ -318,7 +318,7 @@ if ( ! function_exists( 'sellmo_dashboard_format_dt' ) ) {
 					<tr>
 						<th><?php esc_html_e( 'Status', 'sellmo-woocommerce' ); ?></th>
 						<td>
-							<span class="sellmo-toggle-badge <?php echo $order_enabled ? 'enabled' : 'disabled'; ?>">
+							<span class="sellmo-toggle-badge <?php echo esc_attr( $order_enabled ? 'enabled' : 'disabled' ); ?>">
 								<?php echo $order_enabled
 									? esc_html__( 'Enabled', 'sellmo-woocommerce' )
 									: esc_html__( 'Disabled', 'sellmo-woocommerce' );

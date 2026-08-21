@@ -38,7 +38,7 @@ class Sellmo_Product_Variant_Sync {
 	 * @return array{ success: bool, count: int, message: string }
 	 */
 	public function run(): array {
-		set_time_limit( 300 );
+		Sellmo_Sync_Guard::extend_time_limit( 300 );
 
 		return Sellmo_Sync_Guard::run(
 			fn(): array => $this->do_sync(),

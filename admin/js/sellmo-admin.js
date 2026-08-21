@@ -14,7 +14,7 @@
 	var ajaxUrl = cfg.ajaxUrl || '';
 	var nonce   = cfg.nonce  || '';
 	var i18n    = cfg.i18n  || {};
-	var brand   = cfg.brandName || 'Sellmo';
+	var brand   = cfg.brandName || 'POS';
 
 	// ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -239,45 +239,17 @@
 	 */
 	function runManualSync( action, $btn, $result ) {
 		var originalText = $btn.text();
-		var isSalesPlaySync = 'run_salesplay_sync' === action || 'sellmo_wc_sync_products_now' === action;
-
-		if ( isSalesPlaySync ) {
-			console.log( 'SalesPlay Sync Started...' );
-		}
-
 		$btn.prop( 'disabled', true ).text( i18n.syncing || 'Syncing…' );
 		$btn.siblings( '.sellmo-sync-spinner' ).addClass( 'is-active' );
 		$result.text( '' ).removeClass( 'success error' );
 
 		$.post( ajaxUrl, { action: action, nonce: nonce } )
 			.done( function ( res ) {
-				if ( isSalesPlaySync ) {
-					console.log( 'SalesPlay Sync AJAX Response:' );
-					console.dir( res && res.data ? res.data : res );
-				}
-
 				if ( res.success ) {
-					if ( isSalesPlaySync && res.data && res.data.error ) {
-						console.error( 'WooCommerce Variation Registration Failed for SKU:', ( res.data.error && res.data.error.product_code ) || '' );
-						console.dir( res.data.error );
-						if ( res.data.trace && res.data.trace.failures ) {
-							console.dir( res.data.trace.failures );
-						}
-					}
-
 					$result
 						.addClass( 'success' )
 						.text( ( res.data && res.data.message ) || '' );
 				} else {
-					if ( isSalesPlaySync ) {
-						console.error( 'WooCommerce Variation Registration Failed for SKU:', ( res.data && res.data.error && res.data.error.product_code ) || '' );
-						console.dir( {
-							message: ( res.data && res.data.message ) || ( i18n.syncError || 'Sync failed.' ),
-							error: ( res.data && res.data.error ) ? res.data.error : {},
-							trace: ( res.data && res.data.trace ) ? res.data.trace : []
-						} );
-					}
-
 					$result
 						.addClass( 'error' )
 						.text( ( res.data && res.data.message ) || ( i18n.syncError || 'Sync failed.' ) );
@@ -290,14 +262,6 @@
 					failMessage = xhr.responseJSON.data.message;
 				} else if ( xhr && '-1' === String( xhr.responseText || '' ).trim() ) {
 					failMessage = 'Security check failed. Please refresh the page and try again.';
-				}
-
-				if ( isSalesPlaySync ) {
-					console.error( 'SalesPlay Sync AJAX Failed:' );
-					console.dir( {
-						status: xhr ? xhr.status : 0,
-						responseText: xhr ? xhr.responseText : ''
-					} );
 				}
 
 				$result

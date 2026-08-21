@@ -143,7 +143,11 @@ class Sellmo_Order_Sync {
 		foreach ( $screens as $screen ) {
 			add_meta_box(
 				'sellmo-order-sync',
-				__( 'Sellmo POS', 'sellmo-woocommerce' ),
+				sprintf(
+					/* translators: %s: POS brand name, e.g. SalesPlay. */
+					__( '%s POS', 'sellmo-woocommerce' ),
+					POS_Brand::name()
+				),
 				[ $this, 'render_meta_box' ],
 				$screen,
 				'side',
@@ -177,14 +181,19 @@ class Sellmo_Order_Sync {
 		$sync_error     = (string) $order->get_meta( '_sellmo_sync_error' );
 		$nonce          = wp_create_nonce( 'sellmo_wc_order_sync_' . $order_id );
 		$button_label   = $is_synced
-			? __( 'Re-sync to Sellmo', 'sellmo-woocommerce' )
-			: __( 'Sync to Sellmo', 'sellmo-woocommerce' );
+			/* translators: %s: POS brand name, e.g. SalesPlay. */
+			? sprintf( __( 'Re-sync to %s', 'sellmo-woocommerce' ), POS_Brand::name() )
+			/* translators: %s: POS brand name, e.g. SalesPlay. */
+			: sprintf( __( 'Sync to %s', 'sellmo-woocommerce' ), POS_Brand::name() );
 		?>
 		<div class="sellmo-order-meta-box" id="sellmo-order-meta-<?php echo esc_attr( (string) $order_id ); ?>">
 			<?php if ( $is_synced ) : ?>
 				<p class="sellmo-sync-status synced">
 					<strong><?php esc_html_e( 'Synced', 'sellmo-woocommerce' ); ?></strong><br>
-					<span class="description"><?php echo esc_html( __( 'Sellmo ID:', 'sellmo-woocommerce' ) . ' ' . $sellmo_id ); ?></span>
+					<span class="description"><?php
+					/* translators: %s: POS brand name, e.g. SalesPlay. */
+					echo esc_html( sprintf( __( '%s ID:', 'sellmo-woocommerce' ), POS_Brand::name() ) . ' ' . $sellmo_id );
+					?></span>
 				</p>
 			<?php elseif ( '' !== $sync_error ) : ?>
 				<p class="sellmo-sync-status error">
@@ -193,7 +202,10 @@ class Sellmo_Order_Sync {
 				</p>
 			<?php else : ?>
 				<p class="sellmo-sync-status not-synced">
-					<?php esc_html_e( 'Not synced to Sellmo.', 'sellmo-woocommerce' ); ?>
+					<?php
+					/* translators: %s: POS brand name, e.g. SalesPlay. */
+					echo esc_html( sprintf( __( 'Not synced to %s.', 'sellmo-woocommerce' ), POS_Brand::name() ) );
+					?>
 				</p>
 			<?php endif; ?>
 
@@ -519,7 +531,11 @@ class Sellmo_Order_Sync {
 			$order->update_meta_data( '_sellmo_sync_error', $message );
 			$order->save();
 
-			$note_prefix = $is_manual ? __( 'Manual Sellmo sync failed:', 'sellmo-woocommerce' ) : __( 'Sellmo sync failed:', 'sellmo-woocommerce' );
+			$note_prefix = $is_manual
+				/* translators: %s: POS brand name, e.g. SalesPlay. */
+				? sprintf( __( 'Manual %s sync failed:', 'sellmo-woocommerce' ), POS_Brand::name() )
+				/* translators: %s: POS brand name, e.g. SalesPlay. */
+				: sprintf( __( '%s sync failed:', 'sellmo-woocommerce' ), POS_Brand::name() );
 			$order->add_order_note( $note_prefix . ' ' . $message );
 
 			Sellmo_Logger::log(
@@ -546,9 +562,18 @@ class Sellmo_Order_Sync {
 			$order->update_status( 'on-hold', __( 'Sent to the POS - awaiting POS status.', 'sellmo-woocommerce' ) );
 		}
 
-		$note_prefix = $is_manual ? __( 'Manually synced to Sellmo.', 'sellmo-woocommerce' ) : __( 'Synced to Sellmo.', 'sellmo-woocommerce' );
+		$note_prefix = $is_manual
+			/* translators: %s: POS brand name, e.g. SalesPlay. */
+			? sprintf( __( 'Manually synced to %s.', 'sellmo-woocommerce' ), POS_Brand::name() )
+			/* translators: %s: POS brand name, e.g. SalesPlay. */
+			: sprintf( __( 'Synced to %s.', 'sellmo-woocommerce' ), POS_Brand::name() );
 		/* translators: %s: Sellmo order ID */
-		$order->add_order_note( $note_prefix . ( $sellmo_id ? ' ' . sprintf( __( 'Sellmo order ID: %s', 'sellmo-woocommerce' ), $sellmo_id ) : '' ) );
+		$order->add_order_note( $note_prefix . ( $sellmo_id ? ' ' . sprintf(
+			/* translators: 1: POS brand name, e.g. SalesPlay. 2: order id in the POS. */
+			__( '%1$s order ID: %2$s', 'sellmo-woocommerce' ),
+			POS_Brand::name(),
+			$sellmo_id
+		) : '' ) );
 
 		Sellmo_Logger::log(
 			'order',
@@ -631,8 +656,9 @@ class Sellmo_Order_Sync {
 		if ( ! empty( $missing_code ) ) {
 			$order->add_order_note(
 				sprintf(
-					/* translators: %s: comma-separated product names */
-					__( 'Sellmo sync warning: the following items have no Sellmo product code and may not match in Sellmo POS: %s', 'sellmo-woocommerce' ),
+					/* translators: 1: POS brand name, e.g. SalesPlay. 2: comma-separated item names. */
+					__( '%1$s sync warning: the following items have no %1$s product code and may not match in %1$s POS: %2$s', 'sellmo-woocommerce' ),
+					POS_Brand::name(),
 					implode( ', ', $missing_code )
 				)
 			);
@@ -652,7 +678,7 @@ class Sellmo_Order_Sync {
 		$order_date      = $date_created ? $date_created->date( 'Y-m-d' ) : '';
 		$order_date_time = $date_created ? $date_created->date( 'Y-m-d H:i:s' ) : '';
 
-		return [
+		$payload = [
 			'shop_id'                    => $shop_id,
 			'order_type'                 => '',
 			'order_date'                 => $order_date,
@@ -668,12 +694,24 @@ class Sellmo_Order_Sync {
 			'customer_first_name'        => $order->get_billing_first_name(),
 			'customer_last_name'         => $order->get_billing_last_name(),
 			'customer_phone'             => $order->get_billing_phone(),
-			'customer_email'             => $order->get_billing_email(),
 			'order_items'                => $items,
 			'fixed_charges'              => [],
 			'order_total_discounts'      => [],
 			'order_payments'             => [],
 		];
+
+		// Only send customer_email when there is one. An order can legitimately
+		// have no billing email — a phone order, an admin-created order, a
+		// checkout with the field made optional — and the POS rejects an empty
+		// string with HTTP 400 "Invalid email format", which fails the WHOLE
+		// order, not just the field. Omitting the key avoids a format check on a
+		// value that was never entered.
+		$email = $order->get_billing_email();
+		if ( '' !== $email ) {
+			$payload['customer_email'] = $email;
+		}
+
+		return $payload;
 	}
 
 	/**

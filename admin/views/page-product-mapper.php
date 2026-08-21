@@ -26,7 +26,12 @@ $mapper_stats = Sellmo_Product_Mapping::get_dashboard_stats();
 
 	<!-- <div class="sellmo-dashboard-grid sellmo-mapper-stats-grid">
 		<div class="sellmo-card">
-			<h2><?php esc_html_e( 'Total Sellmo Products', 'sellmo-woocommerce' ); ?></h2>
+			<h2>
+				<?php
+				/* translators: %s: POS brand name, e.g. SalesPlay. */
+				echo esc_html( sprintf( __( 'Total %s Products', 'sellmo-woocommerce' ), POS_Brand::name() ) );
+				?>
+			</h2>
 			<div class="sellmo-card-body"><strong class="sellmo-mapper-stat"><?php echo absint( $mapper_stats['total_sellmo_products'] ?? 0 ); ?></strong></div>
 		</div>
 		<div class="sellmo-card">

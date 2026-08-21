@@ -23,7 +23,7 @@ require_once __DIR__ . '/bootstrap.php';
 
 /** POST a body to the webhook route and return [status, message]. */
 function t14_post( string $body, ?string $signature ): array {
-	$request = new WP_REST_Request( 'POST', '/sellmo-wc/v1/webhook' );
+	$request = new WP_REST_Request( 'POST', '/' . t_rest_namespace() . '/webhook' );
 	$request->set_header( 'content-type', 'application/json' );
 	$request->set_body( $body );
 
@@ -48,7 +48,7 @@ $processed = 0;
 add_filter(
 	'pre_schedule_event',
 	static function ( $pre, $event ) use ( &$processed ) {
-		if ( isset( $event->hook ) && 'sellmo_wc_process_webhook' === $event->hook ) {
+		if ( isset( $event->hook ) && t_hook( 'sellmo_wc_process_webhook' ) === $event->hook ) {
 			$processed++;
 			return false; // Swallow it — do not queue a real sync.
 		}
@@ -63,10 +63,11 @@ t_head( 'Route wiring' );
 // -----------------------------------------------------------------------------
 
 $routes = rest_get_server()->get_routes();
-t_ok( 'webhook route is registered', isset( $routes['/sellmo-wc/v1/webhook'] ) );
+$route = '/' . t_rest_namespace() . '/webhook';
+t_ok( 'webhook route is registered', isset( $routes[ $route ] ) );
 t_ok(
 	'route is public by design — the HMAC check is the only gate',
-	'__return_true' === ( $routes['/sellmo-wc/v1/webhook'][0]['permission_callback'] ?? null )
+	'__return_true' === ( $routes[ $route ][0]['permission_callback'] ?? null )
 );
 
 // -----------------------------------------------------------------------------

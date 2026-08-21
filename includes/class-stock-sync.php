@@ -71,7 +71,7 @@ class Sellmo_Stock_Sync {
 	public function run_manual_sync(): array {
 		// Extend execution time for the AJAX request. Silently ignored on hosts
 		// that lock max_execution_time via php.ini.
-		set_time_limit( 60 );
+		Sellmo_Sync_Guard::extend_time_limit( 60 );
 
 		return $this->do_full_sync();
 	}

@@ -1411,7 +1411,11 @@ class Sellmo_Admin {
 
 		$sellmo_product = $this->resolve_sellmo_payload( $sellmo_id, $sellmo_code );
 		if ( ! is_array( $sellmo_product ) ) {
-			return new \WP_Error( 'sellmo_no_payload', __( 'Product not found in Sellmo catalogue.', 'sellmo-woocommerce' ) );
+			return new \WP_Error(
+				'sellmo_no_payload',
+				/* translators: %s: POS brand name, e.g. SalesPlay. */
+				sprintf( __( 'Product not found in %s catalogue.', 'sellmo-woocommerce' ), POS_Brand::name() )
+			);
 		}
 
 		// Create / update the WooCommerce product.
@@ -1430,7 +1434,11 @@ class Sellmo_Admin {
 		if ( ! Sellmo_Product_Mapping::upsert_mapping( $map_id, $map_code, $map_name, $new_id ) ) {
 			return new \WP_Error(
 				'sellmo_map_failed',
-				__( 'Product imported, but automatic mapping failed (the WooCommerce product may already be mapped to another Sellmo product).', 'sellmo-woocommerce' ),
+				sprintf(
+					/* translators: %s: POS brand name, e.g. SalesPlay. */
+					__( 'Product imported, but automatic mapping failed (the WooCommerce product may already be mapped to another %s product).', 'sellmo-woocommerce' ),
+					POS_Brand::name()
+				),
 				[ 'wc_id' => $new_id ]
 			);
 		}
@@ -1721,7 +1729,10 @@ class Sellmo_Admin {
 		$sellmo_code = sanitize_text_field( wp_unslash( $_POST['sellmo_code'] ?? '' ) );
 
 		if ( '' === $sellmo_id ) {
-			wp_send_json_error( [ 'message' => __( 'Invalid Sellmo product id.', 'sellmo-woocommerce' ) ] );
+			wp_send_json_error( [
+				/* translators: %s: POS brand name, e.g. SalesPlay. */
+				'message' => sprintf( __( 'Invalid %s product id.', 'sellmo-woocommerce' ), POS_Brand::name() ),
+			] );
 		}
 
 		if ( ! Sellmo_Product_Mapping::remove_mapping_by_sellmo_id( $sellmo_id ) ) {
@@ -2383,7 +2394,10 @@ class Sellmo_Admin {
 		}
 
 		if ( null === $sellmo_product ) {
-			wp_send_json_error( [ 'message' => __( 'Product not found in Sellmo catalogue.', 'sellmo-woocommerce' ) ] );
+			wp_send_json_error( [
+				/* translators: %s: POS brand name, e.g. SalesPlay. */
+				'message' => sprintf( __( 'Product not found in %s catalogue.', 'sellmo-woocommerce' ), POS_Brand::name() ),
+			] );
 		}
 
 		$sync   = new Sellmo_Product_Sync();
@@ -2481,7 +2495,7 @@ class Sellmo_Admin {
 				}
 			}
 		} elseif ( 'import' === $action ) {
-			set_time_limit( 120 );
+			Sellmo_Sync_Guard::extend_time_limit( 120 );
 
 			$all_products = $this->get_all_sellmo_products();
 

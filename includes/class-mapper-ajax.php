@@ -80,9 +80,12 @@ class Sellmo_Mapper_Ajax {
 				'nonce'   => wp_create_nonce( 'sellmo_wc_admin' ),
 				'i18n'    => [
 					'searchWc'          => __( 'Search WooCommerce product by name or SKU…', 'sellmo-woocommerce' ),
-					'searchSellmo'      => __( 'Search Sellmo product by name or code…', 'sellmo-woocommerce' ),
+					/* translators: %s: POS brand name, e.g. SalesPlay. */
+					'searchSellmo'      => sprintf( __( 'Search %s product by name or code…', 'sellmo-woocommerce' ), POS_Brand::name() ),
 					'searchWcVariation' => __( 'Search WooCommerce variation by SKU or name…', 'sellmo-woocommerce' ),
 					'noResults'         => __( 'No matches found', 'sellmo-woocommerce' ),
+					/* translators: %s: POS brand name, e.g. SalesPlay. */
+					'selectSellmoFirst' => sprintf( __( 'Select a %s product first.', 'sellmo-woocommerce' ), POS_Brand::name() ),
 				],
 			]
 		);

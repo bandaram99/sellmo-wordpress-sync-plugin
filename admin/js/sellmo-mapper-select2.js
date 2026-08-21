@@ -121,7 +121,7 @@
 			$el[ $fn ]( {
 				width          : '100%',
 				allowClear     : true,
-				placeholder    : i18n.searchSellmo || 'Search Sellmo product by name or code…',
+				placeholder    : i18n.searchSellmo || 'Search POS product by name or code…',
 				data           : localItems,
 				dropdownParent : $( document.body ),
 				language       : {
@@ -158,7 +158,7 @@
 					e.preventDefault();
 					e.stopImmediatePropagation();
 					// eslint-disable-next-line no-alert
-					window.alert( i18n.searchSellmo || 'Select a Sellmo product first.' );
+					window.alert( i18n.selectSellmoFirst || 'Select a POS product first.' );
 				}
 				return;
 			}
