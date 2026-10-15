@@ -365,12 +365,8 @@ class Sellmo_Product_Sync {
 				? count( $sellmo_product['variants'] )
 				: 0;
 
-			// For a variable product the parent carries no price of its own — use the
-			// first variant's price as the representative value for the mapper list.
-			$mapper_price = $price;
-			if ( null === $mapper_price && $variant_count > 0 ) {
-				$mapper_price = $this->first_variant_price( $sellmo_product );
-			}
+			// Same price Sync Products stores, so the two syncs never disagree.
+			$mapper_price = $this->catalogue_price( $sellmo_product );
 
 			// The mapper column stores the DISPLAY category (blank when the POS has
 			// none), not the WooCommerce term name — otherwise this write and the
@@ -745,7 +741,7 @@ class Sellmo_Product_Sync {
 	 * @param  array<string, mixed> $variant POS variant payload.
 	 * @return bool
 	 */
-	private function variant_in_selected_shop( array $variant ): bool {
+	public function variant_in_selected_shop( array $variant ): bool {
 		$shop_ids = [];
 
 		foreach ( ( $variant['shops'] ?? [] ) as $shop ) {
@@ -761,6 +757,32 @@ class Sellmo_Product_Sync {
 		}
 
 		return Sellmo_Product_Mapping::is_in_selected_shop( implode( ',', $shop_ids ) );
+	}
+
+	/**
+	 * The price shown for a POS product in the Product Mapper.
+	 *
+	 * The selected shop's price (first shop when none matches), then a non-zero
+	 * selling_price. A variable product carries no price of its own, so the first
+	 * variant's price stands in. Shared by Sync Products and Sync Stock — they
+	 * used to pick different shops and flip the mapper price on every run.
+	 *
+	 * @since  1.7.0
+	 * @param  array<string, mixed> $sellmo_product POS product payload.
+	 * @return float|null
+	 */
+	public function catalogue_price( array $sellmo_product ): ?float {
+		// A 0 selling_price is "no price" — a variable parent often carries one.
+		$price = $this->extract_shop_price( $sellmo_product );
+		if ( null === $price && is_numeric( $sellmo_product['selling_price'] ?? null ) && (float) $sellmo_product['selling_price'] > 0 ) {
+			$price = (float) $sellmo_product['selling_price'];
+		}
+
+		if ( null === $price && ! empty( $sellmo_product['variants'] ) && is_array( $sellmo_product['variants'] ) ) {
+			$price = $this->first_variant_price( $sellmo_product );
+		}
+
+		return $price;
 	}
 
 	/**

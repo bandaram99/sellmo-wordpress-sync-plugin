@@ -43,3 +43,8 @@ By using this plugin you agree to the service provider's terms and privacy polic
 
 = {{VERSION}} =
 * Current release.
+
+
+C:\xampp3\php\php.exe build.php salesplay
+C:\xampp3\php\php.exe build.php sellmo
+C:\xampp3\php\php.exe build.php vendrex

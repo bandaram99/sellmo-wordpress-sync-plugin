@@ -47,12 +47,14 @@ class Sellmo_API {
 	/**
 	 * Constructor.
 	 *
-	 * Reads the API token from stored options.
+	 * Reads the API token from stored options, unless one is passed — the
+	 * Settings page's Connect button tests a typed token before it is saved.
 	 *
 	 * @since 1.0.0
+	 * @param string|null $token Token to use instead of the saved one.
 	 */
-	public function __construct() {
-		$this->token = (string) Sellmo_Settings::get( 'api_token' );
+	public function __construct( ?string $token = null ) {
+		$this->token = $token ?? (string) Sellmo_Settings::get( 'api_token' );
 	}
 
 	/**

@@ -258,16 +258,22 @@ class Sellmo_Product_Variant_Sync {
 		}
 
 		$parent_ids = [];
+		$delete     = Sellmo_Product_Mapping::auto_map_enabled();
 
 		foreach ( $removed as $row ) {
 			$wc_variation_id = (int) ( $row['wc_variation_id'] ?? 0 );
 
+			// Auto map on: delete the variation. Off: keep it, unlinked.
 			if ( $wc_variation_id > 0 ) {
-				$parent_id = (int) wp_get_post_parent_id( $wc_variation_id );
-				if ( $parent_id > 0 ) {
-					$parent_ids[ $parent_id ] = true;
+				if ( $delete ) {
+					$parent_id = (int) wp_get_post_parent_id( $wc_variation_id );
+					if ( $parent_id > 0 ) {
+						$parent_ids[ $parent_id ] = true;
+					}
+					wp_delete_post( $wc_variation_id, true );
+				} else {
+					Sellmo_Product_Mapping::release_wc_product( $wc_variation_id );
 				}
-				wp_delete_post( $wc_variation_id, true );
 			}
 
 			Sellmo_Logger::log(
@@ -278,7 +284,9 @@ class Sellmo_Product_Variant_Sync {
 					'Variant "%s" removed from "%s" (deleted in POS)%s.',
 					$this->variant_label( $row ),
 					(string) ( $product['product_name'] ?? '' ),
-					$wc_variation_id > 0 ? sprintf( '; WooCommerce variation #%d deleted', $wc_variation_id ) : ''
+					$wc_variation_id > 0
+						? sprintf( $delete ? '; WooCommerce variation #%d deleted' : '; WooCommerce variation #%d kept as unmapped', $wc_variation_id )
+						: ''
 				),
 				(string) ( $row['product_code'] ?? '' )
 			);

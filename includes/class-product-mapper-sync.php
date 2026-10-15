@@ -30,6 +30,9 @@ class Sellmo_Product_Mapper_Sync {
 	 */
 	private const MAX_PAGES = 100;
 
+	/** @var Sellmo_Product_Sync|null Shared price logic (see resolve_price()). */
+	private ?Sellmo_Product_Sync $product_sync = null;
+
 	/**
 	 * Public entry point used by the dashboard "Sync Products Now" AJAX action.
 	 *
@@ -55,6 +58,22 @@ class Sellmo_Product_Mapper_Sync {
 			( new Sellmo_Product_Variant_Sync() )->run();
 		} catch ( \Throwable $e ) {
 			Sellmo_Logger::log( 'product', 'pos_to_wc', 'error', 'Variant sync failed: ' . $e->getMessage() );
+		}
+
+		// Auto map runs last: it needs the freshly staged rows AND variant store.
+		if ( ! empty( $result['success'] ) && Sellmo_Product_Mapping::auto_map_enabled() ) {
+			try {
+				$auto = ( new Sellmo_Auto_Mapper() )->run();
+
+				$result['message'] .= ' ' . sprintf(
+					/* translators: 1: auto-mapped count, 2: skipped (ambiguous) count */
+					__( '%1$d auto-mapped by SKU, %2$d skipped (matched more than one item).', 'sellmo-woocommerce' ),
+					$auto['mapped'],
+					$auto['ambiguous']
+				);
+			} catch ( \Throwable $e ) {
+				Sellmo_Logger::log( 'product', 'pos_to_wc', 'error', 'Auto map failed: ' . $e->getMessage() );
+			}
 		}
 
 		return $result;
@@ -294,36 +313,16 @@ class Sellmo_Product_Mapper_Sync {
 	}
 
 	/**
-	 * Resolve a representative price from the product shops array.
+	 * Resolve the mapper price — the selected shop's price, exactly as Sync
+	 * Stock computes it (see Sellmo_Product_Sync::catalogue_price()).
 	 *
 	 * @since  1.1.0
 	 * @param  array<string, mixed> $product Product payload.
 	 * @return float
 	 */
 	private function resolve_price( array $product ): float {
-		$shops = isset( $product['shops'] ) && is_array( $product['shops'] ) ? $product['shops'] : [];
-		if ( isset( $shops[0]['price'] ) && is_numeric( $shops[0]['price'] ) ) {
-			return (float) $shops[0]['price'];
-		}
-		if ( isset( $product['selling_price'] ) && is_numeric( $product['selling_price'] ) && (float) $product['selling_price'] > 0 ) {
-			return (float) $product['selling_price'];
-		}
+		$this->product_sync ??= new Sellmo_Product_Sync();
 
-		// Variable products carry no product-level price — use the first variant
-		// that lists a shop price as the representative value for the mapper list.
-		$variants = isset( $product['variants'] ) && is_array( $product['variants'] ) ? $product['variants'] : [];
-		foreach ( $variants as $variant ) {
-			if ( ! is_array( $variant ) ) {
-				continue;
-			}
-			$vshops = isset( $variant['shops'] ) && is_array( $variant['shops'] ) ? $variant['shops'] : [];
-			foreach ( $vshops as $shop ) {
-				if ( is_array( $shop ) && isset( $shop['price'] ) && is_numeric( $shop['price'] ) ) {
-					return (float) $shop['price'];
-				}
-			}
-		}
-
-		return 0.0;
+		return $this->product_sync->catalogue_price( $product ) ?? 0.0;
 	}
 }

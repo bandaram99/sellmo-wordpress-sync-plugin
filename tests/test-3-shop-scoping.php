@@ -232,6 +232,9 @@ $other_mapped = (array) $wpdb->get_col(
 	)
 );
 
+// Deletion is the Auto map ON behaviour; OFF (keep, unlinked) is checked in 3g.
+t_set_setting( 'auto_map_enabled', 'yes' );
+
 $mark    = t_log_mark();
 $removed = Sellmo_Product_Mapping::enforce_selected_shop_scope();
 
@@ -259,5 +262,20 @@ t_ok( 'in-shop product row survives', is_array( $mine_row ) );
 t_head( '3f. Log records the shop-scope removal' );
 $logs = t_log_since( $mark );
 t_ok( 'scope enforcement wrote a log entry', ! empty( $logs ), 'no log rows written' );
+
+// -----------------------------------------------------------------------------
+// 3g. Auto map OFF: the out-of-shop WooCommerce product is kept, unlinked
+// -----------------------------------------------------------------------------
+t_head( '3g. Auto map off: out-of-shop product kept as unmapped' );
+
+t_set_setting( 'auto_map_enabled', 'no' );
+$kept_wc = t_wc_simple( 'Stray Shop Product 2', 100.0, $other_code, $other_pos_id );
+Sellmo_Product_Mapping::upsert_mapping( $other_pos_id, $other_code, 'Other Shop Only', $kept_wc );
+
+Sellmo_Product_Mapping::enforce_selected_shop_scope();
+
+t_ok( 'WooCommerce product kept', wc_get_product( $kept_wc ) instanceof WC_Product );
+t_eq( 'POS id meta stripped', '', (string) get_post_meta( $kept_wc, '_salesplay_pos_product_id', true ) );
+t_eq( 'mapper row unmapped', 0, (int) ( Sellmo_Product_Mapping::get_row_by_id( $other_id )['wc_product_id'] ?? 0 ) );
 
 exit( t_summary() );

@@ -318,4 +318,34 @@ if ( ! empty( $appeared ) ) {
 	echo '  note: ' . count( $appeared ) . " real row(s) appeared during the run (concurrent sync?).\n";
 }
 
+// =============================================================================
+// 7f. Sync Products and Sync Stock store the same (selected-shop) price
+// =============================================================================
+// They used to differ — Sync Products took the FIRST shop's price, Sync Stock
+// the selected shop's — so the mapper price flipped on every run.
+t_head( '7f. Both syncs store the selected shop\'s price' );
+
+$other = t_uid( 'OTHER' );
+$multi = t_product( t_uid( 'PRICE' ), T_PREFIX . '-PR-1', 'Price Probe', 'Cat', 5.0, $shop );
+$multi['shops'] = [
+	[ 'shop_id' => $other, 'price' => 111.0, 'available_for_sale' => true ],
+	[ 'shop_id' => $shop,  'price' => 222.0, 'available_for_sale' => true ],
+];
+$variable = t_product( t_uid( 'PRICEV' ), T_PREFIX . '-PR-2', 'Price Probe V', 'Cat', 0.0, $shop, [
+	t_variant( t_uid( 'PV' ), T_PREFIX . '-PR-2-1', 's', 'red', 0.0, $shop ),
+] );
+$variable['selling_price'] = 0.0; // A 0 parent price must not hide the variant price.
+$variable['variants'][0]['shops'] = [
+	[ 'shop_id' => $other, 'price' => 33.0, 'available_for_sale' => true ],
+	[ 'shop_id' => $shop,  'price' => 44.0, 'available_for_sale' => true ],
+];
+
+$mapper_sync = new Sellmo_Product_Mapper_Sync();
+$product_sync = new Sellmo_Product_Sync();
+
+t_near( 'Sync Products: selected shop price',          222.0, (float) t_call( $mapper_sync, 'resolve_price', [ $multi ] ) );
+t_near( 'Sync Stock: same price',                      222.0, (float) $product_sync->catalogue_price( $multi ) );
+t_near( 'Sync Products: variable → selected shop variant price', 44.0, (float) t_call( $mapper_sync, 'resolve_price', [ $variable ] ) );
+t_near( 'Sync Stock: same variable price',             44.0, (float) $product_sync->catalogue_price( $variable ) );
+
 exit( t_summary() );

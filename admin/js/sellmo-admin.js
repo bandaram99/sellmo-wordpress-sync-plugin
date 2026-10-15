@@ -50,21 +50,40 @@
 		var $btn    = $( this );
 		var $status = $( '#sellmo-connection-status' );
 
-		$btn.prop( 'disabled', true ).text( i18n.testing || 'Testing…' );
+		// The typed token is tested WITHOUT saving it, so the shop list loads
+		// before the first Save. Blank field = test the saved token.
+		var typed = $.trim( $( '#sellmo_wc_api_token' ).val() || '' );
+
+		$btn.prop( 'disabled', true ).text( i18n.testing || 'Connecting…' );
 		$status.removeClass( 'connected disconnected' ).text( '' );
 
 		$.post( ajaxUrl, {
 			action : 'sellmo_wc_test_connection',
-			nonce  : nonce
+			nonce  : nonce,
+			token  : typed
 		} )
 		.done( function ( res ) {
 			if ( res.success ) {
 				$status
 					.addClass( 'connected' )
 					.text( i18n.connected || 'Connected' );
-				// Refresh dependent dropdowns now that the connection is confirmed.
-				loadShops();
-				loadCategories();
+				// The response carries the shops — no second request needed.
+				fillShops( extractItems( res.data && res.data.shops ) );
+
+				// First-time setup: switch the syncs on so one Save finishes it.
+				// The merchant can untick any before saving. Auto Map is never
+				// switched on here — it stays opt-in.
+				if ( ! cfg.hasToken ) {
+					$( 'input[name="sellmo_wc_product_sync_enabled"], input[name="sellmo_wc_stock_sync_enabled"], input[name="sellmo_wc_order_sync_enabled"]' )
+						.prop( 'checked', true );
+					$status.text( i18n.syncDefaults || 'Connected' );
+				}
+
+				// Categories come from the saved account's catalogue; a typed
+				// token's catalogue is only reachable after Save.
+				if ( '' === typed ) {
+					loadCategories();
+				}
 			} else {
 				$status
 					.addClass( 'disconnected' )
@@ -88,8 +107,7 @@
 	 * Pre-selects the previously saved shop ID (data-saved attribute).
 	 */
 	function loadShops() {
-		var $sel    = $( '#sellmo_wc_shop_id' );
-		var savedId = $sel.data( 'saved' ) || cfg.savedShopId || '';
+		var $sel = $( '#sellmo_wc_shop_id' );
 
 		$sel.prop( 'disabled', true );
 
@@ -98,38 +116,56 @@
 			nonce  : nonce
 		} )
 		.done( function ( res ) {
-			if ( ! res.success ) {
-				return;
+			if ( res.success ) {
+				fillShops( extractItems( res.data ) );
 			}
-
-			var shops = extractItems( res.data );
-
-			$sel.empty().append(
-				$( '<option>' ).val( '' ).text( '— ' + ( i18n.selectShop || 'Select shop' ) + ' —' )
-			);
-
-			$.each( shops, function ( _i, shop ) {
-				var id          = String( shop.id           || '' );
-				var name        = shop.name                 || id;
-				var terminalKey = String( shop.terminal_key || '' );
-				$sel.append(
-					$( '<option>' )
-						.val( id )
-						.text( name )
-						.data( 'terminal-key', terminalKey )
-						.prop( 'selected', id === String( savedId ) )
-				);
-			} );
-
-			// Sync hidden terminal-key input with the currently selected shop.
-			$( '#sellmo_wc_terminal_key' ).val(
-				$sel.find( 'option:selected' ).data( 'terminal-key' ) || ''
-			);
 		} )
 		.always( function () {
 			$sel.prop( 'disabled', false );
 		} );
 	}
+
+	/**
+	 * Populate the shop <select>. Keeps the saved shop selected; with no saved
+	 * shop and exactly one shop on the account, that one is selected.
+	 *
+	 * @param {Array} shops [{ id, name, terminal_key }]
+	 */
+	function fillShops( shops ) {
+		var $sel    = $( '#sellmo_wc_shop_id' );
+		var savedId = String( $sel.data( 'saved' ) || cfg.savedShopId || '' );
+		var known   = shops.some( function ( shop ) { return String( shop.id || '' ) === savedId; } );
+		var pick    = known ? savedId : ( 1 === shops.length ? String( shops[0].id || '' ) : '' );
+
+		$sel.empty().append(
+			$( '<option>' ).val( '' ).text( '— ' + ( i18n.selectShop || 'Select shop' ) + ' —' )
+		);
+
+		$.each( shops, function ( _i, shop ) {
+			var id = String( shop.id || '' );
+			$sel.append(
+				$( '<option>' )
+					.val( id )
+					.text( shop.name || id )
+					.data( 'terminal-key', String( shop.terminal_key || '' ) )
+					.prop( 'selected', id === pick )
+			);
+		} );
+
+		// Sync hidden terminal-key input with the currently selected shop.
+		$( '#sellmo_wc_terminal_key' ).val(
+			$sel.find( 'option:selected' ).data( 'terminal-key' ) || ''
+		);
+	}
+
+	// Replacing a saved token purges the old catalogue: reveal the confirmation
+	// box (the save handler refuses the change without it).
+	$( '#sellmo_wc_api_token' ).on( 'input', function () {
+		var $box = $( '#sellmo-confirm-token-change' );
+		if ( $box.length ) {
+			$box.toggle( '' !== $.trim( $( this ).val() || '' ) );
+		}
+	} );
 
 	// Update terminal key whenever the shop dropdown selection changes.
 	$( '#sellmo_wc_shop_id' ).on( 'change', function () {

@@ -19,6 +19,7 @@ $shop_id               = (string) ( Sellmo_Settings::get( 'shop_id' ) ?: '' );
 $product_sync_enabled  = 'yes' === (string) Sellmo_Settings::get( 'product_sync_enabled' );
 $stock_sync_enabled    = 'yes' === (string) Sellmo_Settings::get( 'stock_sync_enabled' );
 $order_sync_enabled    = 'yes' === (string) Sellmo_Settings::get( 'order_sync_enabled' );
+$auto_map_enabled      = 'yes' === (string) Sellmo_Settings::get( 'auto_map_enabled' );
 $stock_sync_interval   = (string) ( Sellmo_Settings::get( 'stock_sync_interval' ) ?: 'hourly' );
 $product_sync_interval = (string) ( Sellmo_Settings::get( 'product_sync_interval' ) ?: 'twicedaily' );
 $order_sync_interval   = Sellmo_Scheduler::order_interval();
@@ -74,8 +75,8 @@ $order_timezone        = (string) ( Sellmo_Settings::get( 'order_timezone' ) ?: 
 								<button type="button" id="sellmo-toggle-token" class="button">
 									<?php esc_html_e( 'Show', 'sellmo-woocommerce' ); ?>
 								</button>
-								<button type="button" id="sellmo-test-connection" class="button" <?php disabled( $has_token, false ); ?>>
-									<?php esc_html_e( 'Test Connection', 'sellmo-woocommerce' ); ?>
+								<button type="button" id="sellmo-test-connection" class="button">
+									<?php esc_html_e( 'Connect', 'sellmo-woocommerce' ); ?>
 								</button>
 							</div>
 							<span
@@ -85,11 +86,32 @@ $order_timezone        = (string) ( Sellmo_Settings::get( 'order_timezone' ) ?: 
 							<p class="description">
 								<?php
 								printf(
-									esc_html__( 'Your %s API Bearer token. Leave blank to keep the existing token.', 'sellmo-woocommerce' ),
+									esc_html__( 'Your %s API Bearer token. Click Connect to load your shops, then Save once. Leave blank to keep the existing token.', 'sellmo-woocommerce' ),
 									esc_html( $brand_name )
 								);
 								?>
 							</p>
+							<?php
+							if ( $has_token ) :
+								global $wpdb;
+								// Shown by JS once a different token is typed; required by the save handler.
+								$linked_count  = Sellmo_Product_Mapping::count_mapped_products();
+								$created_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_sellmo_created' AND meta_value = 'yes'" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+								?>
+								<p id="sellmo-confirm-token-change" class="notice notice-warning inline" style="display:none">
+									<label>
+										<input type="checkbox" name="sellmo_wc_confirm_token_change" value="yes">
+										<?php
+										printf(
+											/* translators: 1: plugin-created product count, 2: mapped product count */
+											esc_html__( 'I understand: a new token deletes the %1$d imported product(s), removes %2$d mapping(s) and clears stored stock.', 'sellmo-woocommerce' ),
+											$created_count,
+											$linked_count
+										);
+										?>
+									</label>
+								</p>
+							<?php endif; ?>
 							<?php if ( $has_token ) : ?>
 								<p>
 									<label>
@@ -116,7 +138,7 @@ $order_timezone        = (string) ( Sellmo_Settings::get( 'order_timezone' ) ?: 
 								<option value="">
 									<?php echo $has_token
 										? esc_html__( '— Loading shops…', 'sellmo-woocommerce' )
-										: esc_html__( '— Save a token first —', 'sellmo-woocommerce' ); ?>
+										: esc_html__( '— Enter your token and click Connect —', 'sellmo-woocommerce' ); ?>
 								</option>
 							</select>
 							<p class="description">
@@ -205,6 +227,34 @@ $order_timezone        = (string) ( Sellmo_Settings::get( 'order_timezone' ) ?: 
 									esc_html( $brand_name )
 								);
 								?>
+							</p>
+						</td>
+					</tr>
+
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Auto Map', 'sellmo-woocommerce' ); ?></th>
+						<td>
+							<label>
+								<input
+									type="checkbox"
+									name="sellmo_wc_auto_map_enabled"
+									value="yes"
+									autocomplete="off"<?php /* Opt-in only: stop the browser restoring a ticked state on reload. */ ?>
+									<?php checked( $auto_map_enabled ); ?>
+								>
+								<?php esc_html_e( 'Auto map products by SKU on every product sync', 'sellmo-woocommerce' ); ?>
+							</label>
+							<p class="description">
+								<?php
+								printf(
+									/* translators: %s: Brand display name. */
+									esc_html__( 'An unmapped %s product is linked to the existing WooCommerce product whose SKU equals its product code. If a code or SKU matches more than one product, nothing is mapped. A variable product is mapped only when every variant matches a variation of the same WooCommerce product. Once mapped, price, category and stock come from the POS.', 'sellmo-woocommerce' ),
+									esc_html( $brand_name )
+								);
+								?>
+							</p>
+							<p class="description">
+								<?php esc_html_e( 'When on, a WooCommerce product or variation whose POS product is deleted or leaves the selected shop is deleted. When off, it is kept as an unmapped product.', 'sellmo-woocommerce' ); ?>
 							</p>
 						</td>
 					</tr>

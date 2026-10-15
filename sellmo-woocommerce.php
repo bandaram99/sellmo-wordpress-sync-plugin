@@ -184,6 +184,7 @@ add_action(
 		require_once SELLMO_WC_PATH . 'includes/class-product-variant-store.php';
 		require_once SELLMO_WC_PATH . 'includes/class-product-mapper-sync.php';
 		require_once SELLMO_WC_PATH . 'includes/class-product-variant-sync.php';
+		require_once SELLMO_WC_PATH . 'includes/class-auto-mapper.php';
 		require_once SELLMO_WC_PATH . 'includes/class-mapper-ajax.php';
 		require_once SELLMO_WC_PATH . 'includes/class-stock-sync-pagination.php';
 

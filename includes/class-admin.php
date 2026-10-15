@@ -393,6 +393,18 @@ class Sellmo_Admin {
 		$token_changed = false;
 		$purged_count  = -1;
 
+		// Replacing a saved token purges the old account's catalogue, so it needs
+		// the explicit confirmation box. Without it nothing is saved — the shop
+		// picked on the page belongs to the new account and must not be stored
+		// against the old token either.
+		if ( self::token_change_unconfirmed( $old_token, $api_token, $remove_token, isset( $_POST['sellmo_wc_confirm_token_change'] ) ) ) {
+			wp_safe_redirect( add_query_arg(
+				[ 'page' => POS_Brand::page( 'settings' ), 'sellmo_token_unconfirmed' => '1' ],
+				admin_url( 'admin.php' )
+			) );
+			exit;
+		}
+
 		if ( $remove_token && '' !== $old_token ) {
 			// Explicit removal: drop the token, reset account-scoped settings, and
 			// wipe everything synced from the old account.
@@ -426,6 +438,7 @@ class Sellmo_Admin {
 		Sellmo_Settings::set( 'product_sync_enabled', isset( $_POST['sellmo_wc_product_sync_enabled'] ) ? 'yes' : 'no' );
 		Sellmo_Settings::set( 'stock_sync_enabled',   isset( $_POST['sellmo_wc_stock_sync_enabled'] )   ? 'yes' : 'no' );
 		Sellmo_Settings::set( 'order_sync_enabled',   isset( $_POST['sellmo_wc_order_sync_enabled'] )   ? 'yes' : 'no' );
+		Sellmo_Settings::set( 'auto_map_enabled',     isset( $_POST['sellmo_wc_auto_map_enabled'] )     ? 'yes' : 'no' );
 
 		// Sync intervals — validate against allowed values.
 		$stock_interval = sanitize_key( wp_unslash( $_POST['sellmo_wc_stock_sync_interval'] ?? '' ) );
@@ -670,6 +683,12 @@ class Sellmo_Admin {
 			}
 		}
 
+		if ( '1' === sanitize_key( $_GET['sellmo_token_unconfirmed'] ?? '' ) ) {
+			echo '<div class="notice notice-error is-dismissible"><p>' .
+				esc_html__( 'Nothing was saved. Replacing the API token deletes the imported products and mappings — tick the confirmation box under the token field to continue.', 'sellmo-woocommerce' ) .
+				'</p></div>';
+		}
+
 		if ( isset( $_GET['sellmo_purged'] ) ) {
 			$purged = absint( $_GET['sellmo_purged'] );
 			echo '<div class="notice notice-warning is-dismissible"><p>';
@@ -733,9 +752,9 @@ class Sellmo_Admin {
 				'i18n'            => [
 					'show'              => __( 'Show', 'sellmo-woocommerce' ),
 					'hide'              => __( 'Hide', 'sellmo-woocommerce' ),
-					'testBtn'           => __( 'Test Connection', 'sellmo-woocommerce' ),
-					'testing'           => __( 'Testing…', 'sellmo-woocommerce' ),
-					'connected'         => __( 'Connected', 'sellmo-woocommerce' ),
+					'testBtn'           => __( 'Connect', 'sellmo-woocommerce' ),
+					'testing'           => __( 'Connecting…', 'sellmo-woocommerce' ),
+					'syncDefaults'      => __( 'Connected. Shops loaded and syncs switched on — review and click Save Settings.', 'sellmo-woocommerce' ),					'connected'         => __( 'Connected', 'sellmo-woocommerce' ),
 					'disconnected'      => __( 'Not connected', 'sellmo-woocommerce' ),
 					'secretGenerated'   => __( 'New secret generated. Save settings to apply.', 'sellmo-woocommerce' ),
 					'loadingShops'      => __( 'Loading shops…', 'sellmo-woocommerce' ),
@@ -1922,24 +1941,86 @@ class Sellmo_Admin {
 			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
 		}
 
-		$api    = new Sellmo_API();
+		// A typed (not yet saved) token is tested as-is and is NOT stored — Save
+		// does that — so the shop list can load before the first save.
+		$typed  = $this->typed_token();
+		$api    = new Sellmo_API( '' !== $typed ? $typed : null );
 		$result = $api->get_shops();
 
 		if ( is_wp_error( $result ) ) {
-			Sellmo_Settings::set( 'connection_status', [
-				'success' => false,
-				'time'    => time(),
-				'message' => $result->get_error_message(),
-			] );
+			if ( '' === $typed ) {
+				Sellmo_Settings::set( 'connection_status', [
+					'success' => false,
+					'time'    => time(),
+					'message' => $result->get_error_message(),
+				] );
+			}
 			wp_send_json_error( [ 'message' => $result->get_error_message() ] );
 		}
 
-		Sellmo_Settings::set( 'connection_status', [
-			'success' => true,
-			'time'    => time(),
-			'message' => '',
+		if ( '' === $typed ) {
+			Sellmo_Settings::set( 'connection_status', [
+				'success' => true,
+				'time'    => time(),
+				'message' => '',
+			] );
+		}
+
+		wp_send_json_success( [
+			'message' => __( 'Connection successful.', 'sellmo-woocommerce' ),
+			'shops'   => $this->normalize_shops( $result ),
 		] );
-		wp_send_json_success( [ 'message' => __( 'Connection successful.', 'sellmo-woocommerce' ) ] );
+	}
+
+	/**
+	 * Whether a Save would replace the saved token (and so purge the old
+	 * account's catalogue) without the merchant ticking the confirmation box.
+	 *
+	 * @since  1.7.0
+	 * @param  string $old_token    Saved token.
+	 * @param  string $new_token    Token submitted with the form ('' = keep).
+	 * @param  bool   $remove_token "Remove the saved token" ticked.
+	 * @param  bool   $confirmed    Confirmation box ticked.
+	 * @return bool                 True = refuse the save.
+	 */
+	private static function token_change_unconfirmed( string $old_token, string $new_token, bool $remove_token, bool $confirmed ): bool {
+		return ! $remove_token && ! $confirmed
+			&& '' !== $old_token && '' !== $new_token && $new_token !== $old_token;
+	}
+
+	/**
+	 * Token typed into the Settings page and sent with an AJAX request.
+	 *
+	 * @since  1.7.0
+	 * @return string Empty when none was sent (use the saved token).
+	 */
+	private function typed_token(): string {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- callers verify the nonce first.
+		return trim( sanitize_text_field( wp_unslash( $_POST['token'] ?? '' ) ) );
+	}
+
+	/**
+	 * Flatten a /shops response for the shop dropdown, with the first terminal's
+	 * pos_key so the JS can keep the hidden terminal-key input in sync.
+	 *
+	 * @since  1.7.0
+	 * @param  array<string, mixed> $result Decoded /shops response.
+	 * @return array<int, array{ id: string, name: string, terminal_key: string }>
+	 */
+	private function normalize_shops( array $result ): array {
+		$shops = [];
+		foreach ( (array) ( $result['shops'] ?? [] ) as $shop ) {
+			$terminal_list = isset( $shop['terminal_list'] ) && is_array( $shop['terminal_list'] )
+				? $shop['terminal_list']
+				: [];
+			$shops[] = [
+				'id'           => (string) ( $shop['id'] ?? '' ),
+				'name'         => (string) ( $shop['shop_name'] ?? $shop['id'] ?? '' ),
+				'terminal_key' => (string) ( $terminal_list[0]['pos_key'] ?? '' ),
+			];
+		}
+
+		return $shops;
 	}
 
 	/**
@@ -1955,28 +2036,15 @@ class Sellmo_Admin {
 			wp_send_json_error( [ 'message' => __( 'Permission denied.', 'sellmo-woocommerce' ) ] );
 		}
 
-		$api    = new Sellmo_API();
+		$typed  = $this->typed_token();
+		$api    = new Sellmo_API( '' !== $typed ? $typed : null );
 		$result = $api->get_shops();
 
 		if ( is_wp_error( $result ) ) {
 			wp_send_json_error( [ 'message' => $result->get_error_message() ] );
 		}
 
-		// Normalise to a flat array; include the first terminal's pos_key so the
-		// JS can keep the hidden sellmo_wc_terminal_key input in sync.
-		$shops = [];
-		foreach ( (array) ( $result['shops'] ?? [] ) as $shop ) {
-			$terminal_list = isset( $shop['terminal_list'] ) && is_array( $shop['terminal_list'] )
-				? $shop['terminal_list']
-				: [];
-			$shops[] = [
-				'id'           => (string) ( $shop['id'] ?? '' ),
-				'name'         => (string) ( $shop['shop_name'] ?? $shop['id'] ?? '' ),
-				'terminal_key' => (string) ( $terminal_list[0]['pos_key'] ?? '' ),
-			];
-		}
-
-		wp_send_json_success( $shops );
+		wp_send_json_success( $this->normalize_shops( $result ) );
 	}
 
 	/**
@@ -2124,11 +2192,8 @@ class Sellmo_Admin {
 		if ( $result['success'] ) {
 			$sync_completed = true;
 			wp_send_json_success( [
-				'message' => sprintf(
-					/* translators: %d: number of products synced */
-					__( 'Product sync complete. %d products synced.', 'sellmo-woocommerce' ),
-					$meta['count']
-				),
+				// The sync's own summary (staged / removed / auto-mapped counts).
+				'message' => __( 'Product sync complete.', 'sellmo-woocommerce' ) . ' ' . (string) ( $result['message'] ?? '' ),
 				'trace'   => isset( $result['trace'] ) && is_array( $result['trace'] ) ? $result['trace'] : [],
 			] );
 		}
