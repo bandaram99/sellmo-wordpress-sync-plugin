@@ -258,12 +258,16 @@ class Sellmo_Product_Variant_Sync {
 		}
 
 		$parent_ids = [];
-		$delete     = Sellmo_Product_Mapping::auto_map_enabled();
+		$auto_map   = Sellmo_Product_Mapping::auto_map_enabled();
 
 		foreach ( $removed as $row ) {
 			$wc_variation_id = (int) ( $row['wc_variation_id'] ?? 0 );
 
-			// Auto map on: delete the variation. Off: keep it, unlinked.
+			// Auto map on and SKU matching the variant code: delete the variation.
+			// Otherwise keep it, unlinked.
+			$delete = $auto_map && $wc_variation_id > 0
+				&& Sellmo_Cleanup::sku_matches( $wc_variation_id, (string) ( $row['product_code'] ?? '' ) );
+
 			if ( $wc_variation_id > 0 ) {
 				if ( $delete ) {
 					$parent_id = (int) wp_get_post_parent_id( $wc_variation_id );

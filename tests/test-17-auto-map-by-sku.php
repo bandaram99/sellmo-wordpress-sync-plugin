@@ -281,6 +281,8 @@ t_set_setting( 'auto_map_enabled', 'yes' );
 t_call( new Sellmo_Product_Variant_Sync(), 'prune_absent_variants', [ $f_map, [], [ 'product_name' => 'AM Variable' ] ] );
 t_ok( 'WC variation deleted', ! ( get_post( $f_vars[0] ) instanceof WP_Post ) );
 
+// Deletion needs the parent SKU to equal the POS code (mismatch → kept, see test-20g).
+update_post_meta( $f_parent, '_sku', $c( '600' ) );
 $live_ids = array_values( array_diff( $live_ids, [ $f_pos ] ) );
 Sellmo_Product_Mapping::reconcile_absent( $live_ids );
 t_ok( 'WC parent deleted', ! ( wc_get_product( $f_parent ) instanceof WC_Product ) );

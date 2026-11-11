@@ -129,7 +129,7 @@
 	 * Populate the shop <select>. Keeps the saved shop selected; with no saved
 	 * shop and exactly one shop on the account, that one is selected.
 	 *
-	 * @param {Array} shops [{ id, name, terminal_key }]
+	 * @param {Array} shops [{ id, name, terminals: [{ key, name }] }]
 	 */
 	function fillShops( shops ) {
 		var $sel    = $( '#sellmo_wc_shop_id' );
@@ -147,15 +147,39 @@
 				$( '<option>' )
 					.val( id )
 					.text( shop.name || id )
-					.data( 'terminal-key', String( shop.terminal_key || '' ) )
+					.data( 'terminals', $.isArray( shop.terminals ) ? shop.terminals : [] )
 					.prop( 'selected', id === pick )
 			);
 		} );
 
-		// Sync hidden terminal-key input with the currently selected shop.
-		$( '#sellmo_wc_terminal_key' ).val(
-			$sel.find( 'option:selected' ).data( 'terminal-key' ) || ''
-		);
+		fillTerminals();
+	}
+
+	/**
+	 * Populate the terminal <select> from the selected shop's terminals. Keeps
+	 * the saved terminal selected; with exactly one terminal, that one is selected.
+	 */
+	function fillTerminals() {
+		var $sel      = $( '#sellmo_wc_terminal_key' );
+		var $shop     = $( '#sellmo_wc_shop_id' ).find( 'option:selected' );
+		var terminals = $shop.val() ? ( $shop.data( 'terminals' ) || [] ) : [];
+		var savedKey  = String( $sel.data( 'saved' ) || '' );
+		var known     = terminals.some( function ( t ) { return String( t.key ) === savedKey; } );
+		var pick      = known ? savedKey : ( 1 === terminals.length ? String( terminals[0].key ) : '' );
+		var label     = ! $shop.val()
+			? ( i18n.selectShopFirst || 'Select a shop first' )
+			: ( terminals.length ? ( i18n.selectTerminal || 'Select terminal' ) : ( i18n.noTerminals || 'No terminals in this shop' ) );
+
+		$sel.empty().append( $( '<option>' ).val( '' ).text( '— ' + label + ' —' ) );
+
+		$.each( terminals, function ( _i, t ) {
+			$sel.append(
+				$( '<option>' )
+					.val( String( t.key ) )
+					.text( t.name || t.key )
+					.prop( 'selected', String( t.key ) === pick )
+			);
+		} );
 	}
 
 	// Replacing a saved token purges the old catalogue: reveal the confirmation
@@ -167,12 +191,8 @@
 		}
 	} );
 
-	// Update terminal key whenever the shop dropdown selection changes.
-	$( '#sellmo_wc_shop_id' ).on( 'change', function () {
-		$( '#sellmo_wc_terminal_key' ).val(
-			$( this ).find( 'option:selected' ).data( 'terminal-key' ) || ''
-		);
-	} );
+	// Rebuild the terminal list whenever the shop dropdown selection changes.
+	$( '#sellmo_wc_shop_id' ).on( 'change', fillTerminals );
 
 	// ── Category multi-select ─────────────────────────────────────────────────
 

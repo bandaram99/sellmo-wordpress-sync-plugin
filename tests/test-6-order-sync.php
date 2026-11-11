@@ -39,7 +39,7 @@ $order->save();
 
 $order_id = $order->get_id();
 t_defer( static function () use ( $order_id ): void {
-	wp_delete_post( $order_id, true );
+	t_delete_order( $order_id );
 } );
 
 t_ok( 'fixture: order created', $order_id > 0 );
@@ -171,7 +171,7 @@ $reported->set_status( 'completed' );
 $reported->save();
 $reported_id = $reported->get_id();
 t_defer( static function () use ( $reported_id ): void {
-	wp_delete_post( $reported_id, true );
+	t_delete_order( $reported_id );
 } );
 
 t_call( $order_sync, 'push_order', [ $reported, true ] );
@@ -222,7 +222,7 @@ $order2->calculate_totals();
 $order2->save();
 $order2_id = $order2->get_id();
 t_defer( static function () use ( $order2_id ): void {
-	wp_delete_post( $order2_id, true );
+	t_delete_order( $order2_id );
 } );
 
 // No /online_orders stub this time, so the harness returns a transport error.

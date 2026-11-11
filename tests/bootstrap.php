@@ -215,6 +215,18 @@ register_shutdown_function( static function (): void {
 	}
 } );
 
+// Categories the plugin creates while a suite runs (imports with a category)
+// would otherwise outlive it. Registered first, so it runs last — after the
+// products using them are gone.
+$GLOBALS['t_cleanup'][] = static function (): void {
+	global $wpdb;
+	$floor = $GLOBALS['t_max_term_id'];
+	foreach ( (array) $wpdb->get_col( $wpdb->prepare( "SELECT term_id FROM {$wpdb->termmeta} WHERE meta_key = '_sellmo_created' AND term_id > %d", $floor ) ) as $term_id ) {
+		wp_delete_term( (int) $term_id, 'product_cat' );
+	}
+};
+$GLOBALS['t_max_term_id'] = (int) $GLOBALS['wpdb']->get_var( "SELECT MAX(term_id) FROM {$wpdb->terms}" );
+
 // -----------------------------------------------------------------------------
 // Reflection access to private/protected methods (documented as unit-test seams)
 // -----------------------------------------------------------------------------
@@ -833,6 +845,17 @@ function t_purge_mapping( int $mapping_id ): void {
 
 	$wpdb->delete( Sellmo_Product_Variant_Store::table_name(), [ 'product_id' => $mapping_id ], [ '%d' ] );
 	$wpdb->delete( Sellmo_Product_Mapping::table_name(), [ 'id' => $mapping_id ], [ '%d' ] );
+}
+
+/**
+ * Permanently delete a test order. wp_delete_post() misses orders stored in
+ * the HPOS tables, so it silently leaked every fixture order.
+ */
+function t_delete_order( int $order_id ): void {
+	$order = wc_get_order( $order_id );
+	if ( $order ) {
+		$order->delete( true );
+	}
 }
 
 /**

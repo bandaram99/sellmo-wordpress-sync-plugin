@@ -136,6 +136,10 @@ class Sellmo_Plugin {
 		$this->mapper_ajax  = new Sellmo_Mapper_Ajax();
 
 		add_action( 'admin_enqueue_scripts', [ $this, 'admin_assets' ] );
+
+		// A mapped product deleted/trashed in WooCommerce goes back to "Not Mapped".
+		add_action( 'before_delete_post', [ 'Sellmo_Product_Mapping', 'forget_wc_post' ] );
+		add_action( 'wp_trash_post', [ 'Sellmo_Product_Mapping', 'forget_wc_post' ] );
 	}
 
 	/**

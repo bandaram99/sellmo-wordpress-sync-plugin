@@ -40,7 +40,6 @@ $order_timezone        = (string) ( Sellmo_Settings::get( 'order_timezone' ) ?: 
 
 		<?php wp_nonce_field( 'sellmo_wc_save_settings', 'sellmo_wc_settings_nonce' ); ?>
 		<input type="hidden" name="action" value="sellmo_wc_save_settings">
-		<input type="hidden" id="sellmo_wc_terminal_key" name="sellmo_wc_terminal_key" value="<?php echo esc_attr( (string) ( Sellmo_Settings::get( 'terminal_key' ) ?: '' ) ); ?>">
 
 		<?php /* ── A) API Connection ──────────────────────────────────────── */ ?>
 		<div class="sellmo-card">
@@ -93,17 +92,16 @@ $order_timezone        = (string) ( Sellmo_Settings::get( 'order_timezone' ) ?: 
 							</p>
 							<?php
 							if ( $has_token ) :
-								global $wpdb;
 								// Shown by JS once a different token is typed; required by the save handler.
 								$linked_count  = Sellmo_Product_Mapping::count_mapped_products();
-								$created_count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_sellmo_created' AND meta_value = 'yes'" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+								$created_count = Sellmo_Cleanup::count_deletable();
 								?>
 								<p id="sellmo-confirm-token-change" class="notice notice-warning inline" style="display:none">
 									<label>
 										<input type="checkbox" name="sellmo_wc_confirm_token_change" value="yes">
 										<?php
 										printf(
-											/* translators: 1: plugin-created product count, 2: mapped product count */
+											/* translators: 1: number of imported products that will be deleted, 2: mapped product count */
 											esc_html__( 'I understand: a new token deletes the %1$d imported product(s), removes %2$d mapping(s) and clears stored stock.', 'sellmo-woocommerce' ),
 											$created_count,
 											$linked_count
@@ -116,7 +114,13 @@ $order_timezone        = (string) ( Sellmo_Settings::get( 'order_timezone' ) ?: 
 								<p>
 									<label>
 										<input type="checkbox" name="sellmo_wc_remove_token" value="yes">
-										<?php esc_html_e( 'Remove the saved token. This deletes all imported products, mappings, and stored stock data.', 'sellmo-woocommerce' ); ?>
+										<?php esc_html_e( 'Remove the saved token. This clears mappings and stored stock data. Imported products are deleted only when Auto map is on and their SKU matches the POS product code; all others are kept as ordinary products.', 'sellmo-woocommerce' ); ?>
+									</label>
+								</p>
+								<p>
+									<label>
+										<input type="checkbox" name="sellmo_wc_delete_linked" value="yes">
+										<?php esc_html_e( 'Also delete your existing WooCommerce products that were linked to the POS. Leave unticked to keep them as ordinary products.', 'sellmo-woocommerce' ); ?>
 									</label>
 								</p>
 							<?php endif; ?>
@@ -145,6 +149,32 @@ $order_timezone        = (string) ( Sellmo_Settings::get( 'order_timezone' ) ?: 
 								<?php
 								printf(
 									esc_html__( 'Select the %s shop to sync with this WooCommerce store.', 'sellmo-woocommerce' ),
+									esc_html( $brand_name )
+								);
+								?>
+							</p>
+						</td>
+					</tr>
+
+					<tr>
+						<th scope="row">
+							<label for="sellmo_wc_terminal_key">
+								<?php esc_html_e( 'Terminal', 'sellmo-woocommerce' ); ?>
+							</label>
+						</th>
+						<td>
+							<select
+								id="sellmo_wc_terminal_key"
+								name="sellmo_wc_terminal_key"
+								data-saved="<?php echo esc_attr( (string) ( Sellmo_Settings::get( 'terminal_key' ) ?: '' ) ); ?>"
+							>
+								<option value=""><?php esc_html_e( '— Select a shop first —', 'sellmo-woocommerce' ); ?></option>
+							</select>
+							<p class="description">
+								<?php
+								printf(
+									/* translators: %s: Brand display name. */
+									esc_html__( 'Online orders are sent to this %s terminal.', 'sellmo-woocommerce' ),
 									esc_html( $brand_name )
 								);
 								?>

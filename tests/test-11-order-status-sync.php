@@ -19,6 +19,10 @@ declare(strict_types=1);
 require_once __DIR__ . '/bootstrap.php';
 
 t_set_setting( 'order_sync_enabled', 'yes' );
+// Syncs only schedule/run with a token; the POS itself is faked below.
+if ( '' === (string) Sellmo_Settings::get( 'api_token' ) ) {
+	t_set_setting( 'api_token', 'T11-TOKEN' );
+}
 
 $order_sync = new Sellmo_Order_Sync();
 $admin      = new Sellmo_Admin();
@@ -32,7 +36,7 @@ $make_order = static function ( string $status, string $pos_id = 'POS-1' ): WC_O
 
 	$id = $order->get_id();
 	t_defer( static function () use ( $id ): void {
-		wp_delete_post( $id, true );
+		t_delete_order( $id );
 	} );
 
 	return wc_get_order( $id );
@@ -62,7 +66,7 @@ $foreign->set_status( 'processing' );
 $foreign->save();
 $foreign_id = $foreign->get_id();
 t_defer( static function () use ( $foreign_id ): void {
-	wp_delete_post( $foreign_id, true );
+	t_delete_order( $foreign_id );
 } );
 
 t_head( '11. Fixtures' );
@@ -175,7 +179,7 @@ $loop_order->update_meta_data( '_sellmo_order_id', '' ); // Pushed, but no id ca
 $loop_order->save();
 $loop_id = $loop_order->get_id();
 t_defer( static function () use ( $loop_id ): void {
-	wp_delete_post( $loop_id, true );
+	t_delete_order( $loop_id );
 } );
 
 T_Fake_API::install( [

@@ -11,7 +11,9 @@ The plugin covers the full sync loop between WooCommerce and {{BRAND_NAME}}:
 - Import products from {{BRAND_NAME}} into WooCommerce.
 - Update product details, images, and variants when {{BRAND_NAME}} changes.
 - Sync stock levels from {{BRAND_NAME}} to WooCommerce on a schedule.
-- Push WooCommerce orders to {{BRAND_NAME}} when they move to Processing.
+- Push WooCommerce orders to {{BRAND_NAME}} when they move to Processing, addressed to the POS terminal you choose.
+- Pull each pushed order's status (Completed, Rejected, …) back into WooCommerce on a schedule.
+- Map existing WooCommerce products to {{BRAND_NAME}} products by SKU, manually or automatically (Auto Map).
 - Receive webhook callbacks for real-time product and inventory updates.
 - Keep an activity log so sync runs are easy to audit.
 
@@ -60,6 +62,24 @@ Stock sync updates WooCommerce inventory levels from {{BRAND_NAME}} on the confi
 
 Order sync sends WooCommerce Processing orders to {{BRAND_NAME}} so POS staff can fulfil them. It is intended for merchants who want a single source of truth for online and in-store order handling.
 
+- **Terminal routing.** Each order is sent (`POST /online_orders`) to the shop selected in Settings with `target_terminal` set to the **one terminal** chosen in the Terminal dropdown. Other terminals in the shop do not receive it. Change the terminal and the next order goes to the new one.
+- **Status pull-back.** On the Order Status Interval, the plugin asks {{BRAND_NAME}} what happened to each pushed order and moves the WooCommerce order to match (for example Completed or Rejected).
+- **Order Time Zone.** The order date and time sent to {{BRAND_NAME}} use the WordPress time zone unless you pick another in Settings.
+
+### Product Mapping and Auto Map
+
+The Product Mapper page links {{BRAND_NAME}} products to WooCommerce products that already exist, so they are updated instead of duplicated. Sync is one-way ({{BRAND_NAME}} → WooCommerce): new {{BRAND_NAME}} products stay staged on the mapper until you import or map them.
+
+With **Auto Map** on, every product sync links an unmapped {{BRAND_NAME}} product to the WooCommerce product whose SKU equals its product code:
+
+- If a code or SKU matches more than one product, nothing is mapped.
+- A variable product is mapped only when every variant matches a variation of the same WooCommerce product.
+- Once mapped, price, category and stock come from {{BRAND_NAME}}.
+
+Auto Map is off by default.
+
+When a mapped {{BRAND_NAME}} product is deleted or leaves the selected shop, its WooCommerce product is deleted only if Auto Map is on **and** its SKU still equals the POS product code. Otherwise it is kept as an ordinary, unmapped product. Deleting or trashing a mapped product in WooCommerce only unmaps it (the row goes back to "Not Mapped"). Nothing is sent to {{BRAND_NAME}}.
+
 ### Webhooks
 
 The webhook endpoint receives {{BRAND_NAME}} notifications in real time. Supported events update the linked WooCommerce product or stock record immediately rather than waiting for the next scheduled sync.
@@ -70,8 +90,9 @@ The WordPress admin area includes:
 
 - A dashboard with sync status and manual actions.
 - A products browser for {{BRAND_NAME}} catalogue items.
+- A Product Mapper for linking {{BRAND_NAME}} products to existing WooCommerce products.
 - A sync log page for reviewing historical runs.
-- Settings for API token, shop selection, schedules, categories, and webhook configuration.
+- Settings for API token, shop and terminal selection, Auto Map, order time zone, schedules, and categories.
 
 ## Installation
 
@@ -104,12 +125,20 @@ Keep the token private. It grants access to your {{BRAND_NAME}} data.
 
 ### 2. Connect the plugin
 
+Setup takes a single Save:
+
 1. Open {{BRAND_NAME}} POS → Settings.
-2. Paste the token into the API Token field.
-3. Save the settings.
-4. Confirm the connection test passes.
-5. Select the correct shop if your account has more than one.
-6. Save again.
+2. Paste the token into the API Token field and click **Connect**. This tests the token you typed and loads your shops without saving anything yet. On first setup it also ticks Product, Stock and Order Sync for you. Untick any you don't want.
+3. Select the **Shop**. If your account has only one shop, it is selected for you.
+4. Select the **Terminal** that should receive online orders. The dropdown lists every terminal of the selected shop. If the shop has only one terminal, it is selected for you. If the shop has none, the dropdown says "No terminals in this shop".
+5. Click **Save Settings**.
+
+### Changing or removing the token
+
+- **Replacing a saved token** with a different one clears the old account's catalogue, so Settings asks you to tick a confirmation box first. The box shows how many imported products and mappings will be removed.
+- **Removing the token** clears mappings and stored stock data and stops all scheduled syncs. Imported products are deleted only when Auto Map is on and their SKU still matches the POS product code. All other products are kept as ordinary WooCommerce products. To delete linked products as well, tick "Also delete your existing WooCommerce products that were linked to the POS".
+
+Scheduled syncs only run while a token is saved. Without one they are unscheduled rather than failing every run.
 
 ### 3. Choose sync options
 
@@ -117,7 +146,8 @@ Keep the token private. It grants access to your {{BRAND_NAME}} data.
 |---|---|---|
 | Product Sync | {{BRAND_NAME}} → WooCommerce | Cron schedule |
 | Stock Sync | {{BRAND_NAME}} → WooCommerce | Cron schedule |
-| Order Sync | WooCommerce → {{BRAND_NAME}} | Order moves to Processing |
+| Order Sync | WooCommerce → {{BRAND_NAME}} (selected terminal) | Order moves to Processing |
+| Order Status | {{BRAND_NAME}} → WooCommerce | Cron schedule (Order Status Interval) |
 
 Recommended schedule settings:
 
@@ -183,6 +213,13 @@ If you want to verify the sync end to end:
 - For variable products, verify the variation codes match {{BRAND_NAME}} variant codes.
 - Confirm sync is enabled for that product.
 
+### Orders do not appear on the POS terminal
+
+- Check Settings → Terminal: orders go only to the terminal selected there.
+- If the Terminal dropdown says "No terminals in this shop", add a terminal to that shop in {{BRAND_NAME}} backoffice, then reload Settings.
+- Confirm Order Sync is enabled and the order has reached Processing.
+- Review the sync log for the order push result.
+
 ### Webhooks are not firing
 
 - Make sure the webhook URL in {{BRAND_NAME}} matches the site URL exactly.
@@ -202,6 +239,15 @@ If you want to verify the sync end to end:
 
 ## Changelog
 
+### Unreleased
+
+- Terminal dropdown in Settings lists every terminal of the selected shop. Online orders are sent only to the chosen terminal (`target_terminal`).
+- Order status is pulled back from {{BRAND_NAME}} on a configurable interval. The Order Time Zone setting controls the time zone of order times sent to {{BRAND_NAME}}.
+- Auto Map links {{BRAND_NAME}} products to existing WooCommerce products by SKU.
+- One-pass setup: Connect tests the typed token and loads shops in one step. Replacing a saved token requires confirmation.
+- Removing the token deletes only imported products whose SKU matches the POS code while Auto Map is on, and keeps the rest unless you opt in. Syncs stop until a token is saved again.
+- Deleting or trashing a mapped product in WooCommerce unmaps it instead of leaving a broken link.
+
 ### 1.0.0
 
 - Product sync for simple and variable products.
@@ -216,3 +262,4 @@ If you want to verify the sync end to end:
 - Product and stock matching rely on {{BRAND_NAME}} product code metadata.
 - Existing WooCommerce products can be linked through SKU compatibility during sync.
 - Generated exports such as [product.json](product.json) are useful for debugging the {{BRAND_NAME}} payload shape.
+- [tests/](tests/) holds an integration suite that boots the local WordPress install with the POS API stubbed. Run it with `php tests/run-all.php`. `build.php` runs it before packaging. `test-21-terminal-dropdown.php` runs the real admin JS in headless Microsoft Edge. `test-22-order-target-terminal.php` places real orders and checks each one is sent only to the selected terminal.

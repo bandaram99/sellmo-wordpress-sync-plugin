@@ -24,6 +24,24 @@ $mapper_stats = Sellmo_Product_Mapping::get_dashboard_stats();
 	</h1>
 	<hr class="wp-header-end">
 
+	<?php
+	// No token = no POS catalogue to map against. Listing the store's own
+	// products as "WooCommerce Only" here just reads as leftovers.
+	if ( '' === (string) Sellmo_Settings::get( 'api_token' ) ) :
+		?>
+		<p>
+			<?php
+			printf(
+				esc_html__( 'Connect your %s account on the Settings page to start mapping products.', 'sellmo-woocommerce' ),
+				esc_html( $brand_name )
+			);
+			?>
+		</p>
+	</div>
+		<?php
+		return;
+	endif;
+	?>
 	<!-- <div class="sellmo-dashboard-grid sellmo-mapper-stats-grid">
 		<div class="sellmo-card">
 			<h2>

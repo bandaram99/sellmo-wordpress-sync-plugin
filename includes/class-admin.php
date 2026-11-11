@@ -405,6 +405,10 @@ class Sellmo_Admin {
 			exit;
 		}
 
+		// Saved before any purge: whether an imported product is deleted depends on
+		// Auto map, and the merchant may have changed it in this same submit.
+		Sellmo_Settings::set( 'auto_map_enabled', isset( $_POST['sellmo_wc_auto_map_enabled'] ) ? 'yes' : 'no' );
+
 		if ( $remove_token && '' !== $old_token ) {
 			// Explicit removal: drop the token, reset account-scoped settings, and
 			// wipe everything synced from the old account.
@@ -412,7 +416,7 @@ class Sellmo_Admin {
 			Sellmo_Settings::set( 'shop_id', '' );
 			Sellmo_Settings::set( 'terminal_key', '' );
 			Sellmo_Settings::set( 'connection_status', [] );
-			$purged_count = $this->purge_sellmo_synced_data();
+			$purged_count = $this->purge_sellmo_synced_data( isset( $_POST['sellmo_wc_delete_linked'] ) );
 		} elseif ( '' !== $api_token && $api_token !== $old_token ) {
 			Sellmo_Settings::set( 'api_token', $api_token );
 			$token_changed = true;
@@ -438,7 +442,6 @@ class Sellmo_Admin {
 		Sellmo_Settings::set( 'product_sync_enabled', isset( $_POST['sellmo_wc_product_sync_enabled'] ) ? 'yes' : 'no' );
 		Sellmo_Settings::set( 'stock_sync_enabled',   isset( $_POST['sellmo_wc_stock_sync_enabled'] )   ? 'yes' : 'no' );
 		Sellmo_Settings::set( 'order_sync_enabled',   isset( $_POST['sellmo_wc_order_sync_enabled'] )   ? 'yes' : 'no' );
-		Sellmo_Settings::set( 'auto_map_enabled',     isset( $_POST['sellmo_wc_auto_map_enabled'] )     ? 'yes' : 'no' );
 
 		// Sync intervals — validate against allowed values.
 		$stock_interval = sanitize_key( wp_unslash( $_POST['sellmo_wc_stock_sync_interval'] ?? '' ) );
@@ -471,7 +474,7 @@ class Sellmo_Admin {
 		$sync_cats     = array_values( array_filter( array_map( 'sanitize_text_field', array_map( 'wp_unslash', $raw_cats ) ) ) );
 		Sellmo_Settings::set( 'sync_categories', $sync_cats );
 
-		// Terminal key — populated by JS from the selected shop's terminal list.
+		// Terminal key — the terminal picked in the dropdown for the selected shop.
 		// Skipped on token removal (terminal_key was already reset to empty above).
 		if ( ! $remove_token || -1 === $purged_count ) {
 			Sellmo_Settings::set( 'terminal_key', sanitize_text_field( wp_unslash( $_POST['sellmo_wc_terminal_key'] ?? '' ) ) );
@@ -764,6 +767,9 @@ class Sellmo_Admin {
 						__( 'Select %s shop', 'sellmo-woocommerce' ),
 						$brand_name
 					),
+					'selectTerminal'    => __( 'Select terminal', 'sellmo-woocommerce' ),
+					'noTerminals'       => __( 'No terminals in this shop', 'sellmo-woocommerce' ),
+					'selectShopFirst'   => __( 'Select a shop first', 'sellmo-woocommerce' ),
 					'syncing'           => __( 'Syncing…', 'sellmo-woocommerce' ),
 					'syncProducts'      => __( 'Sync Products Now', 'sellmo-woocommerce' ),
 					'syncStock'         => __( 'Sync Stock Now', 'sellmo-woocommerce' ),
@@ -2000,23 +2006,28 @@ class Sellmo_Admin {
 	}
 
 	/**
-	 * Flatten a /shops response for the shop dropdown, with the first terminal's
-	 * pos_key so the JS can keep the hidden terminal-key input in sync.
+	 * Flatten a /shops response for the shop dropdown, with each shop's terminals
+	 * so the JS can fill the terminal dropdown for the selected shop.
 	 *
 	 * @since  1.7.0
 	 * @param  array<string, mixed> $result Decoded /shops response.
-	 * @return array<int, array{ id: string, name: string, terminal_key: string }>
+	 * @return array<int, array{ id: string, name: string, terminals: array<int, array{ key: string, name: string }> }>
 	 */
 	private function normalize_shops( array $result ): array {
 		$shops = [];
 		foreach ( (array) ( $result['shops'] ?? [] ) as $shop ) {
-			$terminal_list = isset( $shop['terminal_list'] ) && is_array( $shop['terminal_list'] )
-				? $shop['terminal_list']
-				: [];
+			$terminals = [];
+			foreach ( (array) ( $shop['terminal_list'] ?? [] ) as $terminal ) {
+				$key = (string) ( $terminal['pos_key'] ?? '' );
+				if ( '' !== $key ) {
+					$name        = (string) ( $terminal['pos_name'] ?? '' );
+					$terminals[] = [ 'key' => $key, 'name' => '' !== $name ? $name : $key ];
+				}
+			}
 			$shops[] = [
-				'id'           => (string) ( $shop['id'] ?? '' ),
-				'name'         => (string) ( $shop['shop_name'] ?? $shop['id'] ?? '' ),
-				'terminal_key' => (string) ( $terminal_list[0]['pos_key'] ?? '' ),
+				'id'        => (string) ( $shop['id'] ?? '' ),
+				'name'      => (string) ( $shop['shop_name'] ?? $shop['id'] ?? '' ),
+				'terminals' => $terminals,
 			];
 		}
 
@@ -2889,21 +2900,22 @@ class Sellmo_Admin {
 	 * Remove every trace of the previously synced Sellmo catalogue.
 	 *
 	 * Called when the API token changes (a new token = a different SalesPlay
-	 * account). Deletes all WooCommerce products and variations created or linked
-	 * from Sellmo, empties the mapping/staging and variant tables (which hold the
+	 * account). Deletes or detaches the WooCommerce products created or linked
+	 * from Sellmo (see Sellmo_Cleanup), empties the mapping/staging and variant tables (which hold the
 	 * stored stock counts and saved product details), clears the catalogue cache,
 	 * and resets the persisted sync summaries.
 	 *
 	 * @since  1.0.0
+	 * @param  bool $delete_linked Also delete merchant products that were only linked.
 	 * @return int Number of WooCommerce products removed.
 	 */
-	private function purge_sellmo_synced_data(): int {
+	private function purge_sellmo_synced_data( bool $delete_linked = false ): int {
 		global $wpdb;
 
-		// Delete plugin-created products (with their variations, images, and
-		// created categories) and unlink any merchant products that were only
-		// mapped. Merchant-owned products are never deleted.
-		$removed = Sellmo_Cleanup::purge_catalogue();
+		// Delete imported products whose SKU still matches their POS code while
+		// Auto map is on (everything, when the opt-in box is ticked); keep the
+		// rest as ordinary products, with the images and categories they use.
+		$removed = Sellmo_Cleanup::purge_catalogue( $delete_linked );
 
 		// Empty the mapping/staging and variant tables (stock counts + saved
 		// details). The staged Product Mapper rows live in sellmo_product_mapping
@@ -2927,8 +2939,9 @@ class Sellmo_Admin {
 			'pos_to_wc',
 			'skipped',
 			sprintf(
-				'API token changed — deleted %d plugin-created product(s) with images and categories, unlinked mapped merchant products, and cleared all stored stock counts, mappings, and variant data.',
-				$removed
+				'API token changed — deleted %d product(s) (%s), kept the rest as ordinary products, and cleared all stored stock counts, mappings, and variant data.',
+				$removed,
+				$delete_linked ? 'deleted mapped merchant products too' : 'imported products whose SKU matches the POS code, Auto map on'
 			)
 		);
 
@@ -2947,16 +2960,23 @@ class Sellmo_Admin {
 	private function clear_products_cache(): void {
 		global $wpdb;
 
-		delete_transient( POS_Brand::transient( 'products_cache' ) );
+		delete_transient( POS_Brand::transient( 'categories' ) );
 
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-		$wpdb->query(
-			$wpdb->prepare(
-				"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
-				$wpdb->esc_like( '_transient_sellmo_wc_products_' ) . '%',
-				$wpdb->esc_like( '_transient_timeout_sellmo_wc_products_' ) . '%'
-			)
-		);
+		// Per-cursor /products and /inventory pages (products_cache included).
+		// delete_transient() per key, not a raw DELETE, so an object cache
+		// (Redis/Memcached) is invalidated too.
+		foreach ( [ 'products_', 'inventory_' ] as $prefix ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$names = $wpdb->get_col(
+				$wpdb->prepare(
+					"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
+					$wpdb->esc_like( '_transient_' . POS_Brand::transient( $prefix ) ) . '%'
+				)
+			);
+			foreach ( (array) $names as $name ) {
+				delete_transient( substr( (string) $name, strlen( '_transient_' ) ) );
+			}
+		}
 	}
 
 	/**

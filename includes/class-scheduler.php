@@ -213,6 +213,21 @@ class Sellmo_Scheduler {
 		wp_clear_scheduled_hook( $this->order_hook );
 	}
 
+	/**
+	 * Whether a sync should run: its toggle is on AND an API token is saved.
+	 *
+	 * Without a token every run would just log a 401, so removing the token
+	 * unschedules all three events on the next request.
+	 *
+	 * @since  1.8.0
+	 * @param  string $type 'stock' | 'product' | 'order'.
+	 * @return bool
+	 */
+	public static function enabled( string $type ): bool {
+		return 'yes' === (string) Sellmo_Settings::get( $type . '_sync_enabled' )
+			&& '' !== (string) Sellmo_Settings::get( 'api_token' );
+	}
+
 	// -------------------------------------------------------------------------
 	// Reschedule callbacks (fired by update_option_* actions)
 	// -------------------------------------------------------------------------
@@ -229,7 +244,7 @@ class Sellmo_Scheduler {
 	public function reschedule_stock(): void {
 		wp_clear_scheduled_hook( $this->stock_hook );
 
-		if ( 'yes' === (string) Sellmo_Settings::get( 'stock_sync_enabled' ) ) {
+		if ( self::enabled( 'stock' ) ) {
 			$interval = (string) ( Sellmo_Settings::get( 'stock_sync_interval' ) ?: 'hourly' );
 			wp_schedule_event( time() + 60, $interval, $this->stock_hook );
 		}
@@ -244,7 +259,7 @@ class Sellmo_Scheduler {
 	public function reschedule_product(): void {
 		wp_clear_scheduled_hook( $this->product_hook );
 
-		if ( 'yes' === (string) Sellmo_Settings::get( 'product_sync_enabled' ) ) {
+		if ( self::enabled( 'product' ) ) {
 			$interval = (string) ( Sellmo_Settings::get( 'product_sync_interval' ) ?: 'twicedaily' );
 			wp_schedule_event( time() + 60, $interval, $this->product_hook );
 		}
@@ -259,7 +274,7 @@ class Sellmo_Scheduler {
 	public function reschedule_order(): void {
 		wp_clear_scheduled_hook( $this->order_hook );
 
-		if ( 'yes' === (string) Sellmo_Settings::get( 'order_sync_enabled' ) ) {
+		if ( self::enabled( 'order' ) ) {
 			wp_schedule_event( time() + 60, self::order_interval(), $this->order_hook );
 		}
 	}
@@ -280,7 +295,7 @@ class Sellmo_Scheduler {
 	 * @return void
 	 */
 	public function run_stock_sync(): void {
-		if ( 'yes' !== (string) Sellmo_Settings::get( 'stock_sync_enabled' ) ) {
+		if ( ! self::enabled( 'stock' ) ) {
 			return;
 		}
 
@@ -302,7 +317,7 @@ class Sellmo_Scheduler {
 	 * @return void
 	 */
 	public function run_product_sync(): void {
-		if ( 'yes' !== (string) Sellmo_Settings::get( 'product_sync_enabled' ) ) {
+		if ( ! self::enabled( 'product' ) ) {
 			return;
 		}
 
@@ -321,7 +336,7 @@ class Sellmo_Scheduler {
 	 * @return void
 	 */
 	public function run_order_status_sync(): void {
-		if ( 'yes' !== (string) Sellmo_Settings::get( 'order_sync_enabled' ) ) {
+		if ( ! self::enabled( 'order' ) ) {
 			return;
 		}
 
@@ -342,7 +357,7 @@ class Sellmo_Scheduler {
 	 * @return void
 	 */
 	private function maybe_schedule_stock(): void {
-		$enabled    = 'yes' === (string) Sellmo_Settings::get( 'stock_sync_enabled' );
+		$enabled    = self::enabled( 'stock' );
 		$scheduled  = (bool) wp_next_scheduled( $this->stock_hook );
 
 		if ( $enabled && ! $scheduled ) {
@@ -360,7 +375,7 @@ class Sellmo_Scheduler {
 	 * @return void
 	 */
 	private function maybe_schedule_product(): void {
-		$enabled   = 'yes' === (string) Sellmo_Settings::get( 'product_sync_enabled' );
+		$enabled   = self::enabled( 'product' );
 		$scheduled = (bool) wp_next_scheduled( $this->product_hook );
 
 		if ( $enabled && ! $scheduled ) {
@@ -378,7 +393,7 @@ class Sellmo_Scheduler {
 	 * @return void
 	 */
 	private function maybe_schedule_order(): void {
-		$enabled   = 'yes' === (string) Sellmo_Settings::get( 'order_sync_enabled' );
+		$enabled   = self::enabled( 'order' );
 		$scheduled = (bool) wp_next_scheduled( $this->order_hook );
 
 		if ( $enabled && ! $scheduled ) {

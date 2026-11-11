@@ -8,7 +8,8 @@
  * 18c. Connect with a blank field still tests the saved token (old behaviour).
  * 18d. The token-change guard: every input combination, then the real save
  *      handler refusing an unconfirmed token change without saving anything.
- * 18e. The Settings page renders the Connect button and the confirmation box.
+ * 18e. The Settings page renders the Connect button, the confirmation box and
+ *      the Terminal dropdown (pre-set to the saved terminal key).
  *
  * SAFETY: an unconfirmed token change must never reach the purge, which would
  * delete the real catalogue. 18d proves the guard on its truth table FIRST and
@@ -58,7 +59,12 @@ add_filter( 'pre_http_request', static function ( $pre, $args, $url ) {
 
 T_Fake_API::install( [
 	'/shops' => [ 'shops' => [
-		[ 'id' => 'ZZTEST-SHOP-1', 'shop_name' => 'Test Shop', 'terminal_list' => [ [ 'pos_key' => 'ZZTEST-KEY' ] ] ],
+		[ 'id' => 'ZZTEST-SHOP-1', 'shop_name' => 'Test Shop', 'terminal_list' => [
+			[ 'pos_name' => 'POS 01', 'pos_key' => 'ZZTEST-KEY' ],
+			[ 'pos_key' => 'ZZTEST-KEY-2' ],
+			[ 'pos_name' => 'No key' ],
+		] ],
+		[ 'id' => 'ZZTEST-SHOP-2', 'shop_name' => 'Empty Shop', 'terminal_list' => [] ],
 	] ],
 ] );
 
@@ -71,7 +77,11 @@ $res = t_ajax( $admin, 'ajax_test_connection', [ 'token' => 'ZZTEST-NEWTOKEN' ] 
 t_ok( 'connect succeeded',                    ! empty( $res['success'] ), wp_json_encode( $res ) );
 t_eq( 'request carried the typed token',      [ 'Bearer ZZTEST-NEWTOKEN' ], $GLOBALS['t_bearers'] );
 t_eq( 'shops returned in the same response',  'ZZTEST-SHOP-1', (string) ( $res['data']['shops'][0]['id'] ?? '' ) );
-t_eq( 'terminal key returned for the shop',   'ZZTEST-KEY', (string) ( $res['data']['shops'][0]['terminal_key'] ?? '' ) );
+t_eq( 'every keyed terminal returned, in order', [
+	[ 'key' => 'ZZTEST-KEY', 'name' => 'POS 01' ],
+	[ 'key' => 'ZZTEST-KEY-2', 'name' => 'ZZTEST-KEY-2' ], // no pos_name → key as label
+], $res['data']['shops'][0]['terminals'] ?? null );
+t_eq( 'shop without terminals gets none',     [], $res['data']['shops'][1]['terminals'] ?? null );
 t_eq( 'saved token unchanged',                $saved_tok, (string) Sellmo_Settings::get( 'api_token' ) );
 t_eq( 'saved shop unchanged',                 $saved_shop, (string) Sellmo_Settings::get( 'shop_id' ) );
 t_eq( 'saved connection status untouched',    $conn_saved, Sellmo_Settings::get( 'connection_status' ) );
@@ -169,7 +179,10 @@ $render = static function (): string {
 	return (string) ob_get_clean();
 };
 
+t_set_setting( 'terminal_key', 'ZZTEST-KEY-2' );
 $html = $render();
+t_ok( 'Terminal dropdown carries the saved key', (bool) preg_match( '/<select\s+id="[a-z_]+terminal_key"\s+name="[a-z_]+terminal_key"\s+data-saved="ZZTEST-KEY-2"/', $html ) );
+t_ok( 'no hidden terminal input left',        ! preg_match( '/type="hidden"[^>]*terminal_key/', $html ) );
 t_ok( 'Connect button present',              (bool) preg_match( '/id="[a-z]+-test-connection" class="button">\s*Connect/', $html ) );
 if ( $has_saved ) {
 	t_ok( 'token-change confirmation box present', false !== strpos( $html, 'name="' . t_hook( 'sellmo_wc_confirm_token_change' ) . '"' ) );

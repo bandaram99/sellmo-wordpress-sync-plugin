@@ -175,8 +175,8 @@ class Sellmo_Product_Mapping {
 	 * backoffice), remove it.
 	 *
 	 *   - Mapped row   -> delete the linked WooCommerce product and its
-	 *                     variations (Auto map on) or keep it unlinked (Auto map
-	 *                     off), then delete the mapper row.
+	 *                     variations or keep it unlinked (see
+	 *                     remove_wc_product()), then delete the mapper row.
 	 *   - Unmapped row -> delete the mapper row only.
 	 *
 	 * Rows without a pos_product_id (code-only staged rows) are never pruned;
@@ -222,7 +222,7 @@ class Sellmo_Product_Mapping {
 		foreach ( (array) $absent as $row ) {
 			$wc_id = (int) ( $row['wc_product_id'] ?? 0 );
 
-			// Mapped row: delete (Auto map on) or unlink the WooCommerce product.
+			// Mapped row: delete or unlink the WooCommerce product.
 			if ( $wc_id > 0 ) {
 				self::remove_wc_product( $wc_id );
 			}
@@ -265,8 +265,8 @@ class Sellmo_Product_Mapping {
 	 * Whether the "Auto map" setting is on.
 	 *
 	 * It also decides what happens to a linked WooCommerce product whose POS
-	 * product is deleted or leaves the selected shop: on → deleted, off → kept
-	 * and unlinked (see remove_wc_product()).
+	 * product is deleted or leaves the selected shop: on (and SKU matching the
+	 * POS code) → deleted, otherwise kept and unlinked (see remove_wc_product()).
 	 *
 	 * @since  1.7.0
 	 * @return bool
@@ -278,17 +278,17 @@ class Sellmo_Product_Mapping {
 	/**
 	 * Take a WooCommerce product out of the sync after its POS product went away.
 	 *
-	 * Auto map on: delete it (and its variations). Auto map off: keep it as an
-	 * ordinary, unmapped WooCommerce product.
+	 * Deleted (with its variations) only when Auto map is on and its SKU equals
+	 * its POS product code; otherwise kept as an ordinary, unmapped product.
 	 *
 	 * @since  1.7.0
 	 * @param  int $wc_id WooCommerce product id.
-	 * @return void
+	 * @return bool True when the product was deleted.
 	 */
-	private static function remove_wc_product( int $wc_id ): void {
-		if ( self::auto_map_enabled() ) {
+	private static function remove_wc_product( int $wc_id ): bool {
+		if ( self::auto_map_enabled() && Sellmo_Cleanup::sku_matches( $wc_id, (string) get_post_meta( $wc_id, '_pos_product_code', true ) ) ) {
 			self::delete_wc_product( $wc_id );
-			return;
+			return true;
 		}
 
 		self::release_wc_product( $wc_id );
@@ -304,16 +304,22 @@ class Sellmo_Product_Mapping {
 			'product',
 			'pos_to_wc',
 			'success',
-			sprintf( 'WooCommerce product #%d kept as an unmapped product (Auto map is off).', $wc_id )
+			sprintf(
+				'WooCommerce product #%d kept as an unmapped product (%s).',
+				$wc_id,
+				self::auto_map_enabled() ? 'its SKU does not match the POS product code' : 'Auto map is off'
+			)
 		);
+
+		return false;
 	}
 
 	/**
 	 * Strip the POS link meta from one WooCommerce product or variation.
 	 *
 	 * Without these keys no sync can find it again, so it stays untouched. The
-	 * _sellmo_created flag goes too: a released product is the merchant's now,
-	 * so the uninstall cleanup must not delete it.
+	 * _sellmo_created flag is kept, but with no POS code left it can no longer
+	 * pass Sellmo_Cleanup::is_deletable(), so a later purge keeps it too.
 	 *
 	 * @since  1.7.0
 	 * @param  int $post_id Product or variation id.
@@ -324,7 +330,7 @@ class Sellmo_Product_Mapping {
 			return;
 		}
 
-		foreach ( [ '_salesplay_pos_product_id', '_salesplay_variant_id', '_pos_product_code', '_sellmo_sync_enabled', '_sellmo_created' ] as $key ) {
+		foreach ( [ '_salesplay_pos_product_id', '_salesplay_variant_id', '_pos_product_code', '_sellmo_sync_enabled' ] as $key ) {
 			delete_post_meta( $post_id, $key );
 		}
 	}
@@ -1181,7 +1187,7 @@ class Sellmo_Product_Mapping {
 	 * Enforce the selected-shop scope on mapped products.
 	 *
 	 * Any mapped row whose shop list does not include the selected shop has its
-	 * WooCommerce product deleted (Auto map on) or kept unlinked (Auto map off)
+	 * WooCommerce product deleted or kept unlinked (see remove_wc_product())
 	 * and is un-mapped — but the mapper row is kept
 	 * (flagged as belonging to another shop in the UI). Does nothing when no shop
 	 * is selected.
@@ -1212,10 +1218,8 @@ class Sellmo_Product_Mapping {
 				continue;
 			}
 
-			$wc_id = (int) ( $row['wc_product_id'] ?? 0 );
-			if ( $wc_id > 0 ) {
-				self::remove_wc_product( $wc_id );
-			}
+			$wc_id   = (int) ( $row['wc_product_id'] ?? 0 );
+			$deleted = $wc_id > 0 && self::remove_wc_product( $wc_id );
 
 			// The variations are gone or released either way — drop their links.
 			foreach ( Sellmo_Product_Variant_Store::get_variants_for_product( (int) $row['id'] ) as $variant ) {
@@ -1239,7 +1243,7 @@ class Sellmo_Product_Mapping {
 				'success',
 				sprintf(
 					'%s WooCommerce product #%d for "%s" — it belongs to another shop, not the selected shop.',
-					self::auto_map_enabled() ? 'Removed' : 'Unmapped',
+					$deleted ? 'Removed' : 'Unmapped',
 					$wc_id,
 					(string) ( $row['pos_product_name'] ?? '' )
 				),
@@ -1422,6 +1426,58 @@ class Sellmo_Product_Mapping {
 			[ 'id' => (int) $existing['id'] ],
 			[ '%d', '%d', '%s' ],
 			[ '%d' ]
+		);
+	}
+
+	/**
+	 * Drop the link to a WooCommerce product or variation the merchant deleted or trashed.
+	 *
+	 * Sync is POS → WooCommerce only, so nothing is sent upstream: the mapper row
+	 * just goes back to "Not Mapped" (and its variants lose their variation ids)
+	 * instead of pointing stock/price syncs at a product that no longer exists.
+	 * Hooked to before_delete_post and wp_trash_post.
+	 *
+	 * @since  1.8.0
+	 * @param  int $post_id Deleted/trashed post id.
+	 * @return void
+	 */
+	public static function forget_wc_post( int $post_id ): void {
+		$type = get_post_type( $post_id );
+		if ( 'product' !== $type && 'product_variation' !== $type ) {
+			return;
+		}
+
+		global $wpdb;
+
+		$variants = Sellmo_Product_Variant_Store::table_name();
+
+		if ( 'product_variation' === $type ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$wpdb->query( $wpdb->prepare( "UPDATE `{$variants}` SET wc_variation_id = NULL WHERE wc_variation_id = %d", $post_id ) );
+			return;
+		}
+
+		$row = self::get_mapping_by_wc_product_id( $post_id );
+		if ( null === $row ) {
+			return;
+		}
+
+		$wpdb->update(
+			self::table_name(),
+			[ 'wc_product_id' => null, 'map_status' => 0, 'updated_at' => current_time( 'mysql', true ) ],
+			[ 'id' => (int) $row['id'] ],
+			[ '%d', '%d', '%s' ],
+			[ '%d' ]
+		);
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$wpdb->query( $wpdb->prepare( "UPDATE `{$variants}` SET wc_variation_id = NULL WHERE product_id = %d", (int) $row['id'] ) );
+
+		Sellmo_Logger::log(
+			'product',
+			'pos_to_wc',
+			'skipped',
+			sprintf( 'WooCommerce product #%d was deleted in WooCommerce — mapping removed.', $post_id ),
+			(string) ( $row['pos_product_code'] ?? '' )
 		);
 	}
 

@@ -24,8 +24,8 @@ require_once __DIR__ . '/includes/class-cleanup.php';
 
 global $wpdb;
 
-// 0. Delete every product the plugin created (with variations, imported images,
-// and created categories) and unlink any merchant products it only mapped.
+// 0. Delete imported products whose SKU matches their POS code while Auto map is
+// on; keep every other product as an ordinary one (see Sellmo_Cleanup).
 // Runs before the tables are dropped — it reads post/term meta, not the tables.
 Sellmo_Cleanup::purge_catalogue();
 
@@ -59,3 +59,4 @@ $wpdb->query(
 // 4. Remove any remaining scheduled cron events.
 wp_clear_scheduled_hook( POS_Brand::cron_hook( 'stock_sync' ) );
 wp_clear_scheduled_hook( POS_Brand::cron_hook( 'product_sync' ) );
+wp_clear_scheduled_hook( POS_Brand::cron_hook( 'order_status_sync' ) );

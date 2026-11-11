@@ -216,6 +216,7 @@ if ( null !== $mine_row_resp ) {
 t_head( '3e. Mapped out-of-shop product removed from WooCommerce, row kept' );
 
 $stray_wc = t_wc_simple( 'Stray Shop Product', 100.0, $other_code, $other_pos_id );
+update_post_meta( $stray_wc, '_sku', $other_code ); // Deletion needs SKU == POS code (see test-20g).
 Sellmo_Product_Mapping::upsert_mapping( $other_pos_id, $other_code, 'Other Shop Only', $stray_wc );
 
 $row = Sellmo_Product_Mapping::get_row_by_id( $other_id );
