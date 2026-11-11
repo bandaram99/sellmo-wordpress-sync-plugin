@@ -1,6 +1,6 @@
 # {{BRAND_NAME}} POS Integration
 
-{{BRAND_NAME}} POS Integration connects WooCommerce to **{{BRAND_NAME}} POS** powered by SalesPlay POS. The plugin is designed to keep your store aligned with your point-of-sale system by importing products, syncing stock, pushing orders, and handling real-time webhooks.
+{{BRAND_NAME}} POS Integration connects WooCommerce to **{{BRAND_NAME}} POS** powered by SalesPlay POS. The plugin is designed to keep your store aligned with your point-of-sale system by importing products, syncing stock, and pushing orders.
 
 This repository contains the WordPress plugin source, admin UI assets, sync handlers, and a small utility script used to export {{BRAND_NAME}} product data during testing.
 
@@ -14,7 +14,6 @@ The plugin covers the full sync loop between WooCommerce and {{BRAND_NAME}}:
 - Push WooCommerce orders to {{BRAND_NAME}} when they move to Processing, addressed to the POS terminal you choose.
 - Pull each pushed order's status (Completed, Rejected, …) back into WooCommerce on a schedule.
 - Map existing WooCommerce products to {{BRAND_NAME}} products by SKU, manually or automatically (Auto Map).
-- Receive webhook callbacks for real-time product and inventory updates.
 - Keep an activity log so sync runs are easy to audit.
 
 ## Requirements
@@ -30,7 +29,7 @@ The plugin covers the full sync loop between WooCommerce and {{BRAND_NAME}}:
 | Path | Purpose |
 |---|---|
 | [{{BRAND_SLUG}}-woocommerce.php]({{BRAND_SLUG}}-woocommerce.php) | Main plugin bootstrap file. |
-| [includes/](includes/) | Core plugin classes for admin, API, sync, scheduler, logs, and webhook handling. |
+| [includes/](includes/) | Core plugin classes for admin, API, sync, scheduler, and logs. |
 | [admin/](admin/) | Admin styles, scripts, and page templates. |
 | [languages/](languages/) | Translation files. |
 | [uninstall.php](uninstall.php) | Cleanup routine run when the plugin is deleted. |
@@ -79,10 +78,6 @@ With **Auto Map** on, every product sync links an unmapped {{BRAND_NAME}} produc
 Auto Map is off by default.
 
 When a mapped {{BRAND_NAME}} product is deleted or leaves the selected shop, its WooCommerce product is deleted only if Auto Map is on **and** its SKU still equals the POS product code. Otherwise it is kept as an ordinary, unmapped product. Deleting or trashing a mapped product in WooCommerce only unmaps it (the row goes back to "Not Mapped"). Nothing is sent to {{BRAND_NAME}}.
-
-### Webhooks
-
-The webhook endpoint receives {{BRAND_NAME}} notifications in real time. Supported events update the linked WooCommerce product or stock record immediately rather than waiting for the next scheduled sync.
 
 ### Admin Tools
 
@@ -161,22 +156,6 @@ Recommended schedule settings:
 3. Import one product at a time, or use the bulk action.
 4. Enable sync on the imported products you want kept in sync.
 
-### 5. Configure the webhook
-
-The webhook is optional, but recommended if you want near real-time updates.
-
-1. Open {{BRAND_NAME}} POS → Settings.
-2. Generate a webhook secret.
-3. Copy the webhook URL.
-4. Add the webhook in {{BRAND_NAME}} backoffice.
-5. Use the events `product.updated` and `inventory.updated`.
-
-Webhook endpoint:
-
-```text
-POST https://your-site.com/wp-json/sellmo-wc/v1/webhook
-```
-
 ## How Sync Works
 
 The plugin keeps a clear separation between data import and ongoing sync:
@@ -185,7 +164,6 @@ The plugin keeps a clear separation between data import and ongoing sync:
 2. Each product can be toggled for sync individually.
 3. Product sync updates names, prices, images, and variations.
 4. Stock sync updates available quantity for linked products and variations.
-5. Webhooks can trigger immediate updates when {{BRAND_NAME}} changes.
 
 ## Testing Workflow
 
@@ -220,12 +198,6 @@ If you want to verify the sync end to end:
 - Confirm Order Sync is enabled and the order has reached Processing.
 - Review the sync log for the order push result.
 
-### Webhooks are not firing
-
-- Make sure the webhook URL in {{BRAND_NAME}} matches the site URL exactly.
-- Verify the secret is the same in both places.
-- Ensure WordPress permalinks are not set to Plain.
-
 ### Products already exist in WooCommerce
 
 - The plugin will only update products that it can match to {{BRAND_NAME}} via {{BRAND_NAME}} product code or, for compatibility, an existing matching SKU.
@@ -234,7 +206,6 @@ If you want to verify the sync end to end:
 
 - The API token is stored in WordPress options.
 - The token is not logged by the plugin.
-- Webhook requests are verified before processing.
 - Admin actions are protected by WordPress capability checks and nonces.
 
 ## Changelog
@@ -247,6 +218,7 @@ If you want to verify the sync end to end:
 - One-pass setup: Connect tests the typed token and loads shops in one step. Replacing a saved token requires confirmation.
 - Removing the token deletes only imported products whose SKU matches the POS code while Auto Map is on, and keeps the rest unless you opt in. Syncs stop until a token is saved again.
 - Deleting or trashing a mapped product in WooCommerce unmaps it instead of leaving a broken link.
+- The inbound webhook is switched off: its REST route is not registered and its settings were removed. Updates arrive through the scheduled and manual syncs.
 
 ### 1.0.0
 

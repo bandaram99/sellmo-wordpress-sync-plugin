@@ -28,7 +28,7 @@ Requests are made to: {{API_BASE}}
 
 What is sent, and when:
 
-* Product, variation, stock and price data — imported from {{BRAND_NAME}} POS into WooCommerce, and pushed from WooCommerce to {{BRAND_NAME}} POS, on the schedule you configure or when you trigger a manual sync.
+* Product, variation, stock and price data — requested from {{BRAND_NAME}} POS and imported into WooCommerce, on the schedule you configure or when you trigger a manual sync. Product data only flows from {{BRAND_NAME}} POS to WooCommerce; no product or stock data is sent from your store.
 * WooCommerce order details (line items, totals, and the customer name and contact on the order), together with the shop and terminal ID selected in the settings — sent to {{BRAND_NAME}} POS when an order moves to Processing, if order sync is enabled. The order's status is then requested back from {{BRAND_NAME}} POS on the schedule you configure.
 * The API token you enter in the plugin settings — sent with every request to authenticate your store.
 
